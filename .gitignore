@@ -17,3 +17,6 @@ yarn-error.log*
 
 # Jikijitsu orchestration scratch
 /.forge/
+
+# Build output
+/dist/
