@@ -17,14 +17,14 @@ import {
   serializeIndexRecord,
   serializeMetaRecord,
   serializePrefsRecord,
-  type BuildRecord,
+  type BuildDoc,
   type IndexEntry,
   type IndexRecord,
   type MetaRecord,
   type PrefsRecord,
 } from '../../../src/persist/records.js';
 
-const sampleBuild = (): BuildRecord => ({
+const sampleBuild = (): BuildDoc => ({
   id: '00000000-0000-4000-8000-000000000001',
   name: 'Wasp Alpha',
   tags: ['alpha'],

@@ -16,15 +16,26 @@ import type { Build } from '../domain/index.js';
 // ---- BuildRecord — the durable unit (§3.2) --------------------------------
 
 /**
- * A stored build (§3.2). Structurally identical to `Build` from domain: id +
- * name + tags + chassisId + slots + storedCost + schema/catalog versions +
- * timestamps. Deliberately no `needsRefit` / `currentCost` / `derivedStats` /
- * `leftoverPoints` / `ownerId` (§3.2). Full FK / slot-type / caps validation
- * happens through `src/io/migrate/migrate.ts` on read — this file only decides
- * "is this even a plausibly-shaped object" so a JSON-corrupt entry can be
- * flagged rather than crashing boot.
+ * The on-disk shape of a `:build:<uuid>` value (§3.2) — structurally identical
+ * to `Build` from domain: id + name + tags + chassisId + slots + storedCost +
+ * schema/catalog versions + timestamps. Deliberately no `needsRefit` /
+ * `currentCost` / `derivedStats` / `leftoverPoints` / `ownerId` (§3.2). A stored
+ * boolean would be a lie the moment the catalog re-tunes.
+ *
+ * Kept as the documentation shape for serialisation and for the shape a
+ * migrated + validated record ends up producing.
  */
-export type BuildRecord = Build;
+export type BuildDoc = Build;
+
+/**
+ * The RAW value returned from `parseBuildRecord`. Deliberately `Record<string,
+ * unknown>` rather than `Build`: the parser only guarantees "plain object with
+ * id + chassisId as strings" — the migration + validation pipeline in
+ * `src/io/migrate/migrate.ts` is what turns that into a real `Build`. The
+ * looser type is what makes handing it straight to `migrate(catalog, raw, meta)`
+ * type-check without a cast.
+ */
+export type BuildRecord = Readonly<Record<string, unknown>>;
 
 // ---- IndexEntry / IndexRecord — the browse cache (§3.4) -------------------
 
@@ -156,11 +167,11 @@ export const parseBuildRecord = (raw: string): BuildRecord | null => {
   if (typeof doc['chassisId'] !== 'string') return null;
   // Trust the doc to `migrate()` from here — it defensively coerces every
   // remaining field and folds each violation into ERR_VALIDATION.
-  return doc as unknown as BuildRecord;
+  return doc;
 };
 
-/** Serialise a `BuildRecord` for storage. Pure `JSON.stringify` — no surprises. */
-export const serializeBuild = (record: BuildRecord): string =>
+/** Serialise a `BuildDoc` for storage. Pure `JSON.stringify` — no surprises. */
+export const serializeBuild = (record: BuildDoc): string =>
   JSON.stringify(record);
 
 /**
