@@ -45,7 +45,7 @@ import { Vector3, WebGLRenderer } from 'three';
 import { of as vec3Of, type Vec3 } from '../../src/sim/mathx/index.js';
 import { dirFromBearingPitch } from '../../src/sim/mathx/index.js';
 import type { PhysicsConfig } from '../../src/sim/physics/index.js';
-import { previewPath, resolveMovement } from '../../src/sim/physics/index.js';
+import { previewPath, resolveMovement, type PreviewPath } from '../../src/sim/physics/index.js';
 import type {
   Body,
   BodyId,
@@ -55,7 +55,7 @@ import type {
 } from '../../src/sim/types.js';
 
 import { mountCamera, type CameraHandle } from './camera.js';
-import { buildScene, type DebrisVisual, type FleetIdx, type ShipVisual } from './scene.js';
+import { buildScene, type DebrisVisual, type FleetIdx, type ShipVisual, type TimeMark } from './scene.js';
 
 // -------- config --------
 
@@ -117,6 +117,47 @@ const draftToPlan = (id: BodyId, draft: PlanDraft): MovementPlan | null => {
   if (mag <= 0) return null;
   const dir = dirFromBearingPitch(draft.bearing, draft.pitch);
   return { bodyId: id, deltaV: { x: dir.x * mag, y: dir.y * mag, z: dir.z * mag } };
+};
+
+// -------- time-graduation marks (prototype-local; sampled, never re-integrated) --------
+//
+// The marks are read straight out of `previewPath().positions` — the SAME
+// integrator resolveMovement uses. Within a beat the plan Δv is applied once and
+// every sub-step is ballistic at constant velocity, so `positions[]` is uniform in
+// sim-time: the sample at `t` seconds is an exact fractional-index lerp. No second
+// integrator here (that would break the S03 "preview must not lie" invariant).
+
+/** Sample the uniformly-timed preview path at `t` sim-seconds (exact within a beat). */
+const samplePathAtTime = (path: PreviewPath, t: number): Vector3 => {
+  const subDt = PHYSICS.dt / path.subStepCount;
+  const f = t / subDt;
+  const last = path.positions.length - 1;
+  const i0 = Math.min(Math.floor(f), last);
+  const i1 = Math.min(i0 + 1, last);
+  const a = path.positions[i0]!;
+  const b = path.positions[i1]!;
+  const frac = f - i0;
+  return new Vector3(
+    a.x + (b.x - a.x) * frac,
+    a.y + (b.y - a.y) * frac,
+    a.z + (b.z - a.z) * frac,
+  );
+};
+
+/** One mark per whole sim-second, 1..floor(dt). Empty when the arc has no extent (a true coast). */
+const computeTimeMarks = (path: PreviewPath): TimeMark[] => {
+  const start = path.positions[0]!;
+  const end = path.positions[path.positions.length - 1]!;
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const dz = end.z - start.z;
+  if (dx * dx + dy * dy + dz * dz < 1) return []; // stationary — marks would stack on the hull
+  const marks: TimeMark[] = [];
+  const moveTime = PHYSICS.dt; // sim-seconds per beat = the full plotted move time
+  for (let s = 1; s <= Math.floor(moveTime); s += 1) {
+    marks.push({ position: samplePathAtTime(path, s), second: s });
+  }
+  return marks;
 };
 
 // -------- world model (prototype-local) --------
@@ -235,6 +276,9 @@ const refreshGhost = (ship: WorldShip) => {
   const path = previewPath(ship.body, plan, PHYSICS);
   const positions = path.positions.map(toVec3);
   ship.visual.setGhost(positions, path.endsOutsideArena);
+  // Amber per-second ruler along the same arc. `computeTimeMarks` self-guards the
+  // near-zero-extent (true-coast) case, so no extra conditional is needed here.
+  ship.visual.setTimeMarks(computeTimeMarks(path));
   if (path.endsOutsideArena && positions.length > 0) {
     ship.visual.setExit(true, positions[positions.length - 1]!);
   } else {
@@ -445,6 +489,7 @@ const onCommit = async () => {
   for (const s of ships) {
     s.visual.setGhost([], false);
     s.visual.setExit(false, null);
+    s.visual.setTimeMarks([]); // planning overlay — gone during resolve playback
   }
   renderCommitState();
 
