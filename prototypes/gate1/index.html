@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <!-- Empty inline favicon — silences the /favicon.ico 404 the browser
+         would otherwise fire on a bare page (no visual, no request). -->
+    <link rel="icon" href="data:," />
+    <title>Gate 1 · Starship Skirmish (prototype)</title>
+    <!--
+      DESIGN TOKENS — borrowed verbatim from `mocks/console.css`. Enso Stroke 2:
+      cyan is the player, magenta is the opponent, red screams "boundary" — the
+      reserved meanings are law, not palette. Font stack matches the mock too.
+    -->
+    <style>
+      :root {
+        --void: #05070a;
+        --deep: #000205;
+        --panel: #0a0f16;
+        --panel-in: #070b11;
+        --line: #1e2c3c;
+        --line-hot: #2c4155;
+        --ink: #c7d6e5;
+        --ink-hi: #e8f4ff;
+        --ink-dim: #6b8299;
+        --cyan: #22e3ff;
+        --amber: #ffb020;
+        --red: #ff2e63;
+        --magenta: #ff3d7f;
+        --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; overflow: hidden; }
+      body {
+        background: var(--void);
+        color: var(--ink);
+        font-family: var(--mono);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      #root {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+        display: grid;
+        grid-template-columns: 1fr;
+        grid-template-rows: 40px 1fr;
+      }
+      #topbar {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 0 16px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+        font-size: 11px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--ink-dim);
+      }
+      #topbar .brand { color: var(--ink-hi); }
+      #topbar .cyan { color: var(--cyan); }
+      #topbar .magenta { color: var(--magenta); }
+      #topbar .red { color: var(--red); }
+      #stage {
+        position: relative;
+        overflow: hidden;
+        background: var(--deep);
+      }
+      #canvas-mount { position: absolute; inset: 0; }
+      #canvas-mount canvas { display: block; }
+      .hud {
+        position: absolute;
+        background: rgba(10, 15, 22, 0.86);
+        border: 1px solid var(--line);
+        padding: 10px 12px;
+      }
+      #hud-help {
+        left: 12px;
+        bottom: 12px;
+        max-width: 260px;
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        line-height: 1.7;
+      }
+      #hud-help .k { color: var(--cyan); }
+      #hud-help .h {
+        color: var(--ink-hi);
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        font-size: 10px;
+        margin-bottom: 6px;
+        display: block;
+      }
+      #hud-status {
+        right: 12px;
+        top: 52px;
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        min-width: 170px;
+      }
+      #hud-status .h {
+        color: var(--ink-hi);
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        margin-bottom: 4px;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <header id="topbar" aria-label="Gate 1 prototype header">
+        <span class="brand">GATE 1 · MOMENTUM PROTOTYPE</span>
+        <span>
+          <span class="cyan">CYAN = YOU</span>
+          &nbsp;·&nbsp;
+          <span class="magenta">MAGENTA = OPPONENT</span>
+          &nbsp;·&nbsp;
+          <span class="red">RED = BOUNDARY</span>
+        </span>
+        <span id="turn-label">TURN 01 · SCENE ONLINE</span>
+      </header>
+      <div id="stage">
+        <div id="canvas-mount"></div>
+        <div id="hud-status" class="hud" aria-live="polite">
+          <span class="h">Field</span>
+          <div>Ships <span id="ships-count">2</span></div>
+          <div>Debris <span id="debris-count">0</span></div>
+          <div>Bodies <span id="bodies-count">2</span></div>
+        </div>
+        <div id="hud-help" class="hud">
+          <span class="h">Controls</span>
+          <div><span class="k">[DRAG]</span> orbit &nbsp; <span class="k">[MMB / ⌥+DRAG]</span> pan &nbsp; <span class="k">[WHEEL]</span> zoom</div>
+          <div><span class="k">[R]</span> reset camera to fleet view</div>
+          <div><span class="k">[F]</span> focus selected ship</div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
