@@ -10,8 +10,6 @@ name: CI
 #
 # Later features append the remaining jobs listed in architecture §11 steps 2–6:
 #
-#   TODO(F3 io/migrate): add `test:fixtures` — fails if any migration fixture was
-#     edited (FR-2, architecture §11 step 3).
 #   TODO(deployment): add the Pages job — actions/upload-pages-artifact +
 #     actions/deploy-pages on `main` (§11 step 6).
 
@@ -51,6 +49,9 @@ jobs:
 
       - name: Determinism tests (golden + shuffle + tunneling + manifest hash-lock)
         run: npm run test:determinism
+
+      - name: Migration fixtures hash-lock (FR-2)
+        run: npm run test:fixtures
 
       - name: Harness purity check (FR-33 structural)
         run: npm run test:harness-purity

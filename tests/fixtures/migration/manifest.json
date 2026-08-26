@@ -1,0 +1,7 @@
+{
+  "algorithm": "SHA-256",
+  "fixtures": {
+    "v1/valid-fighter.json": "eae37b2718336d9ad2c7173ea21f319591497d0ec5497bc81842ca474062eefc",
+    "v1/corrupt-unknown-chassis.json": "8ea40f3b99f5dc5ff99317f22c2d7671114f01e6c5a84ce75c0c14ba23cae8a6"
+  }
+}

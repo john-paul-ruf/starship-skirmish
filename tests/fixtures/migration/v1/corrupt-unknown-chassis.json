@@ -1,0 +1,9 @@
+{
+  "name": "Corrupt Doc",
+  "tags": [],
+  "chassisId": "nope-does-not-exist",
+  "slots": [null, null, null],
+  "storedCost": 0,
+  "schemaVersion": 1,
+  "catalogVersion": 1
+}

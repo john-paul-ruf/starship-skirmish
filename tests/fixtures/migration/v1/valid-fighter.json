@@ -1,0 +1,9 @@
+{
+  "name": "Wasp Alpha",
+  "tags": ["alpha", "test"],
+  "chassisId": "fig-wasp",
+  "slots": ["wpn-pulse-array", "eng-standard-drive", null],
+  "storedCost": 11,
+  "schemaVersion": 1,
+  "catalogVersion": 1
+}
