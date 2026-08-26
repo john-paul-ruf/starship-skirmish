@@ -41,20 +41,20 @@
 // CHECKPOINT 4 STATE (per-waypoint burns — prototype experiment):
 //   * The single-burn-per-beat model is generalized to per-waypoint burns. The
 //     MARKS interval sets the waypoint granularity (2s → four 2s segments; 1s →
-//     eight 1s segments; Off → one dt-length segment = the classic single burn).
-//     Each waypoint carries its own bearing / pitch / Δv, applied once at the
-//     segment start, then ballistic for that segment.
-//   * Trajectories are built by CHAINING the REAL previewPath / resolveMovement
-//     at dt = segDur — never a hand-rolled integrator, so "preview must not lie"
-//     still holds (each sub-beat is the real integrator; committing replays the
-//     same chained resolution the ghost previewed).
-//   * A burn in segment 0 with the rest coasting is IDENTICAL to the classic
-//     single burn (velocity persists through coasting segments) — so Off and the
-//     "edit only waypoint 1" case reproduce prior behavior exactly.
-//   * NOTE: this DIVERGES from the shipping sim, which applies one Δv per beat.
-//     It is a disposable Gate 1 experiment probing whether waypoint steering is
-//     fun; the real multi-waypoint model, if adopted, is a Forge feature that
-//     belongs in src/sim (new plan shape + multi-impulse integrator).
+//     eight 1s segments; Off → one dt-length segment). Each waypoint carries its
+//     own bearing / pitch / Δv.
+//   * CONTINUOUS THRUST + max acceleration: the engine fires at MAX_ACCEL, so a
+//     Δv takes |Δv|/MAX_ACCEL seconds to deliver and the path CURVES while
+//     thrusting. A fast ship arcs wider (turn radius ≈ v²/MAX_ACCEL); per-segment
+//     Δv is capped at MAX_ACCEL × segDur.
+//   * Trajectories integrate the beat at MICRO_DT via the REAL applyPlan /
+//     integrateBody (preview) and resolveMovement (commit) — never a hand-rolled
+//     integrator, so "preview must not lie" holds: the ghost and the flown path
+//     are the same micro-stepped curve (commit just adds collisions).
+//   * NOTE: this DIVERGES from the shipping sim, which applies one impulsive Δv
+//     per beat. It is a disposable Gate 1 experiment probing whether continuous
+//     waypoint steering is fun; the real model, if adopted, is a Forge feature in
+//     src/sim (new plan shape + finite-thrust integrator).
 
 import { Vector3, WebGLRenderer } from 'three';
 
@@ -63,7 +63,8 @@ import { dirFromBearingPitch } from '../../src/sim/mathx/index.js';
 import type { PhysicsConfig } from '../../src/sim/physics/index.js';
 import {
   applyPlan,
-  previewPath,
+  integrateBody,
+  isOutsideArena,
   resolveMovement,
   type StepContact,
 } from '../../src/sim/physics/index.js';
@@ -83,7 +84,8 @@ import { buildScene, type DebrisVisual, type FleetIdx, type ShipVisual, type Tim
 const ARENA_RADIUS = 2000;
 const SHIP_RADIUS = 60;
 const SHIP_MASS = 100;
-/** Δv budget per ship per WAYPOINT — the "engine cap" the plan UI clamps against. */
+/** Total Δv the engine can spend in a full beat (thrust × dt). Per-segment caps
+ *  derive from it via MAX_ACCEL below. */
 const MAX_DV_PER_TURN = 200;
 
 const PHYSICS: PhysicsConfig = {
@@ -101,6 +103,14 @@ const PHYSICS: PhysicsConfig = {
   collisionDamageCoefficient: 0.0012,
   arena: { center: { x: 0, y: 0, z: 0 }, radius: ARENA_RADIUS },
 };
+
+// Continuous-thrust model ("curve it + max thrust"). The engine has a bounded
+// acceleration MAX_ACCEL; a waypoint's Δv is delivered by firing at MAX_ACCEL for
+// |Δv|/MAX_ACCEL seconds — so bigger burns take LONGER and a fast ship arcs WIDER
+// (turn radius ≈ v²/MAX_ACCEL). MAX_ACCEL is set so a full-beat burn still reaches
+// the 200 Δv cap. Trajectories integrate at MICRO_DT via the real primitives.
+const MAX_ACCEL = MAX_DV_PER_TURN / PHYSICS.dt; // 25 units/s²
+const MICRO_DT = 0.125; // sim-seconds per continuous-thrust micro-step
 
 // Fleet 0 = you (cyan), Fleet 1 = opponent (magenta). Set up so both start
 // stationary — every observed motion is the player's plan, no confusing drift.
@@ -120,34 +130,25 @@ interface PlanDraft {
   magnitude: number;
 }
 
-/** Clamp magnitude to the per-waypoint Δv budget — the enforcement point CP2 locks. */
-const clampMag = (v: number): number => {
-  if (!Number.isFinite(v) || v < 0) return 0;
-  if (v > MAX_DV_PER_TURN) return MAX_DV_PER_TURN;
-  return v;
-};
+/** Max Δv the engine can deliver in the active segment: thrust × segment-time. */
+const segDvCap = (): number => MAX_ACCEL * segDurFor(markIntervalSec);
 
-/**
- * Convert a numeric draft to a physics `MovementPlan`. Returns `null` when the
- * draft is a coast (zero magnitude) — physics accepts a null plan for the
- * preview path (see `previewPath.ts`), which keeps the "coast is not a plan"
- * distinction honest all the way down.
- */
-const draftToPlan = (id: BodyId, draft: PlanDraft): MovementPlan | null => {
-  const mag = clampMag(draft.magnitude);
-  if (mag <= 0) return null;
-  const dir = dirFromBearingPitch(draft.bearing, draft.pitch);
-  return { bodyId: id, deltaV: { x: dir.x * mag, y: dir.y * mag, z: dir.z * mag } };
+/** Clamp a burn magnitude to what MAX_ACCEL can deliver over the current segment. */
+const clampMag = (v: number): number => {
+  const cap = segDvCap();
+  if (!Number.isFinite(v) || v < 0) return 0;
+  return v > cap ? cap : v;
 };
 
 // -------- waypoint segmentation --------
 //
 // The beat (dt sim-seconds) is split into per-waypoint segments driven by the
 // MARKS interval: interval 2s → four 2s segments, 1s → eight 1s segments, Off →
-// a single dt-length segment (the classic single-burn model). Each segment
-// carries its own burn, applied once at the segment start, then ballistic for
-// that segment. Trajectories are built by CHAINING the real previewPath /
-// resolveMovement at dt = segDur — never a hand-rolled integrator.
+// a single dt-length segment. Each segment carries its own burn. With the
+// continuous-thrust model the burn fires at MAX_ACCEL from the segment start for
+// |Δv|/MAX_ACCEL seconds (then coasts), so the path CURVES while thrusting.
+// Trajectories integrate at MICRO_DT via the real applyPlan / integrateBody /
+// resolveMovement primitives — never a hand-rolled integrator.
 
 /** Seconds between waypoints along the ghost (UI `MARKS` selector). 0 = off (single burn). */
 let markIntervalSec = 1;
@@ -157,6 +158,23 @@ const segCountFor = (intervalSec: number): number =>
 const segDurFor = (intervalSec: number): number =>
   intervalSec > 0 ? intervalSec : PHYSICS.dt;
 const makeCoast = (bearing: number): PlanDraft => ({ bearing, pitch: 0, magnitude: 0 });
+
+/**
+ * Thrust acceleration (vector) at sim-time `tau` within the beat for a ship's
+ * waypoint burns. Segment k fires at MAX_ACCEL in its aim for the first
+ * |Δv_k|/MAX_ACCEL seconds of the segment (a finite burn), then coasts.
+ */
+const thrustAt = (segments: PlanDraft[], tau: number): Vec3 => {
+  const segDur = segDurFor(markIntervalSec);
+  const k = Math.min(Math.floor(tau / segDur), segments.length - 1);
+  const seg = segments[k]!;
+  const mag = clampMag(seg.magnitude);
+  if (mag <= 0) return { x: 0, y: 0, z: 0 };
+  const tBurn = mag / MAX_ACCEL; // finite burn duration (≤ segDur, since mag ≤ cap)
+  if (tau - k * segDur >= tBurn) return { x: 0, y: 0, z: 0 }; // burn done → coast
+  const dir = dirFromBearingPitch(seg.bearing, seg.pitch);
+  return { x: dir.x * MAX_ACCEL, y: dir.y * MAX_ACCEL, z: dir.z * MAX_ACCEL };
+};
 
 // -------- world model (prototype-local) --------
 
@@ -257,6 +275,7 @@ const dvBearing = $<HTMLInputElement>('dv-bearing');
 const dvPitch = $<HTMLInputElement>('dv-pitch');
 const dvBudget = $<HTMLInputElement>('dv-budget');
 const dvRemaining = $<HTMLElement>('dv-remaining');
+const dvCapEl = $<HTMLElement>('dv-cap');
 const planStatus = $<HTMLElement>('plan-status');
 const btnCoast = $<HTMLButtonElement>('btn-coast');
 const btnCommit = $<HTMLButtonElement>('btn-commit');
@@ -276,46 +295,55 @@ dvBudget.max = String(MAX_DV_PER_TURN);
 let selectedFleet: FleetIdx = 0;
 
 /**
- * Build a ship's full multi-waypoint trajectory by CHAINING the real integrator:
- * for each segment, apply that waypoint's burn and advance `segDur` seconds via
- * `previewPath`, then carry the post-burn state forward with the real `applyPlan`.
- * Returns the ghost polyline (one vertex per waypoint), the amber marks, and the
- * boundary-exit verdict. No sub-step integration is reimplemented here.
+ * Build a ship's curved trajectory under continuous thrust: integrate the beat at
+ * MICRO_DT, applying thrustAt()×microDt each step via the real applyPlan +
+ * integrateBody. Returns the ghost polyline (one vertex per micro-step), the amber
+ * marks (at segment ends), and the boundary-exit verdict. No integrator is
+ * reimplemented — commit replays these same steps through resolveMovement.
  */
 const planPreview = (
   ship: WorldShip,
 ): { verts: Vector3[]; marks: TimeMark[]; hostile: boolean; exitAt: Vector3 | null } => {
   const segDur = segDurFor(markIntervalSec);
-  const segConfig: PhysicsConfig = { ...PHYSICS, dt: segDur };
   const showMarks = markIntervalSec > 0;
+  const steps = Math.max(1, Math.round(PHYSICS.dt / MICRO_DT));
+  const microDt = PHYSICS.dt / steps;
   let state: Body = ship.body;
   const verts: Vector3[] = [toVec3(state.position)];
-  const marks: TimeMark[] = [];
   let hostile = false;
   let exitAt: Vector3 | null = null;
-  for (let k = 0; k < ship.segments.length; k += 1) {
-    const plan = draftToPlan(ship.id, ship.segments[k]!);
-    const path = previewPath(state, plan, segConfig);
-    const endVec = path.positions[path.positions.length - 1]!;
-    const endV = toVec3(endVec);
-    verts.push(endV);
-    if (showMarks) marks.push({ position: endV, second: (k + 1) * segDur });
-    if (path.endsOutsideArena && !hostile) {
-      hostile = true;
-      exitAt = endV;
+  // Integrate the whole beat at MICRO_DT with continuous thrust — the real
+  // applyPlan/integrateBody primitives, so the ghost matches what commit flies
+  // (resolveMovement reduces to these same steps for a lone body).
+  for (let s = 0; s < steps; s += 1) {
+    const a = thrustAt(ship.segments, s * microDt);
+    if (a.x !== 0 || a.y !== 0 || a.z !== 0) {
+      state = applyPlan(state, {
+        bodyId: ship.id,
+        deltaV: { x: a.x * microDt, y: a.y * microDt, z: a.z * microDt },
+      });
     }
-    // Advance to the segment end: real applyPlan for the post-burn velocity,
-    // real integrated endpoint for the position.
-    const burned = plan === null ? state : applyPlan(state, plan);
-    state = { ...burned, position: endVec };
+    state = integrateBody(state, microDt);
+    verts.push(toVec3(state.position));
+    if (!hostile && isOutsideArena(state.position, PHYSICS.arena)) {
+      hostile = true;
+      exitAt = toVec3(state.position);
+    }
   }
-  // Stationary guard: no ruler / no exit when the ship never actually moves
-  // (marks would stack on the hull) — mirrors the old computeTimeMarks guard.
-  const a = verts[0]!;
-  const b = verts[verts.length - 1]!;
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const dz = b.z - a.z;
+  // Marks sit at each segment end (τ = k·segDur) — the sampled vertex nearest it.
+  const marks: TimeMark[] = [];
+  if (showMarks) {
+    for (let k = 1; k <= ship.segments.length; k += 1) {
+      const vi = Math.min(Math.round((k * segDur) / microDt), verts.length - 1);
+      marks.push({ position: verts[vi]!, second: k * segDur });
+    }
+  }
+  // Stationary guard: no ruler / no exit when the ship never actually moves.
+  const a0 = verts[0]!;
+  const bN = verts[verts.length - 1]!;
+  const dx = bN.x - a0.x;
+  const dy = bN.y - a0.y;
+  const dz = bN.z - a0.z;
   if (dx * dx + dy * dy + dz * dz < 1) {
     marks.length = 0;
     hostile = false;
@@ -405,13 +433,17 @@ const syncSegUI = () => {
 const loadDraftIntoForm = () => {
   const s = ships[selectedFleet];
   const seg = active(s);
+  const cap = segDvCap();
+  dvMag.max = String(cap);
+  dvBudget.max = String(cap);
   const mag = clampMag(seg.magnitude);
   dvMag.value = String(mag);
   dvMagOut.textContent = String(mag);
   dvBearing.value = String(seg.bearing);
   dvPitch.value = String(seg.pitch);
   dvBudget.value = String(mag);
-  dvRemaining.textContent = String(MAX_DV_PER_TURN - mag);
+  dvRemaining.textContent = String(Math.round(cap - mag));
+  dvCapEl.textContent = String(Math.round(cap));
   syncSegUI();
   renderStatusText();
 };
@@ -471,7 +503,7 @@ dvMag.addEventListener('input', () => {
   dvMag.value = String(seg.magnitude);
   dvMagOut.textContent = String(seg.magnitude);
   dvBudget.value = String(seg.magnitude);
-  dvRemaining.textContent = String(MAX_DV_PER_TURN - seg.magnitude);
+  dvRemaining.textContent = String(Math.round(segDvCap() - seg.magnitude));
   refreshGhost(s);
   renderStatusText();
 });
@@ -596,29 +628,32 @@ const onCommit = async () => {
   }
   renderCommitState();
 
-  // Resolve the beat as a CHAIN of per-waypoint sub-beats: each segment applies
-  // that waypoint's burn, then `resolveMovement` advances `segDur` seconds (with
-  // collisions/boundary), and its `finalBodies` seed the next segment — momentum
-  // stays continuous. At interval Off this is a single dt=8 beat, identical to
-  // the classic model.
-  const segDur = segDurFor(markIntervalSec);
-  const segCount = ships[0].segments.length;
-  const segConfig: PhysicsConfig = { ...PHYSICS, dt: segDur };
+  // Resolve the beat as a CHAIN of MICRO_DT sub-beats with continuous thrust: at
+  // each micro-step every ship gets thrustAt()×microDt as its Δv, then
+  // resolveMovement advances microDt (with collisions/boundary) and its
+  // finalBodies seed the next — momentum stays continuous and the flown path
+  // matches the curved ghost. One keyframe per micro-step drives playback.
+  const steps = Math.max(1, Math.round(PHYSICS.dt / MICRO_DT));
+  const microDt = PHYSICS.dt / steps;
+  const microConfig: PhysicsConfig = { ...PHYSICS, dt: microDt };
 
   let bodies: Body[] = collectBodies();
-  const keyframes: (readonly Body[])[] = [];
+  const keyframes: (readonly Body[])[] = [bodies];
   const contacts: StepContact[] = [];
-  for (let k = 0; k < segCount; k += 1) {
+  for (let s = 0; s < steps; s += 1) {
+    const tau = s * microDt;
     const plans: MovementPlan[] = [];
-    for (const s of ships) {
-      const p = draftToPlan(s.id, s.segments[k]!);
-      if (p !== null) plans.push(p);
+    for (const sh of ships) {
+      const a = thrustAt(sh.segments, tau);
+      if (a.x !== 0 || a.y !== 0 || a.z !== 0) {
+        plans.push({
+          bodyId: sh.id,
+          deltaV: { x: a.x * microDt, y: a.y * microDt, z: a.z * microDt },
+        });
+      }
     }
-    const step = resolveMovement(bodies, plans, segConfig);
-    // Skip the first frame of every segment after the first — it duplicates the
-    // previous segment's final frame.
-    const frames = k === 0 ? step.keyframes : step.keyframes.slice(1);
-    for (const f of frames) keyframes.push(f);
+    const step = resolveMovement(bodies, plans, microConfig);
+    keyframes.push(step.finalBodies);
     for (const c of step.contacts) contacts.push(c);
     bodies = [...step.finalBodies];
   }
