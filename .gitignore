@@ -20,3 +20,7 @@ yarn-error.log*
 
 # Build output
 /dist/
+
+# Test / e2e output
+/test-results/
+/playwright-report/
