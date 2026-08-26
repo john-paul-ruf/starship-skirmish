@@ -31,6 +31,8 @@ import type {
 import type { PhysicsConfig } from '../sim/physics/index.js';
 import type {
   Arena,
+  ChassisClass,
+  CombatConfig,
   SimDecoy,
   SimFleet,
   SimMissileRack,
@@ -219,4 +221,80 @@ export const physicsConfigFromTuning = (
   restitution: tuning.collision.restitution,
   collisionDamageCoefficient: tuning.collision.damageCoefficient,
   arena: resolveArena(tuning, budget),
+});
+
+// The four chassis classes, in canonical enumeration order. Kept module-local
+// so the per-class narrower below has a single source of truth for "which keys
+// must be present" without importing the value from catalog (which would add a
+// value-level dep this file doesn't otherwise need).
+const CLASSES: readonly ChassisClass[] = [
+  'fighter',
+  'frigate',
+  'cruiser',
+  'mega-destroyer',
+];
+
+/**
+ * Narrow a catalog-typed `Record<string, number>` per-class table to the four
+ * known `ChassisClass` keys. A missing key is a tuning authoring error — fail
+ * loud (same posture as `resolveArena` on an illegal budget), because the sim
+ * layer downstream indexes these by class and a missing key would surface as a
+ * silent `undefined` deep inside the beat resolver.
+ */
+const byClass = (
+  table: Readonly<Record<string, number>>,
+  label: string,
+): Readonly<Record<ChassisClass, number>> => {
+  const out = {} as Record<ChassisClass, number>;
+  for (const c of CLASSES) {
+    const v = table[c];
+    if (v === undefined) {
+      fail(`combatConfigFromTuning: ${label} missing class "${c}".`);
+    }
+    out[c] = v;
+  }
+  return out;
+};
+
+/**
+ * Resolve the combat tuning the sim consumes. Mirrors `physicsConfigFromTuning`
+ * — the sim never imports the catalog, so domain reads `tuning` and passes a
+ * plain struct in. Reads ONLY existing tuning fields (no schema change is in
+ * scope for the sim-combat seam session).
+ *
+ * The per-class tables (`debrisPerDestruction`, `aoeRadiusByClass`,
+ * `aoeDamageByClass`) are narrowed from the catalog's `Record<string, number>`
+ * to `Record<ChassisClass, number>` here — the sim expects the stricter type
+ * and a missing class key would be a hard authoring error.
+ */
+export const combatConfigFromTuning = (tuning: Tuning): CombatConfig => ({
+  hazards: {
+    maxSimultaneousBodies: tuning.hazards.maxSimultaneousBodies,
+    debrisLifetimeTurns: tuning.hazards.debrisLifetimeTurns,
+    debrisPerDestruction: byClass(
+      tuning.hazards.debrisPerDestruction,
+      'debrisPerDestruction',
+    ),
+    debrisScatterImpulse: tuning.hazards.debrisScatterImpulse,
+    debrisMassFractionOfHull: tuning.hazards.debrisMassFractionOfHull,
+    debrisRadius: tuning.hazards.debrisRadius,
+  },
+  destruction: {
+    aoeRadiusByClass: byClass(
+      tuning.destruction.aoeRadiusByClass,
+      'aoeRadiusByClass',
+    ),
+    aoeDamageByClass: byClass(
+      tuning.destruction.aoeDamageByClass,
+      'aoeDamageByClass',
+    ),
+  },
+  missiles: {
+    trackingBeats: tuning.missiles.trackingBeats,
+    spentRemainsArmed: tuning.missiles.spentRemainsArmed,
+    reacquireOnTargetLoss: tuning.missiles.reacquireOnTargetLoss,
+  },
+  shields: {
+    regenTicksRegardlessOfDamage: tuning.shields.regenTicksRegardlessOfDamage,
+  },
 });

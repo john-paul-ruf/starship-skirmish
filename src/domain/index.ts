@@ -39,4 +39,5 @@ export {
   resolveFleet,
   resolveArena,
   physicsConfigFromTuning,
+  combatConfigFromTuning,
 } from './resolveFleet.js';
