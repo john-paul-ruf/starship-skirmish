@@ -26,7 +26,7 @@
 //     input layer AND at plan construction — over-spend is structurally
 //     impossible from this HUD.
 //
-// CHECKPOINT 3 STATE (this iteration):
+// CHECKPOINT 3 STATE:
 //   * Full turn loop: plans commit → `resolveMovement()` → animate the returned
 //     keyframes. Architecture §2 / §6.2 discipline: SIMULATE FULLY, THEN ANIMATE
 //     THE TRACE. The renderer here plays back the pre-computed keyframes; it
@@ -35,17 +35,38 @@
 //     the contact point moving along the contact normal. Debris `Body`s live in
 //     the world state and enter the next turn's `bodies` array — a shard flying
 //     into a ship next turn will register as a StepContact next turn.
-//   * Scripted scenarios (head-on, graze, chase) prime the fun-verdict probe
-//     without hunting for happy-accident slider values (design §7 answers).
-//   * §7.4 marker-density stress toggle spawns 60 inert hazard sprites so the
-//     legibility of the field at ceiling-ish body counts can be inspected.
+//   * Scripted scenarios (head-on, graze, chase) prime the fun-verdict probe.
+//   * §7.4 marker-density stress toggle spawns 60 inert hazard sprites.
+//
+// CHECKPOINT 4 STATE (per-waypoint burns — prototype experiment):
+//   * The single-burn-per-beat model is generalized to per-waypoint burns. The
+//     MARKS interval sets the waypoint granularity (2s → four 2s segments; 1s →
+//     eight 1s segments; Off → one dt-length segment = the classic single burn).
+//     Each waypoint carries its own bearing / pitch / Δv, applied once at the
+//     segment start, then ballistic for that segment.
+//   * Trajectories are built by CHAINING the REAL previewPath / resolveMovement
+//     at dt = segDur — never a hand-rolled integrator, so "preview must not lie"
+//     still holds (each sub-beat is the real integrator; committing replays the
+//     same chained resolution the ghost previewed).
+//   * A burn in segment 0 with the rest coasting is IDENTICAL to the classic
+//     single burn (velocity persists through coasting segments) — so Off and the
+//     "edit only waypoint 1" case reproduce prior behavior exactly.
+//   * NOTE: this DIVERGES from the shipping sim, which applies one Δv per beat.
+//     It is a disposable Gate 1 experiment probing whether waypoint steering is
+//     fun; the real multi-waypoint model, if adopted, is a Forge feature that
+//     belongs in src/sim (new plan shape + multi-impulse integrator).
 
 import { Vector3, WebGLRenderer } from 'three';
 
 import { of as vec3Of, type Vec3 } from '../../src/sim/mathx/index.js';
 import { dirFromBearingPitch } from '../../src/sim/mathx/index.js';
 import type { PhysicsConfig } from '../../src/sim/physics/index.js';
-import { previewPath, resolveMovement, type PreviewPath } from '../../src/sim/physics/index.js';
+import {
+  applyPlan,
+  previewPath,
+  resolveMovement,
+  type StepContact,
+} from '../../src/sim/physics/index.js';
 import type {
   Body,
   BodyId,
@@ -62,7 +83,7 @@ import { buildScene, type DebrisVisual, type FleetIdx, type ShipVisual, type Tim
 const ARENA_RADIUS = 2000;
 const SHIP_RADIUS = 60;
 const SHIP_MASS = 100;
-/** Δv budget per ship per turn — the "engine cap" the plan UI clamps against. */
+/** Δv budget per ship per WAYPOINT — the "engine cap" the plan UI clamps against. */
 const MAX_DV_PER_TURN = 200;
 
 const PHYSICS: PhysicsConfig = {
@@ -92,14 +113,14 @@ const INITIAL_POSITIONS: readonly [Vec3, Vec3] = [
 
 const toVec3 = (v: Vec3): Vector3 => new Vector3(v.x, v.y, v.z);
 
-/** A prospective plan the player is editing but has not yet committed. */
+/** A single burn: bearing/pitch aim + Δv magnitude. One per waypoint-segment. */
 interface PlanDraft {
   bearing: number;
   pitch: number;
   magnitude: number;
 }
 
-/** Clamp magnitude to the Δv budget — the enforcement point the CP2 spec locks. */
+/** Clamp magnitude to the per-waypoint Δv budget — the enforcement point CP2 locks. */
 const clampMag = (v: number): number => {
   if (!Number.isFinite(v) || v < 0) return 0;
   if (v > MAX_DV_PER_TURN) return MAX_DV_PER_TURN;
@@ -119,50 +140,23 @@ const draftToPlan = (id: BodyId, draft: PlanDraft): MovementPlan | null => {
   return { bodyId: id, deltaV: { x: dir.x * mag, y: dir.y * mag, z: dir.z * mag } };
 };
 
-// -------- time-graduation marks (prototype-local; sampled, never re-integrated) --------
+// -------- waypoint segmentation --------
 //
-// The marks are read straight out of `previewPath().positions` — the SAME
-// integrator resolveMovement uses. Within a beat the plan Δv is applied once and
-// every sub-step is ballistic at constant velocity, so `positions[]` is uniform in
-// sim-time: the sample at `t` seconds is an exact fractional-index lerp. No second
-// integrator here (that would break the S03 "preview must not lie" invariant).
+// The beat (dt sim-seconds) is split into per-waypoint segments driven by the
+// MARKS interval: interval 2s → four 2s segments, 1s → eight 1s segments, Off →
+// a single dt-length segment (the classic single-burn model). Each segment
+// carries its own burn, applied once at the segment start, then ballistic for
+// that segment. Trajectories are built by CHAINING the real previewPath /
+// resolveMovement at dt = segDur — never a hand-rolled integrator.
 
-/** Sample the uniformly-timed preview path at `t` sim-seconds (exact within a beat). */
-const samplePathAtTime = (path: PreviewPath, t: number): Vector3 => {
-  const subDt = PHYSICS.dt / path.subStepCount;
-  const f = t / subDt;
-  const last = path.positions.length - 1;
-  const i0 = Math.min(Math.floor(f), last);
-  const i1 = Math.min(i0 + 1, last);
-  const a = path.positions[i0]!;
-  const b = path.positions[i1]!;
-  const frac = f - i0;
-  return new Vector3(
-    a.x + (b.x - a.x) * frac,
-    a.y + (b.y - a.y) * frac,
-    a.z + (b.z - a.z) * frac,
-  );
-};
+/** Seconds between waypoints along the ghost (UI `MARKS` selector). 0 = off (single burn). */
+let markIntervalSec = 1;
 
-/**
- * One mark every `intervalSec` whole sim-seconds (`intervalSec .. floor(dt)`).
- * `intervalSec <= 0` turns the ruler off; empty too when the arc has no extent.
- */
-const computeTimeMarks = (path: PreviewPath, intervalSec: number): TimeMark[] => {
-  if (intervalSec <= 0) return []; // ruler off (UI "Off")
-  const start = path.positions[0]!;
-  const end = path.positions[path.positions.length - 1]!;
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  const dz = end.z - start.z;
-  if (dx * dx + dy * dy + dz * dz < 1) return []; // stationary — marks would stack on the hull
-  const marks: TimeMark[] = [];
-  const moveTime = PHYSICS.dt; // sim-seconds per beat = the full plotted move time
-  for (let s = intervalSec; s <= Math.floor(moveTime); s += intervalSec) {
-    marks.push({ position: samplePathAtTime(path, s), second: s });
-  }
-  return marks;
-};
+const segCountFor = (intervalSec: number): number =>
+  intervalSec > 0 ? Math.floor(PHYSICS.dt / intervalSec) : 1;
+const segDurFor = (intervalSec: number): number =>
+  intervalSec > 0 ? intervalSec : PHYSICS.dt;
+const makeCoast = (bearing: number): PlanDraft => ({ bearing, pitch: 0, magnitude: 0 });
 
 // -------- world model (prototype-local) --------
 
@@ -171,7 +165,10 @@ interface WorldShip {
   readonly fleet: FleetIdx;
   body: ShipBody;
   visual: ShipVisual;
-  draft: PlanDraft;
+  /** One burn per waypoint-segment (length = segCountFor(markIntervalSec)). */
+  segments: PlanDraft[];
+  /** Index of the waypoint the PLOT form currently edits. */
+  activeSeg: number;
 }
 
 interface WorldDebris {
@@ -179,6 +176,9 @@ interface WorldDebris {
   body: DebrisBody;
   visual: DebrisVisual;
 }
+
+/** The waypoint-segment the PLOT form is currently bound to. */
+const active = (ship: WorldShip): PlanDraft => ship.segments[ship.activeSeg]!;
 
 // -------- boot --------
 
@@ -208,10 +208,11 @@ const makeShip = (fleet: FleetIdx, position: Vec3): WorldShip => {
     radius: SHIP_RADIUS,
   };
   const visual = scenery.addShip(fleet, toVec3(position), SHIP_RADIUS);
-  // Default draft aims each ship away from the origin: cyan (leftmost) points
-  // +X, magenta (rightmost) points −X. Neither has spent Δv yet.
+  // Default aim points each ship away from the origin: cyan (leftmost) +X,
+  // magenta (rightmost) −X. Every waypoint starts as coast (no Δv spent).
   const bearing = fleet === 0 ? 0 : 180;
-  return { id, fleet, body, visual, draft: { bearing, pitch: 0, magnitude: 0 } };
+  const segments = Array.from({ length: segCountFor(markIntervalSec) }, () => makeCoast(bearing));
+  return { id, fleet, body, visual, segments, activeSeg: 0 };
 };
 
 const ships: [WorldShip, WorldShip] = [
@@ -262,6 +263,8 @@ const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>('#hud-plan 
 const stressBtn = $<HTMLButtonElement>('stress-toggle');
 const presetSelect = $<HTMLSelectElement>('preset-select');
 const marksInterval = $<HTMLSelectElement>('marks-interval');
+const segSelect = $<HTMLSelectElement>('seg-select');
+const segRow = $<HTMLElement>('seg-row');
 
 // Cap the magnitude slider at the enforced budget so the DOM cannot present an
 // input that violates the cap. Match the number-input caps for the same reason.
@@ -269,54 +272,92 @@ dvMag.max = String(MAX_DV_PER_TURN);
 dvBudget.max = String(MAX_DV_PER_TURN);
 
 let selectedFleet: FleetIdx = 0;
-/** Seconds between time-marks along the ghost (UI `MARKS` selector). 0 = off. */
-let markIntervalSec = 1;
 
 /**
- * Redraw a ship's ghost predicted path from its current draft. This is the
- * "same integrator as resolution" seam — we do NOT sample motion here, we
- * call `previewPath()`. Session brief: "⚠ do NOT write a separate integrator
- * in gate1; that silently breaks the tested 'preview vs resolution' invariant."
+ * Build a ship's full multi-waypoint trajectory by CHAINING the real integrator:
+ * for each segment, apply that waypoint's burn and advance `segDur` seconds via
+ * `previewPath`, then carry the post-burn state forward with the real `applyPlan`.
+ * Returns the ghost polyline (one vertex per waypoint), the amber marks, and the
+ * boundary-exit verdict. No sub-step integration is reimplemented here.
  */
-const refreshGhost = (ship: WorldShip) => {
-  const plan = draftToPlan(ship.id, ship.draft);
-  const path = previewPath(ship.body, plan, PHYSICS);
-  const positions = path.positions.map(toVec3);
-  ship.visual.setGhost(positions, path.endsOutsideArena);
-  // Amber time ruler along the same arc, at the UI-selected interval.
-  // `computeTimeMarks` self-guards the off + near-zero-extent (true-coast) cases.
-  ship.visual.setTimeMarks(computeTimeMarks(path, markIntervalSec));
-  if (path.endsOutsideArena && positions.length > 0) {
-    ship.visual.setExit(true, positions[positions.length - 1]!);
-  } else {
-    ship.visual.setExit(false, null);
+const planPreview = (
+  ship: WorldShip,
+): { verts: Vector3[]; marks: TimeMark[]; hostile: boolean; exitAt: Vector3 | null } => {
+  const segDur = segDurFor(markIntervalSec);
+  const segConfig: PhysicsConfig = { ...PHYSICS, dt: segDur };
+  const showMarks = markIntervalSec > 0;
+  let state: Body = ship.body;
+  const verts: Vector3[] = [toVec3(state.position)];
+  const marks: TimeMark[] = [];
+  let hostile = false;
+  let exitAt: Vector3 | null = null;
+  for (let k = 0; k < ship.segments.length; k += 1) {
+    const plan = draftToPlan(ship.id, ship.segments[k]!);
+    const path = previewPath(state, plan, segConfig);
+    const endVec = path.positions[path.positions.length - 1]!;
+    const endV = toVec3(endVec);
+    verts.push(endV);
+    if (showMarks) marks.push({ position: endV, second: (k + 1) * segDur });
+    if (path.endsOutsideArena && !hostile) {
+      hostile = true;
+      exitAt = endV;
+    }
+    // Advance to the segment end: real applyPlan for the post-burn velocity,
+    // real integrated endpoint for the position.
+    const burned = plan === null ? state : applyPlan(state, plan);
+    state = { ...burned, position: endVec };
   }
+  // Stationary guard: no ruler / no exit when the ship never actually moves
+  // (marks would stack on the hull) — mirrors the old computeTimeMarks guard.
+  const a = verts[0]!;
+  const b = verts[verts.length - 1]!;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const dz = b.z - a.z;
+  if (dx * dx + dy * dy + dz * dz < 1) {
+    marks.length = 0;
+    hostile = false;
+    exitAt = null;
+  }
+  return { verts, marks, hostile, exitAt };
+};
+
+const refreshGhost = (ship: WorldShip) => {
+  const { verts, marks, hostile, exitAt } = planPreview(ship);
+  ship.visual.setGhost(verts, hostile);
+  ship.visual.setTimeMarks(marks);
+  ship.visual.setExit(hostile && exitAt !== null, exitAt);
 };
 
 const refreshAllGhosts = () => {
   for (const s of ships) refreshGhost(s);
 };
 
+const shipHasBurn = (s: WorldShip): boolean => s.segments.some((seg) => clampMag(seg.magnitude) > 0);
+
 /**
- * Update the status line under the form to reflect the current draft and
- * whether the ghost will crash. Three channels per design §4.1: the color of
- * the ghost + the ✕ EXIT sprite in-scene + this text line.
+ * Update the status line under the form. Three channels per design §4.1: the
+ * color of the ghost + the ✕ EXIT sprite in-scene + this text line. Now also
+ * names the active waypoint so per-mark editing is legible.
  */
 const renderStatusText = () => {
   const s = ships[selectedFleet];
-  const plan = draftToPlan(s.id, s.draft);
-  const path = previewPath(s.body, plan, PHYSICS);
-  if (s.draft.magnitude <= 0) {
+  const seg = active(s);
+  const { hostile } = planPreview(s);
+  const burnAt = s.activeSeg * segDurFor(markIntervalSec); // segment start = burn instant
+  const segLabel =
+    markIntervalSec > 0
+      ? ` · waypoint ${s.activeSeg + 1}/${s.segments.length} (burn @ t=${burnAt}s)`
+      : '';
+  if (!shipHasBurn(s)) {
     planStatus.classList.remove('is-hostile');
-    planStatus.textContent = 'Coast — no thrust plotted. Δv = 0.';
-  } else if (path.endsOutsideArena) {
+    planStatus.textContent = `Coast — no thrust plotted.${segLabel}`;
+  } else if (hostile) {
     planStatus.classList.add('is-hostile');
-    planStatus.textContent =
-      `✕ Predicted exit — arc leaves the arena. Δv ${s.draft.magnitude} / brg ${s.draft.bearing}° / pitch ${s.draft.pitch}°.`;
+    planStatus.textContent = `✕ Predicted exit — arc leaves the arena. Δv ${seg.magnitude} / brg ${seg.bearing}° / pitch ${seg.pitch}°${segLabel}.`;
   } else {
     planStatus.classList.remove('is-hostile');
-    planStatus.textContent =
-      `Planned — Δv ${s.draft.magnitude} / brg ${s.draft.bearing}° / pitch ${s.draft.pitch}°.`;
+    planStatus.textContent = `Planned — Δv ${seg.magnitude} / brg ${seg.bearing}° / pitch ${seg.pitch}°${segLabel}.`;
   }
   renderCommitState();
 };
@@ -328,10 +369,7 @@ const renderCommitState = () => {
     btnCommit.classList.remove('is-hostile');
     return;
   }
-  const anyHostile = ships.some((sh) => {
-    const p = draftToPlan(sh.id, sh.draft);
-    return previewPath(sh.body, p, PHYSICS).endsOutsideArena;
-  });
+  const anyHostile = ships.some((sh) => planPreview(sh).hostile);
   btnCommit.disabled = false;
   btnCommit.classList.toggle('is-hostile', anyHostile);
   btnCommit.textContent = anyHostile ? '✕ Commit — Boundary Exit' : 'Commit — Resolve Beat';
@@ -340,15 +378,39 @@ const renderCommitState = () => {
     : 'Both plans commit simultaneously — blind. Contact spawns debris that persists into the next turn.';
 };
 
+/** Repopulate + show/hide the waypoint selector for the selected ship. */
+const syncSegUI = () => {
+  const s = ships[selectedFleet];
+  const multi = markIntervalSec > 0 && s.segments.length > 1;
+  segRow.style.display = multi ? '' : 'none';
+  if (!multi) return;
+  const segDur = segDurFor(markIntervalSec);
+  if (segSelect.options.length !== s.segments.length) {
+    segSelect.replaceChildren();
+    for (let k = 0; k < s.segments.length; k += 1) {
+      const o = document.createElement('option');
+      o.value = String(k);
+      // Label by the burn INSTANT (segment start) so the option matches where the
+      // arc bends: t=0 is the launch burn (== the classic single arc); t=k·segDur
+      // is a mid-course correction at mark k.
+      o.textContent = k === 0 ? 't = 0 s · launch' : `t = ${k * segDur} s`;
+      segSelect.appendChild(o);
+    }
+  }
+  segSelect.value = String(s.activeSeg);
+};
+
 const loadDraftIntoForm = () => {
   const s = ships[selectedFleet];
-  const mag = clampMag(s.draft.magnitude);
+  const seg = active(s);
+  const mag = clampMag(seg.magnitude);
   dvMag.value = String(mag);
   dvMagOut.textContent = String(mag);
-  dvBearing.value = String(s.draft.bearing);
-  dvPitch.value = String(s.draft.pitch);
+  dvBearing.value = String(seg.bearing);
+  dvPitch.value = String(seg.pitch);
   dvBudget.value = String(mag);
   dvRemaining.textContent = String(MAX_DV_PER_TURN - mag);
+  syncSegUI();
   renderStatusText();
 };
 
@@ -368,15 +430,46 @@ for (const t of tabs) {
   );
 }
 
+/**
+ * Re-segment a ship's plan for the current interval. Changing granularity moves
+ * where each burn fires in time (a 2s-segment burn starts at a different instant
+ * than a 1s-segment one), so burns can't map cleanly across it — reset to coast
+ * (predictable) but keep the last aim so the form doesn't jump.
+ */
+const rebuildSegments = (ship: WorldShip) => {
+  const n = segCountFor(markIntervalSec);
+  const bearing = active(ship).bearing; // old activeSeg still valid here
+  ship.segments = Array.from({ length: n }, () => makeCoast(bearing));
+  ship.activeSeg = Math.min(ship.activeSeg, n - 1);
+};
+
+/** Set a ship to a single first-waypoint burn (== the classic single-arc plan). */
+const setSingleBurn = (ship: WorldShip, bearing: number, pitch: number, magnitude: number) => {
+  const n = segCountFor(markIntervalSec);
+  ship.segments = Array.from({ length: n }, (_unused, k) =>
+    k === 0 ? { bearing, pitch, magnitude } : makeCoast(bearing),
+  );
+  ship.activeSeg = 0;
+};
+
+segSelect.addEventListener('change', () => {
+  const s = ships[selectedFleet];
+  const k = Number(segSelect.value);
+  if (Number.isInteger(k) && k >= 0 && k < s.segments.length) s.activeSeg = k;
+  loadDraftIntoForm();
+  refreshGhost(s);
+});
+
 dvMag.addEventListener('input', () => {
   const s = ships[selectedFleet];
-  s.draft.magnitude = clampMag(Number(dvMag.value));
+  const seg = active(s);
+  seg.magnitude = clampMag(Number(dvMag.value));
   // Reflect the clamped value back into the slider — if a `value` outside
   // [0, MAX] is ever pushed programmatically we do not want it to render.
-  dvMag.value = String(s.draft.magnitude);
-  dvMagOut.textContent = String(s.draft.magnitude);
-  dvBudget.value = String(s.draft.magnitude);
-  dvRemaining.textContent = String(MAX_DV_PER_TURN - s.draft.magnitude);
+  dvMag.value = String(seg.magnitude);
+  dvMagOut.textContent = String(seg.magnitude);
+  dvBudget.value = String(seg.magnitude);
+  dvRemaining.textContent = String(MAX_DV_PER_TURN - seg.magnitude);
   refreshGhost(s);
   renderStatusText();
 });
@@ -391,10 +484,11 @@ const clampPitch = (p: number): number => {
 for (const el of [dvBearing, dvPitch] as const) {
   el.addEventListener('input', () => {
     const s = ships[selectedFleet];
+    const seg = active(s);
     const bearing = Number(dvBearing.value);
     const pitch = clampPitch(Number(dvPitch.value));
-    if (Number.isFinite(bearing)) s.draft.bearing = bearing;
-    s.draft.pitch = pitch;
+    if (Number.isFinite(bearing)) seg.bearing = bearing;
+    seg.pitch = pitch;
     refreshGhost(s);
     renderStatusText();
   });
@@ -402,7 +496,7 @@ for (const el of [dvBearing, dvPitch] as const) {
 
 btnCoast.addEventListener('click', () => {
   const s = ships[selectedFleet];
-  s.draft.magnitude = 0;
+  active(s).magnitude = 0;
   loadDraftIntoForm();
   refreshGhost(s);
 });
@@ -415,16 +509,6 @@ const collectBodies = (): Body[] => {
   for (const s of ships) out.push(s.body);
   for (const d of debris) out.push(d.body);
   return out;
-};
-
-/** Only ships have plans; debris coasts. */
-const collectPlans = (): MovementPlan[] => {
-  const plans: MovementPlan[] = [];
-  for (const s of ships) {
-    const p = draftToPlan(s.id, s.draft);
-    if (p !== null) plans.push(p);
-  }
-  return plans;
 };
 
 const spawnDebrisAt = (position: Vec3, velocity: Vec3): WorldDebris => {
@@ -500,10 +584,33 @@ const onCommit = async () => {
   }
   renderCommitState();
 
-  const before = collectBodies();
-  const plans = collectPlans();
-  const step = resolveMovement(before, plans, PHYSICS);
-  const final = await animateResolution(step.keyframes);
+  // Resolve the beat as a CHAIN of per-waypoint sub-beats: each segment applies
+  // that waypoint's burn, then `resolveMovement` advances `segDur` seconds (with
+  // collisions/boundary), and its `finalBodies` seed the next segment — momentum
+  // stays continuous. At interval Off this is a single dt=8 beat, identical to
+  // the classic model.
+  const segDur = segDurFor(markIntervalSec);
+  const segCount = ships[0].segments.length;
+  const segConfig: PhysicsConfig = { ...PHYSICS, dt: segDur };
+
+  let bodies: Body[] = collectBodies();
+  const keyframes: (readonly Body[])[] = [];
+  const contacts: StepContact[] = [];
+  for (let k = 0; k < segCount; k += 1) {
+    const plans: MovementPlan[] = [];
+    for (const s of ships) {
+      const p = draftToPlan(s.id, s.segments[k]!);
+      if (p !== null) plans.push(p);
+    }
+    const step = resolveMovement(bodies, plans, segConfig);
+    // Skip the first frame of every segment after the first — it duplicates the
+    // previous segment's final frame.
+    const frames = k === 0 ? step.keyframes : step.keyframes.slice(1);
+    for (const f of frames) keyframes.push(f);
+    for (const c of step.contacts) contacts.push(c);
+    bodies = [...step.finalBodies];
+  }
+  const final = await animateResolution(keyframes);
 
   // Adopt the resolved bodies FIRST. Ships keep their `WorldShip` wrappers;
   // only `body` swaps out. Debris survivors — carry forward; boundary-culled
@@ -530,13 +637,12 @@ const onCommit = async () => {
   debris.length = 0;
   debris.push(...survivors);
 
-  // Spawn shard debris at each contact. Two shards per contact, symmetric
-  // along the contact normal — the prototype's stand-in for rules-layer
-  // wreckage (F4 owns the real spawn rules — hull damage, shard counts,
-  // debris mass). Shard velocity is a scaled contact-normal so the debris
-  // radiates outward from the collision — reads as intent; F4 will refine.
+  // Spawn shard debris at each contact (collected across all sub-beats). Two
+  // shards per contact, symmetric along the contact normal — the prototype's
+  // stand-in for rules-layer wreckage (F4 owns the real spawn rules). Shard
+  // velocity is a scaled contact-normal so the debris radiates outward.
   const shardSpeed = 40;
-  for (const c of step.contacts) {
+  for (const c of contacts) {
     const nPlus: Vec3 = {
       x: c.point.x + c.normal.x * 30,
       y: c.point.y + c.normal.y * 30,
@@ -557,9 +663,9 @@ const onCommit = async () => {
     debris.push(spawnDebrisAt(nMinus, vMinus));
   }
 
-  // Reset plans for the next turn — every ship starts as coast. Presets
-  // re-seed velocities separately; this only zeroes the draft.
-  for (const s of ships) s.draft.magnitude = 0;
+  // Reset every waypoint to coast for the next turn. Presets re-seed velocities
+  // separately; this only zeroes the burns.
+  for (const s of ships) for (const seg of s.segments) seg.magnitude = 0;
 
   turnIdx += 1;
   animating = false;
@@ -582,8 +688,7 @@ btnCommit.addEventListener('click', () => {
 // known-interesting starting positions/velocities that make each verdict
 // reproducible: a head-on collision, a graze (both ships close but do not
 // collide), and a chase set-up where the trailing ship can catch shrapnel from
-// the leader's contact-turn debris next beat (the "debris hits ship next turn"
-// clause of the CP3 exit condition).
+// the leader's contact-turn debris next beat.
 
 const clearAllDebris = () => {
   for (const d of debris) {
@@ -597,7 +702,9 @@ const teleport = (ship: WorldShip, position: Vec3, velocity: Vec3) => {
   ship.body = { ...ship.body, position, velocity };
   ship.visual.moveTo(toVec3(position));
   ship.visual.group.visible = true;
-  ship.draft = { bearing: ship.draft.bearing, pitch: ship.draft.pitch, magnitude: 0 };
+  const bearing = active(ship).bearing;
+  ship.segments = Array.from({ length: segCountFor(markIntervalSec) }, () => makeCoast(bearing));
+  ship.activeSeg = 0;
 };
 
 type PresetName = 'stationary' | 'headOn' | 'graze' | 'debrisRun';
@@ -609,28 +716,28 @@ const applyPreset = (name: PresetName) => {
   if (name === 'stationary') {
     teleport(ships[0], INITIAL_POSITIONS[0], { x: 0, y: 0, z: 0 });
     teleport(ships[1], INITIAL_POSITIONS[1], { x: 0, y: 0, z: 0 });
-    ships[0].draft = { bearing: 0, pitch: 0, magnitude: 0 };
-    ships[1].draft = { bearing: 180, pitch: 0, magnitude: 0 };
+    setSingleBurn(ships[0], 0, 0, 0);
+    setSingleBurn(ships[1], 180, 0, 0);
   } else if (name === 'headOn') {
     teleport(ships[0], vec3Of(-1200, 0, 0), { x: 0, y: 0, z: 0 });
     teleport(ships[1], vec3Of(1200, 0, 0), { x: 0, y: 0, z: 0 });
     // Both burn toward one another at Δv=100 → 100 units/s velocity → over 8s
     // beats they close ~800 units per side → head-on contact by beat 2.
-    ships[0].draft = { bearing: 0, pitch: 0, magnitude: 100 };
-    ships[1].draft = { bearing: 180, pitch: 0, magnitude: 100 };
+    setSingleBurn(ships[0], 0, 0, 100);
+    setSingleBurn(ships[1], 180, 0, 100);
   } else if (name === 'graze') {
     teleport(ships[0], vec3Of(-1200, 0, -80), { x: 0, y: 0, z: 0 });
     teleport(ships[1], vec3Of(1200, 0, 80), { x: 0, y: 0, z: 0 });
-    ships[0].draft = { bearing: 0, pitch: 0, magnitude: 120 };
-    ships[1].draft = { bearing: 180, pitch: 0, magnitude: 120 };
+    setSingleBurn(ships[0], 0, 0, 120);
+    setSingleBurn(ships[1], 180, 0, 120);
   } else {
     // Chase — cyan trails magenta at a fair speed; commit two beats with a
     // straight burn to catch up + collide, then next turn debris carries into
     // wherever magenta drifts. Fires the "debris hits ship next turn" clause.
     teleport(ships[0], vec3Of(-400, 0, 0), { x: 60, y: 0, z: 0 });
     teleport(ships[1], vec3Of(400, 0, 0), { x: 40, y: 0, z: 0 });
-    ships[0].draft = { bearing: 0, pitch: 0, magnitude: 90 };
-    ships[1].draft = { bearing: 0, pitch: 0, magnitude: 0 };
+    setSingleBurn(ships[0], 0, 0, 90);
+    setSingleBurn(ships[1], 0, 0, 0);
   }
   debrisCountEl.textContent = String(debris.length);
   bodiesCountEl.textContent = String(ships.length + debris.length);
@@ -643,10 +750,13 @@ presetSelect.addEventListener('change', () => {
   applyPreset(presetSelect.value as PresetName);
 });
 
-// Time-mark interval selector — 0 (Off) / 1 / 2 / 4 s. Re-plot every ship's ruler
-// live; marks are sampled from the existing preview path, so this never re-integrates.
+// Waypoint granularity selector (was "time-mark interval") — 0 (Off, single
+// burn) / 1 / 2 / 4 s. Changing it re-segments both ships' plans (burns are
+// preserved by index) and re-plots live.
 marksInterval.addEventListener('change', () => {
   markIntervalSec = Number(marksInterval.value);
+  for (const s of ships) rebuildSegments(s);
+  loadDraftIntoForm();
   refreshAllGhosts();
 });
 
@@ -703,8 +813,8 @@ const loop = () => {
   requestAnimationFrame(loop);
 };
 
-// Initial paint: select cyan ship, load its draft into the form, prime both
-// ships' ghost paths (both start at coast so the "ghost" is a short straight
+// Initial paint: select cyan ship, load its active waypoint into the form, prime
+// both ships' ghost paths (both start at coast so the "ghost" is a short straight
 // stub — but the pipeline is live from frame one).
 setSelectedFleet(0);
 refreshAllGhosts();

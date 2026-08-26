@@ -173,6 +173,16 @@
         outline: none;
         border-color: var(--cyan);
       }
+      #hud-plan select {
+        width: 100%;
+        height: 24px;
+        padding: 0 6px;
+        background: var(--panel-in);
+        border: 1px solid var(--line);
+        color: var(--ink-hi);
+        font: inherit;
+      }
+      #hud-plan select:focus { outline: none; border-color: var(--cyan); }
       #hud-plan input[type='range'] { width: 100%; }
       #hud-plan .readout {
         font-family: var(--mono);
@@ -308,6 +318,11 @@
           <div class="tabs" role="tablist">
             <button type="button" role="tab" data-fleet="0" class="is-active" aria-selected="true">Cyan Ship</button>
             <button type="button" role="tab" data-fleet="1" aria-selected="false">Magenta Ship</button>
+          </div>
+          <div class="row" id="seg-row">
+            <label for="seg-select">Waypoint</label>
+            <select id="seg-select" aria-label="Which time-mark (waypoint) to edit"></select>
+            <span class="readout">↓ burn</span>
           </div>
           <div class="row">
             <label for="dv-mag">Thrust Δv</label>
