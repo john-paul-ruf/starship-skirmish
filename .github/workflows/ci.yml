@@ -1,0 +1,51 @@
+name: CI
+
+# GitHub Actions CI stub — architecture §11 (Deployment).
+#
+# This is the minimal pipeline that runs today: typecheck → lint → test:unit → build.
+# Later features append the remaining jobs listed in architecture §11 steps 2–6:
+#
+#   TODO(F2 catalog): add `test:catalog-lock` — fails if any historical ID/ordinal
+#     vanished (FR-1, architecture §11 step 2).
+#   TODO(F3 io/migrate): add `test:fixtures` — fails if any migration fixture was
+#     edited (FR-2, architecture §11 step 3).
+#   TODO(foundation-gates S02–S06): add `test:determinism` — Node + Chromium +
+#     Firefox + WebKit digests must match (§7.5, §11 step 4).
+#   TODO(foundation-gates S04): add `test:harness-purity` — no render deps in the
+#     balance harness bundle (FR-33, §11 step 5).
+#   TODO(deployment): add the Pages job — actions/upload-pages-artifact +
+#     actions/deploy-pages on `main` (§11 step 6).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: typecheck / lint / test / build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint (boundaries + determinism ban-list)
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Build
+        run: npm run build
