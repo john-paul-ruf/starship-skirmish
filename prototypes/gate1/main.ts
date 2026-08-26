@@ -228,6 +228,8 @@ let nextDebrisId = 100;
 
 let turnIdx = 1;
 let animating = false;
+/** Cumulative committed sim-seconds — timestamps trail points so the last ~16 s show. */
+let simClock = 0;
 
 // -------- top-bar HUD wiring --------
 
@@ -540,6 +542,7 @@ const animateResolution = (keyframes: readonly (readonly Body[])[]): Promise<Bod
     let idx = 0;
     let acc = 0;
     let last = performance.now();
+    let lastTrailIdx = -1;
     const step = (now: number) => {
       const dt = now - last;
       last = now;
@@ -549,12 +552,21 @@ const animateResolution = (keyframes: readonly (readonly Body[])[]): Promise<Bod
         acc -= kfMs;
       }
       const frame = keyframes[idx]!;
+      // Sample the flown path once per NEW keyframe (not per rAF) for the trail.
+      const recordTrail = idx !== lastTrailIdx;
+      lastTrailIdx = idx;
+      const progress = keyframes.length > 1 ? idx / (keyframes.length - 1) : 1;
+      const trailSimTime = simClock + progress * PHYSICS.dt;
       const seen = new Set<BodyId>();
       for (const b of frame) {
         seen.add(b.id);
         if (b.kind === 'ship') {
           const ship = ships.find((s) => s.id === b.id);
-          if (ship !== undefined) ship.visual.moveTo(toVec3(b.position));
+          if (ship !== undefined) {
+            const p = toVec3(b.position);
+            ship.visual.moveTo(p);
+            if (recordTrail) ship.visual.pushTrail(p, trailSimTime);
+          }
         } else if (b.kind === 'debris') {
           const d = debris.find((x) => x.id === b.id);
           if (d !== undefined) d.visual.moveTo(toVec3(b.position));
@@ -668,6 +680,7 @@ const onCommit = async () => {
   for (const s of ships) for (const seg of s.segments) seg.magnitude = 0;
 
   turnIdx += 1;
+  simClock += PHYSICS.dt;
   animating = false;
 
   debrisCountEl.textContent = String(debris.length);
@@ -702,6 +715,7 @@ const teleport = (ship: WorldShip, position: Vec3, velocity: Vec3) => {
   ship.body = { ...ship.body, position, velocity };
   ship.visual.moveTo(toVec3(position));
   ship.visual.group.visible = true;
+  ship.visual.clearTrail();
   const bearing = active(ship).bearing;
   ship.segments = Array.from({ length: segCountFor(markIntervalSec) }, () => makeCoast(bearing));
   ship.activeSeg = 0;
@@ -713,6 +727,7 @@ const applyPreset = (name: PresetName) => {
   if (animating) return;
   clearAllDebris();
   turnIdx = 1;
+  simClock = 0;
   if (name === 'stationary') {
     teleport(ships[0], INITIAL_POSITIONS[0], { x: 0, y: 0, z: 0 });
     teleport(ships[1], INITIAL_POSITIONS[1], { x: 0, y: 0, z: 0 });

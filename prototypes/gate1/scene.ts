@@ -79,6 +79,10 @@ export interface ShipVisual {
   setExit(visible: boolean, at: Vector3 | null): void;
   /** Numbered time-graduation marks along the ghost (planning only). Empty array clears them. */
   setTimeMarks(marks: readonly TimeMark[]): void;
+  /** Append a point to the ship's flown-path trail, tagged with sim-time (drives age fade). */
+  pushTrail(position: Vector3, simTime: number): void;
+  /** Clear the flown-path trail (scenario reset). */
+  clearTrail(): void;
   dispose(): void;
 }
 
@@ -369,6 +373,29 @@ export const buildScene = (arenaRadius: number): Scenery => {
     scene.add(markGroup);
     const markSprites: Sprite[] = [];
 
+    // Fading particle trail — the ship's recent FLOWN path (last ~16 sim-seconds,
+    // ≈ 2 beats at dt=8). World-space Points; each point fades with age via its
+    // vertex color against additive blending. Fed during resolution playback.
+    const TRAIL_SECONDS = 16;
+    const TRAIL_MAX = 300;
+    const trailXyz: number[] = [];
+    const trailTime: number[] = [];
+    const trailGeom = new BufferGeometry();
+    trailGeom.setAttribute('position', new BufferAttribute(new Float32Array(TRAIL_MAX * 3), 3));
+    trailGeom.setAttribute('color', new BufferAttribute(new Float32Array(TRAIL_MAX * 3), 3));
+    trailGeom.setDrawRange(0, 0);
+    const trailMat = new PointsMaterial({
+      size: Math.max(4, hullRadius * 0.5),
+      sizeAttenuation: true,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false,
+      blending: AdditiveBlending,
+    });
+    const trailPoints = new Points(trailGeom, trailMat);
+    scene.add(trailPoints);
+
     const restretchStalk = () => {
       // Stretch the local unit stalk from the ship's y to the grid plane.
       const yToFloor = -arenaRadius - group.position.y;
@@ -436,6 +463,37 @@ export const buildScene = (arenaRadius: number): Scenery => {
           spr.visible = true;
         }
       },
+      pushTrail(p, simTime) {
+        trailXyz.push(p.x, p.y, p.z);
+        trailTime.push(simTime);
+        // Drop points older than TRAIL_SECONDS behind the newest, then cap length.
+        const cutoff = simTime - TRAIL_SECONDS;
+        let drop = 0;
+        while (drop < trailTime.length && trailTime[drop]! < cutoff) drop += 1;
+        const over = trailTime.length - drop - TRAIL_MAX;
+        if (over > 0) drop += over;
+        if (drop > 0) {
+          trailXyz.splice(0, drop * 3);
+          trailTime.splice(0, drop);
+        }
+        const n = trailTime.length;
+        const posAttr = trailGeom.getAttribute('position') as BufferAttribute;
+        const colAttr = trailGeom.getAttribute('color') as BufferAttribute;
+        const newest = trailTime[n - 1] ?? simTime;
+        for (let i = 0; i < n; i += 1) {
+          posAttr.setXYZ(i, trailXyz[i * 3]!, trailXyz[i * 3 + 1]!, trailXyz[i * 3 + 2]!);
+          const fade = Math.max(0, 1 - (newest - trailTime[i]!) / TRAIL_SECONDS); // 1 new .. 0 old
+          colAttr.setXYZ(i, color.r * fade, color.g * fade, color.b * fade);
+        }
+        posAttr.needsUpdate = true;
+        colAttr.needsUpdate = true;
+        trailGeom.setDrawRange(0, n);
+      },
+      clearTrail() {
+        trailXyz.length = 0;
+        trailTime.length = 0;
+        trailGeom.setDrawRange(0, 0);
+      },
       dispose() {
         scene.remove(group);
         scene.remove(ghost);
@@ -451,6 +509,9 @@ export const buildScene = (arenaRadius: number): Scenery => {
         // Dispose each sprite's MATERIAL only — the `map` is the shared scenery-level
         // cache (`markTex`), disposed once in the scenery `dispose()` below.
         for (const spr of markSprites) (spr.material as SpriteMaterial).dispose();
+        scene.remove(trailPoints);
+        trailGeom.dispose();
+        trailMat.dispose();
       },
     };
     return visual;
