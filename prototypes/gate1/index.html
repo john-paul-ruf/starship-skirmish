@@ -107,6 +107,105 @@
         margin-bottom: 4px;
         display: block;
       }
+      /* --- Checkpoint 2 planning HUD --- */
+      #hud-plan {
+        right: 12px;
+        bottom: 12px;
+        width: 320px;
+        max-height: calc(100vh - 96px);
+        overflow-y: auto;
+        font-size: 11px;
+      }
+      #hud-plan .h {
+        color: var(--ink-hi);
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        font-size: 10px;
+        margin: 0 0 6px;
+      }
+      #hud-plan .tabs { display: flex; gap: 4px; margin-bottom: 10px; }
+      #hud-plan .tabs button {
+        flex: 1;
+        height: 26px;
+        border: 1px solid var(--line);
+        background: var(--panel-in);
+        color: var(--ink-dim);
+        font: inherit;
+        font-size: 10px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+      #hud-plan .tabs button.is-active {
+        color: var(--cyan);
+        border-color: var(--cyan);
+        background: rgba(34, 227, 255, 0.10);
+      }
+      #hud-plan .tabs button[data-fleet='1'].is-active {
+        color: var(--magenta);
+        border-color: var(--magenta);
+        background: rgba(255, 61, 127, 0.10);
+      }
+      #hud-plan .row {
+        display: grid;
+        grid-template-columns: 96px 1fr 62px;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 6px;
+      }
+      #hud-plan label {
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        color: var(--ink-dim);
+        text-transform: uppercase;
+      }
+      #hud-plan input[type='number'] {
+        width: 100%;
+        height: 24px;
+        padding: 0 6px;
+        background: var(--panel-in);
+        border: 1px solid var(--line);
+        color: var(--ink-hi);
+        font: inherit;
+      }
+      #hud-plan input[type='number']:focus {
+        outline: none;
+        border-color: var(--cyan);
+      }
+      #hud-plan input[type='range'] { width: 100%; }
+      #hud-plan .readout {
+        font-family: var(--mono);
+        font-size: 10px;
+        color: var(--ink-hi);
+        text-align: right;
+      }
+      #hud-plan .readout.amber { color: var(--amber); }
+      #hud-plan .status {
+        font-size: 10px;
+        line-height: 1.55;
+        color: var(--ink-dim);
+        margin: 6px 0 8px;
+      }
+      #hud-plan .status.is-hostile { color: var(--red); }
+      #hud-plan .btnrow { display: flex; gap: 6px; margin-top: 10px; }
+      #hud-plan button.ghost {
+        flex: 1;
+        height: 30px;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--ink);
+        font: inherit;
+        font-size: 10px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+      #hud-plan button.ghost:hover { border-color: var(--line-hot); color: var(--ink-hi); }
+      #hud-plan .divider {
+        height: 1px;
+        background: var(--line);
+        margin: 8px 0;
+      }
     </style>
   </head>
   <body>
@@ -129,6 +228,40 @@
           <div>Ships <span id="ships-count">2</span></div>
           <div>Debris <span id="debris-count">0</span></div>
           <div>Bodies <span id="bodies-count">2</span></div>
+        </div>
+        <div id="hud-plan" class="hud" aria-label="Movement plan">
+          <p class="h">Plot Thrust Arc</p>
+          <div class="tabs" role="tablist">
+            <button type="button" role="tab" data-fleet="0" class="is-active" aria-selected="true">Cyan Ship</button>
+            <button type="button" role="tab" data-fleet="1" aria-selected="false">Magenta Ship</button>
+          </div>
+          <div class="row">
+            <label for="dv-mag">Thrust Δv</label>
+            <input id="dv-mag" type="range" min="0" max="200" step="1" value="0" aria-label="Thrust magnitude" />
+            <span class="readout amber" id="dv-mag-out">0</span>
+          </div>
+          <div class="row">
+            <label for="dv-bearing">Bearing°</label>
+            <input id="dv-bearing" type="number" min="-360" max="360" step="1" value="0" aria-label="Bearing degrees" />
+            <span class="readout">DEG</span>
+          </div>
+          <div class="row">
+            <label for="dv-pitch">Pitch°</label>
+            <input id="dv-pitch" type="number" min="-90" max="90" step="1" value="0" aria-label="Pitch degrees (elevation)" />
+            <span class="readout">DEG</span>
+          </div>
+          <div class="row">
+            <label>Δv Budget</label>
+            <input id="dv-budget" type="range" min="0" max="200" step="1" value="200" disabled aria-hidden="true" />
+            <span class="readout"><span id="dv-remaining">200</span>/200</span>
+          </div>
+          <p class="status" id="plan-status">
+            Coast — no thrust plotted. Δv = 0.
+          </p>
+          <div class="divider"></div>
+          <div class="btnrow">
+            <button class="ghost" id="btn-coast" type="button" title="Zero the thrust for the selected ship">↔ Coast</button>
+          </div>
         </div>
         <div id="hud-help" class="hud">
           <span class="h">Controls</span>

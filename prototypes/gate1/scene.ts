@@ -40,10 +40,16 @@ import {
   WireframeGeometry,
 } from 'three';
 
-// Design tokens borrowed verbatim from mocks/console.css §1.
+// Design tokens borrowed verbatim from mocks/console.css §1. The two "hi"
+// variants below are LIGHTENED sibling shades (already present in the mocks as
+// text callout colors — `#FFD7E1`/`#FF8FAB` in tactical-move.html) used to keep
+// magenta-fleet ghost paths legible against the red boundary wireframe. Ship
+// silhouettes still use the pure fleet colors — silhouette + color together
+// preserve the "never color alone" rule (design §1.1 ⛓).
 export const TOKEN = {
   cyan: new Color('#22e3ff'),
   magenta: new Color('#ff3d7f'),
+  magentaHi: new Color('#ffb0c8'),
   red: new Color('#ff2e63'),
   amber: new Color('#ffb020'),
   hazard: new Color('#ff7a1a'),
@@ -145,7 +151,9 @@ const buildBoundary = (radius: number): LineSegments => {
   const mat = new LineBasicMaterial({
     color: TOKEN.red,
     transparent: true,
-    opacity: 0.22,
+    // Kept low enough that a magenta-fleet ghost still reads across the shell —
+    // the boundary must be "always visible" (design §4.1) but never dominant.
+    opacity: 0.14,
     depthWrite: false,
     blending: AdditiveBlending,
   });
@@ -272,6 +280,9 @@ export const buildScene = (arenaRadius: number): Scenery => {
 
   const addShip = (fleet: FleetIdx, position: Vector3, hullRadius: number): ShipVisual => {
     const color = fleet === 0 ? TOKEN.cyan : TOKEN.magenta;
+    // Ghost path uses a lightened sibling for magenta so it separates cleanly
+    // from the red boundary wireframe. Cyan needs no such treatment.
+    const ghostColor = fleet === 0 ? TOKEN.cyan : TOKEN.magentaHi;
     const group = new Group();
     const mesh = buildShipMesh(fleet, hullRadius, color);
     group.add(mesh);
@@ -295,9 +306,9 @@ export const buildScene = (arenaRadius: number): Scenery => {
     let ghostGeom = new BufferGeometry();
     ghostGeom.setAttribute('position', new BufferAttribute(new Float32Array(6), 3));
     const ghostMat = new LineBasicMaterial({
-      color,
+      color: ghostColor,
       transparent: true,
-      opacity: 0.75,
+      opacity: 0.85,
     });
     const ghost = new Line(ghostGeom, ghostMat);
     ghost.visible = false;
@@ -346,8 +357,8 @@ export const buildScene = (arenaRadius: number): Scenery => {
         ghostGeom = new BufferGeometry();
         ghostGeom.setAttribute('position', new BufferAttribute(flat, 3));
         ghost.geometry = ghostGeom;
-        (ghost.material as LineBasicMaterial).color.copy(hostile ? TOKEN.red : color);
-        (ghost.material as LineBasicMaterial).opacity = hostile ? 1.0 : 0.75;
+        (ghost.material as LineBasicMaterial).color.copy(hostile ? TOKEN.red : ghostColor);
+        (ghost.material as LineBasicMaterial).opacity = hostile ? 1.0 : 0.85;
         ghost.visible = true;
       },
       setExit(visible, at) {
