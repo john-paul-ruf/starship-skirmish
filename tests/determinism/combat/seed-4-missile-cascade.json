@@ -1,0 +1,171 @@
+{
+  "name": "seed-4-missile-cascade",
+  "description": "1v1 cruiser duel with missiles + guns. Missiles fuel out after tracking, detonate on contact with ownership-blind AoE (FR-23/FR-24).",
+  "seed": {
+    "hi": 1437226410,
+    "lo": 869020620
+  },
+  "arena": {
+    "center": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "radius": 800
+  },
+  "physics": {
+    "dt": 10,
+    "subStepMin": 4,
+    "subStepMax": 64,
+    "restitution": 0.15,
+    "collisionDamageCoefficient": 0.0012,
+    "arena": {
+      "center": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "radius": 800
+    }
+  },
+  "combat": {
+    "hazards": {
+      "maxSimultaneousBodies": 300,
+      "debrisLifetimeTurns": 6,
+      "debrisPerDestruction": {
+        "fighter": 2,
+        "frigate": 4,
+        "cruiser": 7,
+        "mega-destroyer": 12
+      },
+      "debrisScatterImpulse": 120,
+      "debrisMassFractionOfHull": 0.06,
+      "debrisRadius": 12
+    },
+    "destruction": {
+      "aoeRadiusByClass": {
+        "fighter": 90,
+        "frigate": 160,
+        "cruiser": 260,
+        "mega-destroyer": 400
+      },
+      "aoeDamageByClass": {
+        "fighter": 12,
+        "frigate": 30,
+        "cruiser": 70,
+        "mega-destroyer": 140
+      }
+    },
+    "missiles": {
+      "trackingBeats": 2,
+      "spentRemainsArmed": true,
+      "reacquireOnTargetLoss": false
+    },
+    "shields": {
+      "regenTicksRegardlessOfDamage": true
+    }
+  },
+  "fleets": [
+    {
+      "fleetId": 0,
+      "ships": [
+        {
+          "buildId": "fixture-Hammerhead-Prime",
+          "name": "Hammerhead-Prime",
+          "chassisClass": "cruiser",
+          "mass": 80,
+          "radius": 30,
+          "maxHull": 180,
+          "shieldCapacity": 60,
+          "shieldRegenPerTurn": 8,
+          "deltaVPerTurn": 200,
+          "baseEvasion": 0,
+          "hullRepairPerTurn": 0,
+          "weapons": [
+            {
+              "range": 2500,
+              "damage": 35,
+              "shotsPerTurn": 1,
+              "accuracy": 0.8
+            }
+          ],
+          "missiles": [
+            {
+              "ammo": 3,
+              "damage": 30,
+              "aoeRadius": 120,
+              "boostVelocity": 300,
+              "trackingTurnRate": 0.25,
+              "bodyMass": 3,
+              "bodyRadius": 8
+            }
+          ],
+          "pointDefense": [],
+          "decoys": []
+        }
+      ]
+    },
+    {
+      "fleetId": 1,
+      "ships": [
+        {
+          "buildId": "fixture-Hammerhead-Second",
+          "name": "Hammerhead-Second",
+          "chassisClass": "cruiser",
+          "mass": 80,
+          "radius": 30,
+          "maxHull": 180,
+          "shieldCapacity": 60,
+          "shieldRegenPerTurn": 8,
+          "deltaVPerTurn": 200,
+          "baseEvasion": 0,
+          "hullRepairPerTurn": 0,
+          "weapons": [
+            {
+              "range": 2500,
+              "damage": 35,
+              "shotsPerTurn": 1,
+              "accuracy": 0.8
+            }
+          ],
+          "missiles": [
+            {
+              "ammo": 3,
+              "damage": 30,
+              "aoeRadius": 120,
+              "boostVelocity": 300,
+              "trackingTurnRate": 0.25,
+              "bodyMass": 3,
+              "bodyRadius": 8
+            }
+          ],
+          "pointDefense": [],
+          "decoys": []
+        }
+      ]
+    }
+  ],
+  "commanders": [
+    {
+      "fleetId": 0,
+      "kind": "simple-fire-missile"
+    },
+    {
+      "fleetId": 1,
+      "kind": "simple-fire-missile"
+    }
+  ],
+  "expected": {
+    "initialDigest": "ab1fb817",
+    "perTurnDigests": [
+      "68d206af",
+      "cdd522d9"
+    ],
+    "finalDigest": "cdd522d9",
+    "outcome": {
+      "kind": "victory",
+      "fleetId": 1,
+      "turns": 2
+    }
+  }
+}

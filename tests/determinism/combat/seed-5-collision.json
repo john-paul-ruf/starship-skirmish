@@ -1,0 +1,179 @@
+{
+  "name": "seed-5-collision",
+  "description": "1v1 ramming — scripted commanders push both ships toward each other on turn 1, then coast. Tests collision damage / boundary-exit resolution.",
+  "seed": {
+    "hi": 2004309333,
+    "lo": 2576954163
+  },
+  "arena": {
+    "center": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "radius": 700
+  },
+  "physics": {
+    "dt": 10,
+    "subStepMin": 4,
+    "subStepMax": 64,
+    "restitution": 0.15,
+    "collisionDamageCoefficient": 0.0012,
+    "arena": {
+      "center": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "radius": 700
+    }
+  },
+  "combat": {
+    "hazards": {
+      "maxSimultaneousBodies": 300,
+      "debrisLifetimeTurns": 6,
+      "debrisPerDestruction": {
+        "fighter": 2,
+        "frigate": 4,
+        "cruiser": 7,
+        "mega-destroyer": 12
+      },
+      "debrisScatterImpulse": 120,
+      "debrisMassFractionOfHull": 0.06,
+      "debrisRadius": 12
+    },
+    "destruction": {
+      "aoeRadiusByClass": {
+        "fighter": 90,
+        "frigate": 160,
+        "cruiser": 260,
+        "mega-destroyer": 400
+      },
+      "aoeDamageByClass": {
+        "fighter": 12,
+        "frigate": 30,
+        "cruiser": 70,
+        "mega-destroyer": 140
+      }
+    },
+    "missiles": {
+      "trackingBeats": 2,
+      "spentRemainsArmed": true,
+      "reacquireOnTargetLoss": false
+    },
+    "shields": {
+      "regenTicksRegardlessOfDamage": true
+    }
+  },
+  "fleets": [
+    {
+      "fleetId": 0,
+      "ships": [
+        {
+          "buildId": "fixture-Ram-Alpha",
+          "name": "Ram-Alpha",
+          "chassisClass": "frigate",
+          "mass": 40,
+          "radius": 18,
+          "maxHull": 80,
+          "shieldCapacity": 0,
+          "shieldRegenPerTurn": 0,
+          "deltaVPerTurn": 400,
+          "baseEvasion": 0,
+          "hullRepairPerTurn": 0,
+          "weapons": [
+            {
+              "range": 1200,
+              "damage": 20,
+              "shotsPerTurn": 1,
+              "accuracy": 0.8
+            }
+          ],
+          "missiles": [],
+          "pointDefense": [],
+          "decoys": []
+        }
+      ]
+    },
+    {
+      "fleetId": 1,
+      "ships": [
+        {
+          "buildId": "fixture-Ram-Bravo",
+          "name": "Ram-Bravo",
+          "chassisClass": "frigate",
+          "mass": 40,
+          "radius": 18,
+          "maxHull": 80,
+          "shieldCapacity": 0,
+          "shieldRegenPerTurn": 0,
+          "deltaVPerTurn": 400,
+          "baseEvasion": 0,
+          "hullRepairPerTurn": 0,
+          "weapons": [
+            {
+              "range": 1200,
+              "damage": 20,
+              "shotsPerTurn": 1,
+              "accuracy": 0.8
+            }
+          ],
+          "missiles": [],
+          "pointDefense": [],
+          "decoys": []
+        }
+      ]
+    }
+  ],
+  "commanders": [
+    {
+      "fleetId": 0,
+      "kind": "scripted",
+      "turns": [
+        {
+          "movement": [
+            {
+              "bodyId": 1,
+              "deltaV": {
+                "x": 400,
+                "y": 0,
+                "z": 0
+              }
+            }
+          ],
+          "attack": []
+        }
+      ]
+    },
+    {
+      "fleetId": 1,
+      "kind": "scripted",
+      "turns": [
+        {
+          "movement": [
+            {
+              "bodyId": 2,
+              "deltaV": {
+                "x": -400,
+                "y": 0,
+                "z": 0
+              }
+            }
+          ],
+          "attack": []
+        }
+      ]
+    }
+  ],
+  "expected": {
+    "initialDigest": "5401bea5",
+    "perTurnDigests": [
+      "9169ce7c"
+    ],
+    "finalDigest": "9169ce7c",
+    "outcome": {
+      "kind": "mutual-destruction",
+      "turns": 1
+    }
+  }
+}

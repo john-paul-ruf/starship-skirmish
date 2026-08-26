@@ -1,0 +1,184 @@
+{
+  "name": "seed-3-triangle",
+  "description": "3-way 1v1v1 free-for-all. Simple-fire commanders target lowest-BodyId enemy → fleets 1+2 gang on fleet 0 first.",
+  "seed": {
+    "hi": 858993459,
+    "lo": 1145324612
+  },
+  "arena": {
+    "center": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "radius": 600
+  },
+  "physics": {
+    "dt": 10,
+    "subStepMin": 4,
+    "subStepMax": 64,
+    "restitution": 0.15,
+    "collisionDamageCoefficient": 0.0012,
+    "arena": {
+      "center": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "radius": 600
+    }
+  },
+  "combat": {
+    "hazards": {
+      "maxSimultaneousBodies": 300,
+      "debrisLifetimeTurns": 6,
+      "debrisPerDestruction": {
+        "fighter": 2,
+        "frigate": 4,
+        "cruiser": 7,
+        "mega-destroyer": 12
+      },
+      "debrisScatterImpulse": 120,
+      "debrisMassFractionOfHull": 0.06,
+      "debrisRadius": 12
+    },
+    "destruction": {
+      "aoeRadiusByClass": {
+        "fighter": 90,
+        "frigate": 160,
+        "cruiser": 260,
+        "mega-destroyer": 400
+      },
+      "aoeDamageByClass": {
+        "fighter": 12,
+        "frigate": 30,
+        "cruiser": 70,
+        "mega-destroyer": 140
+      }
+    },
+    "missiles": {
+      "trackingBeats": 2,
+      "spentRemainsArmed": true,
+      "reacquireOnTargetLoss": false
+    },
+    "shields": {
+      "regenTicksRegardlessOfDamage": true
+    }
+  },
+  "fleets": [
+    {
+      "fleetId": 0,
+      "ships": [
+        {
+          "buildId": "fixture-Vanguard",
+          "name": "Vanguard",
+          "chassisClass": "fighter",
+          "mass": 30,
+          "radius": 15,
+          "maxHull": 40,
+          "shieldCapacity": 0,
+          "shieldRegenPerTurn": 0,
+          "deltaVPerTurn": 200,
+          "baseEvasion": 0,
+          "hullRepairPerTurn": 0,
+          "weapons": [
+            {
+              "range": 2000,
+              "damage": 20,
+              "shotsPerTurn": 1,
+              "accuracy": 0.9
+            }
+          ],
+          "missiles": [],
+          "pointDefense": [],
+          "decoys": []
+        }
+      ]
+    },
+    {
+      "fleetId": 1,
+      "ships": [
+        {
+          "buildId": "fixture-Sentinel",
+          "name": "Sentinel",
+          "chassisClass": "fighter",
+          "mass": 30,
+          "radius": 15,
+          "maxHull": 40,
+          "shieldCapacity": 0,
+          "shieldRegenPerTurn": 0,
+          "deltaVPerTurn": 200,
+          "baseEvasion": 0,
+          "hullRepairPerTurn": 0,
+          "weapons": [
+            {
+              "range": 2000,
+              "damage": 20,
+              "shotsPerTurn": 1,
+              "accuracy": 0.9
+            }
+          ],
+          "missiles": [],
+          "pointDefense": [],
+          "decoys": []
+        }
+      ]
+    },
+    {
+      "fleetId": 2,
+      "ships": [
+        {
+          "buildId": "fixture-Marauder",
+          "name": "Marauder",
+          "chassisClass": "fighter",
+          "mass": 30,
+          "radius": 15,
+          "maxHull": 40,
+          "shieldCapacity": 0,
+          "shieldRegenPerTurn": 0,
+          "deltaVPerTurn": 200,
+          "baseEvasion": 0,
+          "hullRepairPerTurn": 0,
+          "weapons": [
+            {
+              "range": 2000,
+              "damage": 20,
+              "shotsPerTurn": 1,
+              "accuracy": 0.9
+            }
+          ],
+          "missiles": [],
+          "pointDefense": [],
+          "decoys": []
+        }
+      ]
+    }
+  ],
+  "commanders": [
+    {
+      "fleetId": 0,
+      "kind": "simple-fire"
+    },
+    {
+      "fleetId": 1,
+      "kind": "simple-fire"
+    },
+    {
+      "fleetId": 2,
+      "kind": "simple-fire"
+    }
+  ],
+  "expected": {
+    "initialDigest": "410e4b3e",
+    "perTurnDigests": [
+      "80aab1fa",
+      "eee7593d"
+    ],
+    "finalDigest": "eee7593d",
+    "outcome": {
+      "kind": "victory",
+      "fleetId": 2,
+      "turns": 2
+    }
+  }
+}
