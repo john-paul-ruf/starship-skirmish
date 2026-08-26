@@ -10,8 +10,6 @@ name: CI
 #
 # Later features append the remaining jobs listed in architecture §11 steps 2–6:
 #
-#   TODO(F2 catalog): add `test:catalog-lock` — fails if any historical ID/ordinal
-#     vanished (FR-1, architecture §11 step 2).
 #   TODO(F3 io/migrate): add `test:fixtures` — fails if any migration fixture was
 #     edited (FR-2, architecture §11 step 3).
 #   TODO(deployment): add the Pages job — actions/upload-pages-artifact +
@@ -47,6 +45,9 @@ jobs:
 
       - name: Unit tests
         run: npm run test:unit
+
+      - name: Catalog lock integrity (FR-1)
+        run: npm run test:catalog-lock
 
       - name: Determinism tests (golden + shuffle + tunneling + manifest hash-lock)
         run: npm run test:determinism
