@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="description" content="Starship Skirmish — deterministic 3D turn-based tactical fleet combat. Offline, no backend." />
+    <!--
+      Content Security Policy — architecture §10.
+      No unsafe-eval. Scripts strictly 'self'. connect-src 'self' makes exfiltration
+      structurally impossible even if a dependency is compromised. 'unsafe-inline' for
+      styles is required by three.js and inline design-token styling; scripts are strict.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; worker-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    />
+    <title>Starship Skirmish</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
