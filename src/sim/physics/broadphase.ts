@@ -1,11 +1,21 @@
 // broadphase — uniform spatial hash yielding candidate collision pairs.
 //
-// Cell size = `2 · maxRadius` so a body only overlaps at most two cells per axis;
-// therefore a pair whose spheres could intersect always sits within each other's
-// 27-cell (3³) neighborhood. Iterating bodies in id order and only emitting pairs
-// (a, b) with `a.id < b.id` yields a canonical, id-sorted pair list — the ordering
-// that the narrowphase and momentum stages inherit for determinism (architecture
-// §7.3 rule 1, §7.4).
+// A pair of bodies COULD touch this sub-step iff their centers get within `rA + rB`
+// AND their swept-motion permits it. The worst-case center separation for possible
+// contact is therefore `rA + rB + |dA| + |dB|` ≤ `2·(maxRadius + maxDisplacement)`.
+// Choosing `cellSize = 2·(maxRadius + maxDisplacement)` guarantees that any pair with
+// contact potential sits in each other's 3³ neighborhood — the ±1 cell scan below.
+//
+// This REFINES architecture §7.4's suggested `cellSize = 2·maxRadius`: at clamped
+// `subStepMax` and high closing speeds, per-sub-step displacement can exceed a body's
+// radius, and the naïve cell size would silently miss the pair even though swept CCD
+// downstream would have caught it. Cell size is now supplied by the caller
+// (`resolveMovement`), which has both `maxRadius` and `maxDisplacementPerSubStep` in
+// scope.
+//
+// Iterating bodies in id order and only emitting pairs (a, b) with `a.id < b.id`
+// yields a canonical, id-sorted pair list — the ordering that the narrowphase and
+// momentum stages inherit for determinism (architecture §7.3 rule 1, §7.4).
 //
 // The uniform hash is chosen over a KD-tree/BVH because at 60 ships + 300 hazards
 // (the design budget) it is O(n) with tiny constants, has no rebuild cost between
@@ -32,18 +42,14 @@ const cellCoord = (v: number, cellSize: number): number => Math.floor(v / cellSi
  *
  * `bodies` need not be pre-sorted — broadphase does its own id-order iteration and
  * inserts into buckets in id order, so bucket contents are also id-sorted.
+ *
+ * `cellSize` must be at least `2·(maxRadius + maxDisplacementPerSubStep)` for the
+ * ±1 neighborhood to be sound (see the module comment). A non-positive value falls
+ * back to `1` so a degenerate all-at-rest scene still processes cleanly.
  */
-export const broadphase = (bodies: readonly Body[]): readonly Pair[] => {
+export const broadphase = (bodies: readonly Body[], cellSize: number): readonly Pair[] => {
   if (bodies.length < 2) return [];
-
-  // Determine cell size from the LARGEST body. If every body has zero radius (a
-  // degenerate preview scene, say), fall back to 1 to avoid a divide-by-zero.
-  let maxRadius = 0;
-  for (let i = 0; i < bodies.length; i += 1) {
-    const r = bodies[i]!.radius;
-    if (r > maxRadius) maxRadius = r;
-  }
-  const cellSize = maxRadius > 0 ? maxRadius * 2 : 1;
+  const size = cellSize > 0 ? cellSize : 1;
 
   // Sort bodies by id once; every downstream iteration inherits this order.
   const sorted = bodies.slice().sort((a, b) => a.id - b.id);
@@ -56,9 +62,9 @@ export const broadphase = (bodies: readonly Body[]): readonly Pair[] => {
 
   for (let i = 0; i < sorted.length; i += 1) {
     const body = sorted[i]!;
-    const cx = cellCoord(body.position.x, cellSize);
-    const cy = cellCoord(body.position.y, cellSize);
-    const cz = cellCoord(body.position.z, cellSize);
+    const cx = cellCoord(body.position.x, size);
+    const cy = cellCoord(body.position.y, size);
+    const cz = cellCoord(body.position.z, size);
     cellByBody.set(body.id, { cx, cy, cz });
     const key = cellKey(cx, cy, cz);
     const bucket = buckets.get(key);

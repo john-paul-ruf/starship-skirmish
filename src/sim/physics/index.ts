@@ -8,3 +8,5 @@
 export type { PhysicsConfig } from './config.js';
 export { subStepCount, integrateBody, applyPlan } from './integrate.js';
 export { broadphase, type Pair } from './broadphase.js';
+export { sweepSphereSphere, type SweepHit } from './sweep.js';
+export { resolveMovement, type StepContact, type StepResult } from './resolveMovement.js';
