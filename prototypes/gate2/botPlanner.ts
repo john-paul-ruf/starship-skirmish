@@ -5,14 +5,20 @@
 // through unforced error (FR-29)? The exit criterion is measured by `harnessRun.ts`:
 // zero unforced boundary deaths across 100 seeded matches.
 //
-// Checkpoint 1 shape (this file):
+// Shape:
 //   1. Pick a threat target (nearest enemy ship).
 //   2. Compute a baseline arc that prefers a standoff range — close if far, ease off
 //      if too close.
 //   3. Clamp the arc to a per-ship delta-V budget.
-//   No boundary logic yet — CP2 adds a `previewPath`-based hard constraint. This
-//   split matches the session's checkpoint boundaries; keeping CP1 pure keeps CP2's
-//   diff about the constraint alone.
+//   4. Evaluate a small deterministic candidate set with the REAL integrator
+//      (`physics.previewPath`, architecture §9) and reject any candidate whose
+//      predicted path exits the arena. Pick the first (highest-preference) safe
+//      candidate. If none is safe — a genuinely forced situation, e.g. velocity
+//      already committed beyond what one budget's brake can undo — pick the
+//      candidate that stays inside the longest (best-effort). The FR-29 clause
+//      "boundary avoidance is a hard constraint, overridable only by a deliberate
+//      ram" is enforced by this evaluator: as long as SOME candidate is safe, a
+//      safe one is chosen; the "deliberate ram" case is out of scope here.
 //
 // Notes:
 //   - This is deliberately not the final `HeuristicCommander` (M12). This is a
@@ -30,16 +36,22 @@
 import type { Vec3 } from '../../src/sim/mathx/index.js';
 import {
   ZERO,
+  add,
   clampLength,
   distance,
   distanceSq,
+  lengthSq,
   neg,
   normalize,
   scale,
   sub,
 } from '../../src/sim/mathx/index.js';
 import type { Body, BodyId, MovementPlan } from '../../src/sim/types.js';
-import type { PhysicsConfig } from '../../src/sim/physics/index.js';
+import {
+  isOutsideArena,
+  previewPath,
+  type PhysicsConfig,
+} from '../../src/sim/physics/index.js';
 import type { BlindView } from './blindView.js';
 
 /** Per-planner tunables. Kept as a struct so `harnessRun` can vary them if a seed
@@ -114,21 +126,133 @@ const baselineArc = (self: Body, target: Body | null, config: PlannerConfig): Ve
   );
 };
 
+// ---------------------------------------------------------------------------
+// Candidate set — the search the FR-29 boundary constraint runs over. Ordered by
+// preference: baseline first, then progressively-safer fallbacks. Kept small and
+// deterministic; growing this set is how F5 will build its difficulty tiers.
+// ---------------------------------------------------------------------------
+
+const buildCandidates = (
+  self: Body,
+  baseline: Vec3,
+  view: BlindView,
+  config: PlannerConfig,
+): readonly Vec3[] => {
+  const budget = config.deltaVBudget;
+  const centerDelta = sub(view.arena.center, self.position);
+  const centerDir = lengthSq(centerDelta) > 0 ? normalize(centerDelta) : ZERO;
+  const brakeDir = lengthSq(self.velocity) > 0 ? normalize(neg(self.velocity)) : ZERO;
+  const toCenter = clampLength(scale(centerDir, budget), budget);
+  const brake = clampLength(scale(brakeDir, budget), budget);
+  const brakeAndCenter = clampLength(
+    add(scale(brakeDir, budget * 0.5), scale(centerDir, budget * 0.5)),
+    budget,
+  );
+  // Preference order (rank 0 wins ties among safe candidates):
+  //   0 baseline — the plan we WANT to fly.
+  //   1 baseline · 0.5 — same shape, gentler.
+  //   2 baseline · 0.25 — barely commit.
+  //   3 zero — coast; let momentum ride out.
+  //   4 brake + center — kill inertia and turn inward.
+  //   5 brake — kill inertia.
+  //   6 toward center at full budget — hardest push back into the arena.
+  return [baseline, scale(baseline, 0.5), scale(baseline, 0.25), ZERO, brakeAndCenter, brake, toCenter];
+};
+
+// ---------------------------------------------------------------------------
+// Preview evaluation — the FR-29 hard constraint. Preview uses the REAL integrator
+// (architecture §9 — preview and resolve share the code path, tested in S03), so
+// an arc that stays inside preview stays inside resolveMovement modulo collisions
+// (a collision-induced boundary crossing is FR-22 legal — the "shoved out"
+// classification, not "flew itself out").
+// ---------------------------------------------------------------------------
+
+const countInsidePositions = (positions: readonly Vec3[], arena: BlindView['arena']): number => {
+  let count = 0;
+  for (let i = 0; i < positions.length; i += 1) {
+    if (!isOutsideArena(positions[i]!, arena)) count += 1;
+  }
+  return count;
+};
+
+interface Evaluated {
+  readonly deltaV: Vec3;
+  readonly rank: number;
+  readonly insideCount: number;
+  readonly totalCount: number;
+  readonly isSafe: boolean;
+}
+
+const evaluateCandidate = (
+  self: Body,
+  deltaV: Vec3,
+  view: BlindView,
+  physics: PhysicsConfig,
+  rank: number,
+): Evaluated => {
+  const plan: MovementPlan = { bodyId: self.id, deltaV };
+  const preview = previewPath(self, plan, physics);
+  const inside = countInsidePositions(preview.positions, view.arena);
+  return {
+    deltaV,
+    rank,
+    insideCount: inside,
+    totalCount: preview.positions.length,
+    isSafe: inside === preview.positions.length,
+  };
+};
+
 /**
- * Plan one ship. Returns the baseline arc clamped to budget — no boundary logic yet
- * (that's CP2). `physics` is unused at CP1 but part of the signature so CP2 can wire
- * `previewPath` in without touching call sites.
+ * Plan one ship: baseline arc, then the FR-29 boundary constraint. Evaluate the
+ * candidate set with `previewPath`; pick the highest-preference candidate whose
+ * predicted path stays fully inside the arena. If no candidate is safe (forced
+ * situation), pick the one with the most in-bounds sub-steps.
  */
 export const planShip = (
   self: Body,
   view: BlindView,
   ownedIds: ReadonlySet<BodyId>,
-  _physics: PhysicsConfig,
+  physics: PhysicsConfig,
   config: PlannerConfig,
 ): MovementPlan => {
   const target = pickNearestThreat(self, view, ownedIds);
   const baseline = baselineArc(self, target, config);
-  return { bodyId: self.id, deltaV: clampLength(baseline, config.deltaVBudget) };
+  const candidates = buildCandidates(self, baseline, view, config);
+
+  let bestSafe: Evaluated | null = null;
+  let bestFallback: Evaluated | null = null;
+  for (let i = 0; i < candidates.length; i += 1) {
+    const evaluated = evaluateCandidate(self, candidates[i]!, view, physics, i);
+    if (evaluated.isSafe) {
+      if (bestSafe === null || evaluated.rank < bestSafe.rank) bestSafe = evaluated;
+    } else if (
+      bestFallback === null ||
+      evaluated.insideCount > bestFallback.insideCount ||
+      (evaluated.insideCount === bestFallback.insideCount && evaluated.rank < bestFallback.rank)
+    ) {
+      // Forced situation: best-effort candidate = the one that stays inside longest.
+      // Ties broken by preference. The ship is likely going out no matter what.
+      bestFallback = evaluated;
+    }
+  }
+  const chosen = bestSafe ?? bestFallback!;
+  return { bodyId: self.id, deltaV: chosen.deltaV };
+};
+
+// ---------------------------------------------------------------------------
+// Diagnostic helper — used by harnessRun to classify exits as forced/unforced and
+// to assert on adversarial seeds. A ship's committed plan is "unsafe" iff its
+// previewPath already leaves the arena — the FR-29 gate failure signal.
+// ---------------------------------------------------------------------------
+
+export const planPreviewExits = (
+  self: Body,
+  plan: MovementPlan,
+  view: BlindView,
+  physics: PhysicsConfig,
+): boolean => {
+  const preview = previewPath(self, plan, physics);
+  return countInsidePositions(preview.positions, view.arena) !== preview.positions.length;
 };
 
 /**
