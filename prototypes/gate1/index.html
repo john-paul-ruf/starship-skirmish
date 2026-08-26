@@ -283,6 +283,13 @@
             <option value="graze">Graze pass (offset)</option>
             <option value="debrisRun">Chase — set up next-turn debris hit</option>
           </select>
+          <label for="marks-interval" style="color:var(--ink-dim);font-size:10px;letter-spacing:.14em">MARKS</label>
+          <select id="marks-interval" class="tb" aria-label="Time-mark interval along the plotted arc">
+            <option value="0">Off</option>
+            <option value="1" selected>Every 1 s</option>
+            <option value="2">Every 2 s</option>
+            <option value="4">Every 4 s</option>
+          </select>
           <button id="stress-toggle" class="tb" type="button" aria-pressed="false" title="§7.4 marker-density probe">
             + 60 hazards
           </button>
@@ -339,7 +346,7 @@
           <div><span class="k">[DRAG]</span> orbit &nbsp; <span class="k">[MMB / ⌥+DRAG]</span> pan &nbsp; <span class="k">[WHEEL]</span> zoom</div>
           <div><span class="k">[R]</span> reset camera to fleet view</div>
           <div><span class="k">[F]</span> focus selected ship</div>
-          <div><span class="k" style="color: var(--amber)">◦ 1–8</span> seconds into the move · full arc = 8 s</div>
+          <div><span class="k" style="color: var(--amber)">◦ mark</span> = seconds into the move · full arc = 8 s</div>
         </div>
       </div>
     </div>

@@ -144,8 +144,12 @@ const samplePathAtTime = (path: PreviewPath, t: number): Vector3 => {
   );
 };
 
-/** One mark per whole sim-second, 1..floor(dt). Empty when the arc has no extent (a true coast). */
-const computeTimeMarks = (path: PreviewPath): TimeMark[] => {
+/**
+ * One mark every `intervalSec` whole sim-seconds (`intervalSec .. floor(dt)`).
+ * `intervalSec <= 0` turns the ruler off; empty too when the arc has no extent.
+ */
+const computeTimeMarks = (path: PreviewPath, intervalSec: number): TimeMark[] => {
+  if (intervalSec <= 0) return []; // ruler off (UI "Off")
   const start = path.positions[0]!;
   const end = path.positions[path.positions.length - 1]!;
   const dx = end.x - start.x;
@@ -154,7 +158,7 @@ const computeTimeMarks = (path: PreviewPath): TimeMark[] => {
   if (dx * dx + dy * dy + dz * dz < 1) return []; // stationary — marks would stack on the hull
   const marks: TimeMark[] = [];
   const moveTime = PHYSICS.dt; // sim-seconds per beat = the full plotted move time
-  for (let s = 1; s <= Math.floor(moveTime); s += 1) {
+  for (let s = intervalSec; s <= Math.floor(moveTime); s += intervalSec) {
     marks.push({ position: samplePathAtTime(path, s), second: s });
   }
   return marks;
@@ -257,6 +261,7 @@ const commitHint = $<HTMLElement>('commit-hint');
 const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>('#hud-plan .tabs button'));
 const stressBtn = $<HTMLButtonElement>('stress-toggle');
 const presetSelect = $<HTMLSelectElement>('preset-select');
+const marksInterval = $<HTMLSelectElement>('marks-interval');
 
 // Cap the magnitude slider at the enforced budget so the DOM cannot present an
 // input that violates the cap. Match the number-input caps for the same reason.
@@ -264,6 +269,8 @@ dvMag.max = String(MAX_DV_PER_TURN);
 dvBudget.max = String(MAX_DV_PER_TURN);
 
 let selectedFleet: FleetIdx = 0;
+/** Seconds between time-marks along the ghost (UI `MARKS` selector). 0 = off. */
+let markIntervalSec = 1;
 
 /**
  * Redraw a ship's ghost predicted path from its current draft. This is the
@@ -276,9 +283,9 @@ const refreshGhost = (ship: WorldShip) => {
   const path = previewPath(ship.body, plan, PHYSICS);
   const positions = path.positions.map(toVec3);
   ship.visual.setGhost(positions, path.endsOutsideArena);
-  // Amber per-second ruler along the same arc. `computeTimeMarks` self-guards the
-  // near-zero-extent (true-coast) case, so no extra conditional is needed here.
-  ship.visual.setTimeMarks(computeTimeMarks(path));
+  // Amber time ruler along the same arc, at the UI-selected interval.
+  // `computeTimeMarks` self-guards the off + near-zero-extent (true-coast) cases.
+  ship.visual.setTimeMarks(computeTimeMarks(path, markIntervalSec));
   if (path.endsOutsideArena && positions.length > 0) {
     ship.visual.setExit(true, positions[positions.length - 1]!);
   } else {
@@ -634,6 +641,13 @@ const applyPreset = (name: PresetName) => {
 
 presetSelect.addEventListener('change', () => {
   applyPreset(presetSelect.value as PresetName);
+});
+
+// Time-mark interval selector — 0 (Off) / 1 / 2 / 4 s. Re-plot every ship's ruler
+// live; marks are sampled from the existing preview path, so this never re-integrates.
+marksInterval.addEventListener('change', () => {
+  markIntervalSec = Number(marksInterval.value);
+  refreshAllGhosts();
 });
 
 // -------- marker-density stress toggle (§7.4 probe) --------
