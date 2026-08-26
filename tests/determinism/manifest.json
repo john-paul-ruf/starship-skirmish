@@ -1,0 +1,14 @@
+{
+  "$comment": "Hash-lock for tests/determinism/fixtures/*.json (Custom Rule 3, FR-2, architecture §7.5). Append-only: adding a new fixture appends a new entry; editing a historical fixture makes manifest.test.ts fail. See tests/determinism/fixtures/README-like notes in cli.ts (--record semantics) for the intended workflow.",
+  "algorithm": "SHA-256",
+  "fixtures": {
+    "seed-1.json": "a799d793030b6ea890fc3091dca332d3f6492db30fc62bd801921196b5fa37c7",
+    "seed-2.json": "e53e3f787544b6c961211486d07e89ff7d66c6bf4f734c4a7b37470a144dcd83",
+    "seed-3.json": "631ada0d6396f3f02f104baa2c7e871410a5cfc0dfb2680fd68729869a36849f",
+    "seed-4.json": "e833c4a6e9454e7de633ed706f08589ed39f8ee8d89383fd5d0d632b37bc37c6",
+    "seed-5.json": "d1c53df97a3a06b4f9ba05083f89809507a423c242aa4cc8c59b45b28e7f77de",
+    "seed-6.json": "db1df2d82da1db5d9a60461753eb9caa8b1eaf2178e3f881ada4d08ab91a4892",
+    "seed-7.json": "6083d518838fcc9d0b0bece910a469d14d76a79aa11768fc806378b3b933bfb0",
+    "seed-8.json": "e772cc7d7d9d3a6eccdcf759ca35eddf302525645bb907377b6ebc3eb320baf2"
+  }
+}
