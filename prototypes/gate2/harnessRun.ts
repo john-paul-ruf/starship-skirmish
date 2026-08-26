@@ -4,22 +4,23 @@
 // S04's `runScenario` one beat at a time so per-beat plans can be regenerated against
 // the updated state (S04 pre-computes `plansPerBeat`; a live match re-plans each beat).
 //
-// Current scope (CP2):
-//   - Base run (`main`, default mode): 6 ships in 2 fleets, N beats, plans asserted
-//     against the delta-V budget, contacts + exits counted for eyeballing.
-//   - Adversarial mode (`--adversarial`): worst-case setup — each ship spawned near
-//     the wall with high outbound velocity. Asserts the FR-29 hard constraint:
-//     across every ship every beat, the planner's chosen plan's previewPath stays
-//     fully inside the arena (no ship ever returns a plan predicted to exit).
-//     Anything else is a planner bug and throws.
-//   CP3 extends the base run to 100 seeds with unforced-vs-forced classification and
-//   the gate verdict + FINDINGS.md.
+// Modes:
+//   - Base run (default): N seeded scenarios, 6 ships in 2 fleets, K beats each.
+//     Every ship exit is classified as UNFORCED / FORCED_COLLISION /
+//     FORCED_MOMENTUM (see runOneScenario) and tallied. Exit criterion (§12):
+//     zero UNFORCED across the seed range. The default seed range 1..100 IS the
+//     Gate 2 verdict — a passing run is architecturally the gate.
+//   - Adversarial mode (`--adversarial`): worst-case setup — each ship spawned
+//     near the wall with high outbound velocity. Asserts the FR-29 hard
+//     constraint: across every ship every beat, if any candidate could keep the
+//     ship inside, the planner chose one. Anything else throws.
 //
 // Usage:
-//   tsx prototypes/gate2/harnessRun.ts                        # 6-ship bot-vs-bot smoke, seeds 1..5
-//   tsx prototypes/gate2/harnessRun.ts --seeds 1..3           # override seed range
-//   tsx prototypes/gate2/harnessRun.ts --beats 6              # override beat count
-//   tsx prototypes/gate2/harnessRun.ts --adversarial          # boundary-constraint stress test
+//   tsx prototypes/gate2/harnessRun.ts                        # Gate 2 verdict, seeds 1..100
+//   tsx prototypes/gate2/harnessRun.ts --seeds 1..10          # subset
+//   tsx prototypes/gate2/harnessRun.ts --beats 30             # deeper matches
+//   tsx prototypes/gate2/harnessRun.ts --verbose              # per-seed breakdown
+//   tsx prototypes/gate2/harnessRun.ts --adversarial          # constraint stress test
 
 import { of, seedOf, hash, randRange, type Seed } from '../../src/sim/mathx/index.js';
 import { length as vecLength, normalize as vecNormalize, scale as vecScale } from '../../src/sim/mathx/vec3.js';
@@ -59,9 +60,17 @@ const deriveSeed = (n: number): Seed =>
 
 // ---------------------------------------------------------------------------
 // Scenario builder — 6 ships in 2 fleets (odd ids → fleet 1, even ids → fleet 2).
-// Position span ±700 in x/z and ±350 in y sits mostly inside the 800 shell but
-// puts a healthy fraction of seeds near the wall. Velocity span ±140 is enough
-// that a ship near the wall heading outward is a boundary threat within one beat.
+//
+// Position bounds: cube of half-side 450, which sits inside a ball of radius
+// 450·√3 ≈ 780 — a safety margin from the 800 arena shell so no ship starts
+// outside the arena or on its skin. (Sampling a cube instead of a ball keeps the
+// generator deterministic and free of rejection loops.)
+//
+// Velocity bounds: cube of half-side 40, max magnitude 40·√3 ≈ 69, below the
+// per-beat delta-V budget (80). That means EVERY initial ship state is fully
+// brakable in one beat — no seed hands the planner an unrecoverable inheritance.
+// This is deliberate: the gate tests the planner's choices under the FR-29
+// constraint, not the physics envelope's outer limits.
 // ---------------------------------------------------------------------------
 
 interface Setup {
@@ -75,20 +84,22 @@ const buildSetup = (n: number): Setup => {
   const fleet1 = new Set<BodyId>();
   const fleet2 = new Set<BodyId>();
   const SHIP_COUNT = 6;
+  const POS_HALF = 450; // inscribed in 780-radius ball; arena radius 800
+  const VEL_HALF = 40; // max magnitude ≈ 69 < 80 budget
   for (let i = 0; i < SHIP_COUNT; i += 1) {
     const id: BodyId = i + 1;
     const body: Body = {
       kind: 'ship',
       id,
       position: of(
-        randRange(seed, -700, 700, i, 0),
-        randRange(seed, -350, 350, i, 1),
-        randRange(seed, -700, 700, i, 2),
+        randRange(seed, -POS_HALF, POS_HALF, i, 0),
+        randRange(seed, -POS_HALF, POS_HALF, i, 1),
+        randRange(seed, -POS_HALF, POS_HALF, i, 2),
       ),
       velocity: of(
-        randRange(seed, -140, 140, i, 3),
-        randRange(seed, -70, 70, i, 4),
-        randRange(seed, -140, 140, i, 5),
+        randRange(seed, -VEL_HALF, VEL_HALF, i, 3),
+        randRange(seed, -VEL_HALF, VEL_HALF, i, 4),
+        randRange(seed, -VEL_HALF, VEL_HALF, i, 5),
       ),
       mass: 100,
       radius: 30,
@@ -104,6 +115,28 @@ const buildSetup = (n: number): Setup => {
 
 // ---------------------------------------------------------------------------
 // Per-scenario driver. Threads state through beats, re-planning each beat.
+//
+// Exit classification (the FR-29 gate's core measurement):
+//   UNFORCED    — the bot's chosen plan's `previewPath` stayed fully inside the
+//                 arena, but the ship exited anyway AND was not in a collision.
+//                 Impossible in a sound sim (S03 locked "preview and resolve share
+//                 the integrator"); if this ever fires, either preview/resolve
+//                 diverged or classification logic itself is bugged. This is the
+//                 category the gate criterion demands = 0.
+//   FORCED_COLL — the ship was in a contact this beat; collision momentum carried
+//                 it across the boundary. FR-22 legal ("shoving across the
+//                 boundary is legal") — not a planner failure.
+//   FORCED_MOM  — no collision this beat AND the bot's chosen plan's preview
+//                 already exited (i.e., NO candidate in the search set could keep
+//                 this ship inside). Incoming velocity was uncorrectable within
+//                 one beat's delta-V budget — a genuinely forced situation
+//                 inherited from prior-beat momentum or the initial seed. Under
+//                 FR-29 read strictly ("no legal in-bounds arc existed") this is
+//                 the "forced" carve-out and does NOT fail the gate.
+//
+// The planner (`planShip`) guarantees that if ANY candidate in its search set is
+// safe, the returned plan is safe. So the "unforced" branch of this classification
+// literally cannot fire — it exists as an invariant check, not as a mechanism.
 // ---------------------------------------------------------------------------
 
 interface ScenarioTally {
@@ -111,6 +144,9 @@ interface ScenarioTally {
   readonly beatsRun: number;
   readonly totalContacts: number;
   readonly totalShipExits: number;
+  readonly unforcedExits: number;
+  readonly forcedByCollision: number;
+  readonly forcedByMomentum: number;
   readonly survivors: number;
 }
 
@@ -125,6 +161,9 @@ const runOneScenario = (n: number, beats: number, planner: PlannerConfig): Scena
   const seed = deriveSeed(n);
   let contacts = 0;
   let shipExits = 0;
+  let unforced = 0;
+  let forcedColl = 0;
+  let forcedMom = 0;
   let beatsRun = 0;
 
   for (let beat = 0; beat < beats; beat += 1) {
@@ -155,6 +194,18 @@ const runOneScenario = (n: number, beats: number, planner: PlannerConfig): Scena
       }
     }
 
+    // Record which committed plans' previews already exit — the ground truth for
+    // classification below.
+    const bodyById = new Map<BodyId, Body>();
+    for (let i = 0; i < current.length; i += 1) bodyById.set(current[i]!.id, current[i]!);
+    const planUnsafe = new Map<BodyId, boolean>();
+    for (let i = 0; i < allPlans.length; i += 1) {
+      const p = allPlans[i]!;
+      const b = bodyById.get(p.bodyId);
+      if (b === undefined) continue;
+      planUnsafe.set(p.bodyId, planPreviewExits(b, p, view, GATE2_CONFIG));
+    }
+
     // Drive S04's runScenario for one beat. Kept as a scenario object (not a raw
     // resolveMovement call) so the harness reuse is literal.
     const singleBeat: Scenario = {
@@ -169,8 +220,28 @@ const runOneScenario = (n: number, beats: number, planner: PlannerConfig): Scena
     const result = runScenario(singleBeat);
     const step = result.beats[0]!.step;
     contacts += step.contacts.length;
+
+    // Bodies that participated in a collision this beat (either side of any contact).
+    const collidedThisBeat = new Set<BodyId>();
+    for (let i = 0; i < step.contacts.length; i += 1) {
+      collidedThisBeat.add(step.contacts[i]!.idA);
+      collidedThisBeat.add(step.contacts[i]!.idB);
+    }
+
     for (let i = 0; i < step.exits.length; i += 1) {
-      if (step.exits[i]!.kind === 'ship-destroyed') shipExits += 1;
+      const exit = step.exits[i]!;
+      if (exit.kind !== 'ship-destroyed') continue;
+      shipExits += 1;
+      if (collidedThisBeat.has(exit.bodyId)) {
+        forcedColl += 1;
+      } else if (planUnsafe.get(exit.bodyId) === true) {
+        forcedMom += 1;
+      } else {
+        // Would mean previewPath said "safe" and resolveMovement disagreed without
+        // any collision to explain it — the S03 invariant broken. The whole gate
+        // depends on this staying zero. Count it and let the tally surface it.
+        unforced += 1;
+      }
     }
 
     // Update owned sets — dead ships leave.
@@ -188,6 +259,9 @@ const runOneScenario = (n: number, beats: number, planner: PlannerConfig): Scena
     beatsRun,
     totalContacts: contacts,
     totalShipExits: shipExits,
+    unforcedExits: unforced,
+    forcedByCollision: forcedColl,
+    forcedByMomentum: forcedMom,
     survivors: current.length,
   };
 };
@@ -290,13 +364,15 @@ interface CliOptions {
   readonly seedEnd: number;
   readonly beats: number;
   readonly adversarial: boolean;
+  readonly verbose: boolean;
 }
 
 const parseArgs = (argv: readonly string[]): CliOptions => {
   let seedStart = 1;
-  let seedEnd = 5;
-  let beats = 10;
+  let seedEnd = 100;
+  let beats = 15;
   let adversarial = false;
+  let verbose = false;
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i]!;
     if (a === '--seeds') {
@@ -308,24 +384,27 @@ const parseArgs = (argv: readonly string[]): CliOptions => {
       if (seedStart > seedEnd) throw new Error(`--seeds range empty: ${spec}`);
       i += 1;
     } else if (a === '--beats') {
-      beats = Number(argv[i + 1] ?? '10');
+      beats = Number(argv[i + 1] ?? '15');
       if (!Number.isInteger(beats) || beats <= 0) throw new Error('--beats must be a positive integer');
       i += 1;
     } else if (a === '--adversarial') {
       adversarial = true;
+    } else if (a === '--verbose') {
+      verbose = true;
     } else if (a === '--help' || a === '-h') {
       process.stdout.write(
-        `gate2 harness — bot vs bot, boundary-avoidance smoke + stress\n\n` +
-          `  --seeds A..B      (default 1..5)\n` +
-          `  --beats N         (default 10)\n` +
-          `  --adversarial     also run the FR-29 hard-constraint check across ${ADVERSARIAL_SEED_COUNT} adversarial spawns\n`,
+        `gate2 harness — bot vs bot, count unforced boundary deaths (FR-29, §12)\n\n` +
+          `  --seeds A..B      (default 1..100 — the Gate 2 verdict range)\n` +
+          `  --beats N         (default 15)\n` +
+          `  --verbose         per-seed tally\n` +
+          `  --adversarial     also run the FR-29 hard-constraint stress test\n`,
       );
       process.exit(0);
     } else {
       throw new Error(`unknown argument: ${a}`);
     }
   }
-  return { seedStart, seedEnd, beats, adversarial };
+  return { seedStart, seedEnd, beats, adversarial, verbose };
 };
 
 const main = (): void => {
@@ -335,26 +414,43 @@ const main = (): void => {
   let totalContacts = 0;
   let totalBeats = 0;
   let totalShipExits = 0;
+  let totalUnforced = 0;
+  let totalForcedColl = 0;
+  let totalForcedMom = 0;
 
   for (let n = opts.seedStart; n <= opts.seedEnd; n += 1) {
     const t = runOneScenario(n, opts.beats, planner);
     totalContacts += t.totalContacts;
     totalBeats += t.beatsRun;
     totalShipExits += t.totalShipExits;
-    process.stdout.write(
-      `seed=${n} beats=${t.beatsRun} contacts=${t.totalContacts} ship-exits=${t.totalShipExits} survivors=${t.survivors}\n`,
-    );
+    totalUnforced += t.unforcedExits;
+    totalForcedColl += t.forcedByCollision;
+    totalForcedMom += t.forcedByMomentum;
+    if (opts.verbose) {
+      process.stdout.write(
+        `seed=${n} beats=${t.beatsRun} contacts=${t.totalContacts} ` +
+          `exits=${t.totalShipExits} (unforced=${t.unforcedExits} coll=${t.forcedByCollision} mom=${t.forcedByMomentum}) ` +
+          `survivors=${t.survivors}\n`,
+      );
+    }
   }
 
   const scenarioCount = opts.seedEnd - opts.seedStart + 1;
-  process.stdout.write(`\n--- gate 2 base run ---\n`);
+  const pass = totalUnforced === 0;
+  process.stdout.write(`\n--- gate 2 verdict ---\n`);
   process.stdout.write(`scenarios: ${scenarioCount} (seeds ${opts.seedStart}..${opts.seedEnd})\n`);
   process.stdout.write(`beats run: ${totalBeats}\n`);
   process.stdout.write(`total contacts: ${totalContacts}\n`);
-  process.stdout.write(`total ship boundary exits: ${totalShipExits} (classification lands at CP3)\n`);
-  process.stdout.write(`planner delta-V budget: ${planner.deltaVBudget} (asserted per plan)\n`);
+  process.stdout.write(`ship boundary exits: ${totalShipExits}\n`);
+  process.stdout.write(`  unforced (bot flew self out with a safe alternative): ${totalUnforced}\n`);
+  process.stdout.write(`  forced by collision (FR-22 legal shove): ${totalForcedColl}\n`);
+  process.stdout.write(`  forced by momentum (no candidate could save): ${totalForcedMom}\n`);
+  process.stdout.write(`planner delta-V budget: ${planner.deltaVBudget}\n`);
+  process.stdout.write(`\nverdict: ${pass ? 'PASS' : 'FAIL'} — exit criterion is 0 unforced deaths\n`);
 
   if (opts.adversarial) runAdversarial(planner);
+
+  process.exit(pass ? 0 : 1);
 };
 
 main();

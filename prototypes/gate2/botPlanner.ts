@@ -64,12 +64,25 @@ export interface PlannerConfig {
   /** "Ease-off" scale when we're inside preferredStandoff (0..1). Braking away from a
    *  target too aggressively puts us at the boundary — a soft back-off is the right shape. */
   readonly retreatScale: number;
+  /**
+   * Cap on post-plan speed toward a target — the planner targets a cruise velocity,
+   * not a per-beat impulse. Without this cap the bot happily adds `deltaVBudget` per
+   * beat toward the same target, accumulating speed over 5–10 beats until no single
+   * beat's brake can save the ship (the gate 2 diagnostic's original failure mode).
+   *
+   * The safe upper bound is ~`deltaVBudget`: post-plan speed ≤ budget means one beat
+   * of brake can fully halt the ship — which is exactly the "boundary avoidance is
+   * a hard constraint" clause of FR-29 held over multiple beats. F5's tiered
+   * `HeuristicCommander` should promote this cap into its lookahead policy.
+   */
+  readonly cruiseSpeed: number;
 }
 
 export const DEFAULT_PLANNER_CONFIG: PlannerConfig = {
   deltaVBudget: 80,
   preferredStandoff: 350,
   retreatScale: 0.5,
+  cruiseSpeed: 60,
 };
 
 // ---------------------------------------------------------------------------
@@ -105,25 +118,24 @@ const pickNearestThreat = (
 
 const baselineArc = (self: Body, target: Body | null, config: PlannerConfig): Vec3 => {
   if (target === null) {
-    // No enemies visible — coast. CP2's boundary constraint handles any drift toward
-    // the shell when it lands.
+    // No enemies visible — coast. The boundary constraint below handles any drift
+    // toward the shell.
     return ZERO;
   }
-  const toTarget = sub(target.position, self.position);
   const range = distance(self.position, target.position);
   if (range === 0) return ZERO;
+  const toTarget = sub(target.position, self.position);
   const dir = normalize(toTarget);
-  if (range > config.preferredStandoff) {
-    // Close in at full budget.
-    return clampLength(scale(dir, config.deltaVBudget), config.deltaVBudget);
-  }
-  // Inside standoff — ease away, but softly (retreatScale < 1). A hard reverse would
-  // just launch us at the boundary from the other side; the point of standoff is to
-  // hover a fight, not to run from it.
-  return clampLength(
-    scale(neg(dir), config.deltaVBudget * config.retreatScale),
-    config.deltaVBudget,
-  );
+  // Target a CRUISE VELOCITY, not a per-beat impulse. Desired velocity is aimed at
+  // (or eased from) the target at `cruiseSpeed`; the returned deltaV is what we need
+  // to close the gap between current velocity and desired — clamped to budget. Post-
+  // plan speed toward the target converges to `cruiseSpeed` instead of accumulating
+  // `deltaVBudget` per beat. This is the shape the throwaway heuristic needs to keep
+  // FR-29 recoverable across long engagements.
+  const seek = range > config.preferredStandoff ? config.cruiseSpeed : -config.cruiseSpeed * config.retreatScale;
+  const desiredVelocity = scale(dir, seek);
+  const dv = sub(desiredVelocity, self.velocity);
+  return clampLength(dv, config.deltaVBudget);
 };
 
 // ---------------------------------------------------------------------------
