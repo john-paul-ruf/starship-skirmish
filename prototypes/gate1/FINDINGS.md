@@ -114,6 +114,36 @@ Bearing / pitch as `<input type="number">`, magnitude as slider clamped to
 budget. Ghost repaint on every `input` event. Add drag handle as an alternate
 input in polish if playtesters ask.
 
+### 2a. Time-graduation marks on the arc (feature `arc-time-marks`, post-gate)
+
+Added after the Gate 1 verdict: the ghost now carries **numbered per-second
+marks** (`1..floor(dt)` → `1..8` at `dt = 8`), sampled straight out of
+`previewPath().positions`. Because plan Δv is applied once and every sub-step is
+ballistic at constant velocity, `positions[]` is uniform in sim-time, so the mark
+at `t` seconds is an exact fractional-index lerp — **no second integrator** (that
+would break the same S03 "preview must not lie" invariant §2 above rests on).
+
+- **Mark spacing encodes speed.** Consecutive second-marks are `|velocity|·1 s`
+  apart, so wider gaps = a faster ship — a direct read of `|Δv|` at a glance, with
+  no extra HUD. This is the readout the ruler was really for.
+- **It makes the `dt = 8 s` note measurable.** §0 flagged that a whole engagement
+  feels compressed into ~10 turns; the second-marks turn that feeling into a
+  number you can see on every arc. **F4** should lean on the ruler when revisiting
+  `dt` / the Δv-to-arena ratio so a beat reads as a satisfying number of seconds.
+- **F6/F7 carry-forward.** The shipping render/ui ghost should carry the same
+  numbered graduations, sampled from `previewPath` — **never** a second
+  integrator. Amber (the instrument/readout hue) keeps them orthogonal to the
+  three-channel boundary-exit signal (red line + ✕ EXIT + status text).
+
+Observed while probing (feed F6/F7 sizing + F4 tuning):
+- Amber marks read cleanly against **both** the cyan and the magenta-hi ghost.
+- On a **hostile** arc the last mark (`8`, on the endpoint) overlaps the ✕ EXIT
+  sprite — both sit at the end-of-beat position. Legible but stacked; a shipping
+  ghost may want to drop or offset mark `8` when the arc exits.
+- At **low Δv** (≲ 40) the marks bunch because per-second spacing (`|v|·1 s`)
+  drops below the sprite size (`≈ 1.2 · hullRadius`); digits stay readable but the
+  dots merge. Nominal Δv (100–200) reads clean.
+
 ---
 
 ## 3. Design §7.4 — Marker / label density at scale
