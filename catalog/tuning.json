@@ -1,0 +1,80 @@
+{
+  "$comment": "Pure data. Every value here is expected to be WRONG on first pass and re-tuned against the headless harness (Assumption 3, FR-33). Changing a value here must never require a code change.",
+  "schemaVersion": 1,
+  "catalogVersion": 1,
+
+  "arena": {
+    "shape": "sphere",
+    "$comment": "Ruling C - arenaRadius = f(budget), exposed as a data value. Budgets are a closed set (FR-10), so the function is a table. CI asserts radiusByBudget keys === match.legalBudgets exactly.",
+    "radiusByBudget": {
+      "25": 1800,
+      "50": 2400,
+      "75": 2900,
+      "100": 3400,
+      "125": 3800,
+      "150": 4200
+    },
+    "startVelocity": 0,
+    "fleetStartInsetFraction": 0.72,
+    "minFleetSeparationFraction": 0.9
+  },
+
+  "match": {
+    "legalBudgets": [25, 50, 75, 100, 125, 150],
+    "minFleets": 2,
+    "maxFleets": 5,
+    "minBots": 1,
+    "maxBots": 4,
+    "fleetHullCap": 20,
+    "fieldShipCap": 60,
+    "turnDurationSeconds": 10,
+    "movementSubStepMin": 4,
+    "movementSubStepMax": 64
+  },
+
+  "hazards": {
+    "maxSimultaneousBodies": 300,
+    "debrisLifetimeTurns": 6,
+    "debrisPerDestruction": {
+      "fighter": 2,
+      "frigate": 4,
+      "cruiser": 7,
+      "mega-destroyer": 12
+    },
+    "debrisScatterImpulse": 120,
+    "debrisMassFractionOfHull": 0.06,
+    "debrisRadius": 12
+  },
+
+  "destruction": {
+    "$comment": "AoE does not check ownership (Decision 13). Boundary deaths detonate only if the detonation point is still inside the arena (FR-26).",
+    "aoeRadiusByClass": {
+      "fighter": 90,
+      "frigate": 160,
+      "cruiser": 260,
+      "mega-destroyer": 400
+    },
+    "aoeDamageByClass": {
+      "fighter": 12,
+      "frigate": 30,
+      "cruiser": 70,
+      "mega-destroyer": 140
+    }
+  },
+
+  "collision": {
+    "$comment": "Collision damage scales with relative velocity and mass (FR-22). damage = coefficient * reducedMass * relativeSpeed^2, applied to BOTH bodies.",
+    "damageCoefficient": 0.0012,
+    "restitution": 0.15
+  },
+
+  "missiles": {
+    "trackingBeats": 2,
+    "spentRemainsArmed": true,
+    "reacquireOnTargetLoss": false
+  },
+
+  "shields": {
+    "regenTicksRegardlessOfDamage": true
+  }
+}

@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shipyard — Starship Skirmish</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="console.css">
+<style>
+  /* Page composition only — no new tokens, no second design language. */
+  html, body { height: 100%; }
+  body { overflow: hidden; }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+
+  .yard {
+    flex: 1 1 auto; min-height: 0;
+    display: grid;
+    grid-template-columns: 300px minmax(0,1fr) 340px;
+    gap: 1px;
+    background: var(--line);
+  }
+  .col { background: var(--void); min-height: 0; display: flex; flex-direction: column; }
+  .col-scroll { overflow-y: auto; overflow-x: hidden; flex: 1 1 auto; min-height: 0; }
+
+  /* Compact icon button — reuses .btn-ghost visual language at bay/chip scale */
+  .x {
+    display: inline-grid; place-items: center; width: 18px; height: 18px; flex: none;
+    font-size: 10px; line-height: 1; font-family: var(--mono);
+    color: var(--ink-ghost); background: transparent;
+    border: 1px solid transparent; border-radius: var(--r-sm); cursor: pointer;
+  }
+  .x:hover { color: var(--red); border-color: rgba(255,46,99,.45); background: rgba(255,46,99,.10); }
+  .x-sm { width: 14px; height: 14px; font-size: 8px; }
+
+  /* Build-name field, oversized. Same .field skin, larger metrics. */
+  .field-xl {
+    height: 40px; font-size: 20px; font-weight: 700; letter-spacing: .10em;
+    text-transform: uppercase; padding: 0 var(--s3);
+  }
+
+  .row-cost { font-size: 12px; font-weight: 700; color: var(--amber); flex: none; width: 34px; text-align: right; }
+  .grp { padding: var(--s2) var(--s3) var(--s1); background: var(--panel-in);
+         border-bottom: 1px solid var(--line); border-top: 1px solid var(--line);
+         display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2);
+         position: sticky; top: 0; z-index: 2; }
+
+  .tabpane[hidden] { display: none; }
+
+  /* Sticky point ledger — FR-5: total visible at all times */
+  .ledger { position: sticky; top: 0; z-index: 3; background: var(--panel); border-bottom: 1px solid var(--line); }
+
+  /* Wireframe tac display */
+  .wire { stroke: var(--cyan); fill: none; stroke-width: 1.15; stroke-linejoin: miter; }
+  .wire-faint { stroke: var(--cyan); fill: none; stroke-width: .8; opacity: .42; }
+  .wire-ret { stroke: var(--cyan); fill: none; stroke-width: .8; opacity: .30; }
+  .pip-on { fill: var(--cyan); stroke: var(--cyan); stroke-width: 1; opacity: .95; }
+  .pip-off { fill: none; stroke: var(--ink-ghost); stroke-width: 1; stroke-dasharray: 2 2; }
+  .pip-lbl { font-family: var(--mono); font-size: 7px; letter-spacing: .10em; fill: var(--cyan); opacity: .82; }
+  .pip-lbl-off { fill: var(--ink-ghost); opacity: 1; }
+  .svg-glow { filter: drop-shadow(0 0 6px var(--cyan)); }
+
+  .wtbl td, .wtbl th { padding: 3px var(--s2); font-size: 11px; }
+  .wtbl th:first-child, .wtbl td:first-child { padding-left: var(--s3); }
+</style>
+</head>
+<body>
+
+<!-- ---------------------------------------------------------------- MOBILE GATE -->
+<div class="mobile-gate">
+  <div class="panel ticks" style="max-width:520px">
+    <div class="panel-hd"><span class="dot c-red"></span><span class="t-h2 c-red">SIGNAL LOST</span></div>
+    <div class="panel-bd stack">
+      <div class="t-h1">DESKTOP REQUIRED</div>
+      <p class="t-prose c-dim" style="margin:0">Starship Skirmish needs a viewport of at least 1280&times;720.</p>
+      <p class="mono-xs" style="margin:0">THE SHIPYARD IS A SPREADSHEET WITH GUNS. IT DOES NOT FIT ON A PHONE.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ---------------------------------------------------------------- APP -->
+<div class="desktop-only" id="app">
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true"></span>STARSHIP SKIRMISH</div>
+    <nav class="nav" aria-label="Primary">
+      <a href="shipyard.html" class="is-active" aria-current="page">SHIPYARD</a>
+      <a href="encyclopedia.html">ENCYCLOPEDIA</a>
+      <a href="skirmish-setup.html">SKIRMISH</a>
+      <a href="index.html">INDEX</a>
+    </nav>
+    <div class="grow"></div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span class="mono-xs">LOCAL STORAGE 1.2 MB / ~5 MB</span>
+      <span class="meter meter-sm" style="width:62px;display:inline-block" role="img" aria-label="Local storage 24 percent used">
+        <span class="meter-fill f-ok" style="width:24%"></span>
+      </span>
+    </div>
+    <span class="chip chip-cyan" title="Catalog version 7">▤ CATALOG v7</span>
+    <button class="btn btn-sm btn-ghost" id="rmToggle" aria-pressed="false">◐ REDUCED MOTION</button>
+  </header>
+
+  <!-- THREE COLUMNS -->
+  <main class="yard">
+
+    <!-- ============================================ LEFT: CATALOG BROWSER -->
+    <section class="col" aria-label="Catalog browser">
+      <div style="padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel);display:flex;align-items:center;gap:8px">
+        <span class="t-h2">CATALOG</span>
+        <span class="grow"></span>
+        <span class="mono-xs">NOTHING LOCKED</span>
+      </div>
+
+      <div class="tabs" role="tablist" aria-label="Slot type" style="background:var(--panel);overflow-x:auto">
+        <button class="tab is-active" role="tab" aria-selected="true"  data-pane="pane-chassis">CHASSIS</button>
+        <button class="tab"           role="tab" aria-selected="false" data-pane="pane-weapon">WEAPON</button>
+        <button class="tab"           role="tab" aria-selected="false" data-pane="pane-shield">SHIELD</button>
+        <button class="tab"           role="tab" aria-selected="false" data-pane="pane-missile">MISSILE</button>
+        <button class="tab"           role="tab" aria-selected="false" data-pane="pane-engine">ENGINE</button>
+        <button class="tab"           role="tab" aria-selected="false" data-pane="pane-special">SPECIAL</button>
+      </div>
+
+      <div style="padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel)">
+        <label class="sr-only" for="catSearch">Search catalog</label>
+        <input id="catSearch" class="field" type="search" placeholder="⌕  SEARCH NAME / STAT…" autocomplete="off">
+        <div class="mono-xs" style="margin-top:6px;display:flex;justify-content:space-between">
+          <span>SORT ▾ COST ASC</span><span id="catCount">12 ENTRIES</span>
+        </div>
+      </div>
+
+      <div class="col-scroll" id="catScroll">
+
+        <!-- ---------------- CHASSIS -->
+        <div class="tabpane" id="pane-chassis">
+          <div class="grp"><span class="t-label">FIGHTER</span><span class="mono-xs">1W / 1S / 0M / 1E / 1X</span></div>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot c-cyan" aria-hidden="true">F</span>
+            <span class="grow">
+              <span class="c-hi" style="font-size:12px;font-weight:700">NEEDLE</span>
+              <span class="mono-xs" style="display:block">HULL 18 · MASS 6 · EV .34 · ch_needle</span>
+            </span>
+            <span class="row-cost">4<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot c-cyan" aria-hidden="true">F</span>
+            <span class="grow">
+              <span class="c-hi" style="font-size:12px;font-weight:700">WASP</span>
+              <span class="mono-xs" style="display:block">HULL 22 · MASS 7 · EV .31 · ch_wasp</span>
+            </span>
+            <span class="row-cost">6<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot c-cyan" aria-hidden="true">F</span>
+            <span class="grow">
+              <span class="c-hi" style="font-size:12px;font-weight:700">SHRIKE</span>
+              <span class="mono-xs" style="display:block">HULL 26 · MASS 8 · EV .29 · ch_shrike</span>
+            </span>
+            <span class="row-cost">8<span class="mono-xs c-dim">pt</span></span>
+          </button>
+
+          <div class="grp"><span class="t-label">FRIGATE</span><span class="mono-xs">2W / 1S / 1M / 1E / 1X</span></div>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot c-green" aria-hidden="true">G</span>
+            <span class="grow">
+              <span class="c-hi" style="font-size:12px;font-weight:700">PICKET</span>
+              <span class="mono-xs" style="display:block">HULL 48 · MASS 20 · EV .22 · ch_picket</span>
+            </span>
+            <span class="row-cost">12<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot c-green" aria-hidden="true">G</span>
+            <span class="grow">
+              <span class="c-hi" style="font-size:12px;font-weight:700">LANCER</span>
+              <span class="mono-xs" style="display:block">HULL 55 · MASS 23 · EV .20 · ch_lancer</span>
+            </span>
+            <span class="row-cost">16<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot c-green" aria-hidden="true">G</span>
+            <span class="grow">
+              <span class="c-hi" style="font-size:12px;font-weight:700">HARRIER</span>
+              <span class="mono-xs" style="display:block">HULL 60 · MASS 25 · EV .19 · ch_harrier</span>
+            </span>
+            <span class="row-cost">20<span class="mono-xs c-dim">pt</span></span>
+          </button>
+
+          <div class="grp"><span class="t-label">CRUISER</span><span class="mono-xs">3W / 2S / 2M / 1E / 2X</span></div>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot c-amber" aria-hidden="true">C</span>
+            <span class="grow">
+              <span class="c-hi" style="font-size:12px;font-weight:700">BULWARK</span>
+              <span class="mono-xs" style="display:block">HULL 120 · MASS 60 · EV .12 · ch_bulwark</span>
+            </span>
+            <span class="row-cost">28<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row is-selected" style="width:100%;text-align:left" aria-current="true">
+            <span class="tag-slot c-amber" aria-hidden="true">C</span>
+            <span class="grow">
+              <span class="c-hi" style="font-size:12px;font-weight:700">MERIDIAN</span>
+              <span class="mono-xs" style="display:block">HULL 138 · MASS 66 · EV .11 · ch_meridian</span>
+            </span>
+            <span class="row-cost">36<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <div class="mono-xs" style="padding:4px 12px 8px 40px;background:rgba(34,227,255,.05);border-bottom:1px solid rgba(30,44,60,.6)">
+            <span class="c-cyan">▸ FITTED</span> · ON BENCH AS “THE WIDOWMAKER” · 27 PT OF COMPONENTS
+          </div>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot c-amber" aria-hidden="true">C</span>
+            <span class="grow">
+              <span class="c-hi" style="font-size:12px;font-weight:700">VALKYRIE</span>
+              <span class="mono-xs" style="display:block">HULL 150 · MASS 70 · EV .10 · ch_valkyrie</span>
+            </span>
+            <span class="row-cost">45<span class="mono-xs c-dim">pt</span></span>
+          </button>
+
+          <div class="grp"><span class="t-label">MEGA DESTROYER</span><span class="mono-xs">5W / 3S / 3M / 1E / 3X</span></div>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot c-red" aria-hidden="true">D</span>
+            <span class="grow">
+              <span class="c-hi" style="font-size:12px;font-weight:700">LEVIATHAN</span>
+              <span class="mono-xs" style="display:block">HULL 300 · MASS 180 · EV .05 · ch_leviathan</span>
+            </span>
+            <span class="row-cost">70<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot c-red" aria-hidden="true">D</span>
+            <span class="grow">
+              <span class="c-hi" style="font-size:12px;font-weight:700">OBELISK</span>
+              <span class="mono-xs" style="display:block">HULL 340 · MASS 200 · EV .04 · ch_obelisk</span>
+            </span>
+            <span class="row-cost">88<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot c-red" aria-hidden="true">D</span>
+            <span class="grow">
+              <span class="c-hi" style="font-size:12px;font-weight:700">TYRANT</span>
+              <span class="mono-xs" style="display:block">HULL 400 · MASS 230 · EV .03 · ch_tyrant</span>
+            </span>
+            <span class="row-cost">110<span class="mono-xs c-dim">pt</span></span>
+          </button>
+        </div>
+
+        <!-- ---------------- WEAPON -->
+        <div class="tabpane" id="pane-weapon" hidden>
+          <div class="grp"><span class="t-label">WEAPON · 6 ENTRIES</span><span class="mono-xs">RANGE · DMG · SHOTS · ACC</span></div>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-weapon" aria-hidden="true">W</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">SCATTER GUN</span>
+              <span class="mono-xs" style="display:block">R 90 · D 9 · ×1 · ACC .84 · DPT 7.6 · /PT 3.78</span></span>
+            <span class="row-cost">2<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-weapon" aria-hidden="true">W</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">PULSE ARRAY <span class="chip chip-cyan" style="height:15px;padding:0 6px;font-size:9px">▸ ×2 FITTED</span></span>
+              <span class="mono-xs" style="display:block">R 180 · D 6 · ×2 · ACC .72 · DPT 8.6 · /PT 2.88</span></span>
+            <span class="row-cost">3<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-weapon" aria-hidden="true">W</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">FLAK BATTERY</span>
+              <span class="mono-xs" style="display:block">R 120 · D 4 · ×4 · ACC .80 · DPT 12.8 · /PT 3.20</span></span>
+            <span class="row-cost">4<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-weapon" aria-hidden="true">W</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">MASS RAIL</span>
+              <span class="mono-xs" style="display:block">R 420 · D 15 · ×1 · ACC .55 · DPT 8.3 · /PT 1.38</span></span>
+            <span class="row-cost">6<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-weapon" aria-hidden="true">W</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">FUSION LANCE</span>
+              <span class="mono-xs" style="display:block">R 320 · D 22 · ×1 · ACC .61 · DPT 13.4 · /PT 1.68</span></span>
+            <span class="row-cost">8<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-weapon" aria-hidden="true">W</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">PHASE BEAM</span>
+              <span class="mono-xs" style="display:block">R 260 · D 18 · ×2 · ACC .68 · DPT 24.5 · /PT 2.23</span></span>
+            <span class="row-cost">11<span class="mono-xs c-dim">pt</span></span>
+          </button>
+        </div>
+
+        <!-- ---------------- SHIELD -->
+        <div class="tabpane" id="pane-shield" hidden>
+          <div class="grp"><span class="t-label">SHIELD · 6 ENTRIES</span><span class="mono-xs">CAP / REGEN — INDEPENDENT</span></div>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-shield" aria-hidden="true">S</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">FILM BARRIER</span>
+              <span class="mono-xs" style="display:block">CAP 20 · REGEN 6/T · CAP/PT 10.0 · RGN/PT 3.00</span></span>
+            <span class="row-cost">2<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-shield" aria-hidden="true">S</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">AEGIS-II <span class="chip chip-cyan" style="height:15px;padding:0 6px;font-size:9px">▸ FITTED S1</span></span>
+              <span class="mono-xs" style="display:block">CAP 45 · REGEN 8/T · CAP/PT 9.0 · RGN/PT 1.60</span></span>
+            <span class="row-cost">5<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-shield" aria-hidden="true">S</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">NULLSHEET</span>
+              <span class="mono-xs" style="display:block">CAP 55 · REGEN 11/T · CAP/PT 9.2 · RGN/PT 1.83</span></span>
+            <span class="row-cost">6<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left" id="rowFluxweave">
+            <span class="tag-slot tag-shield" aria-hidden="true">S</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">FLUXWEAVE</span>
+              <span class="mono-xs" style="display:block">CAP 38 · REGEN 18/T · CAP/PT 4.8 · RGN/PT 2.25</span></span>
+            <span class="row-cost">8<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-shield" aria-hidden="true">S</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">DEEPWELL</span>
+              <span class="mono-xs" style="display:block">CAP 90 · REGEN 4/T · CAP/PT 10.0 · RGN/PT 0.44</span></span>
+            <span class="row-cost">9<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-shield" aria-hidden="true">S</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">BASTION</span>
+              <span class="mono-xs" style="display:block">CAP 140 · REGEN 7/T · CAP/PT 10.8 · RGN/PT 0.54</span></span>
+            <span class="row-cost">13<span class="mono-xs c-dim">pt</span></span>
+          </button>
+        </div>
+
+        <!-- ---------------- MISSILE -->
+        <div class="tabpane" id="pane-missile" hidden>
+          <div class="grp"><span class="t-label">MISSILE · 5 ENTRIES</span><span class="mono-xs">AMMO / DMG / AOE / BOOST</span></div>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-missile" aria-hidden="true">M</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">SWARM POD <span class="chip chip-cyan" style="height:15px;padding:0 6px;font-size:9px">▸ FITTED M1</span></span>
+              <span class="mono-xs" style="display:block">AMMO 6 · DMG 8 · AOE 30 · BOOST 90</span></span>
+            <span class="row-cost">4<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-missile" aria-hidden="true">M</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">DRIFTMINE</span>
+              <span class="mono-xs" style="display:block">AMMO 4 · DMG 30 · AOE 70 · BOOST 20</span></span>
+            <span class="row-cost">5<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-missile" aria-hidden="true">M</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">TALON <span class="chip chip-cyan" style="height:15px;padding:0 6px;font-size:9px">▸ FITTED M2</span></span>
+              <span class="mono-xs" style="display:block">AMMO 4 · DMG 18 · AOE 40 · BOOST 80</span></span>
+            <span class="row-cost">6<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-missile" aria-hidden="true">M</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">LONGSPEAR</span>
+              <span class="mono-xs" style="display:block">AMMO 3 · DMG 22 · AOE 35 · BOOST 130</span></span>
+            <span class="row-cost">8<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-missile" aria-hidden="true">M</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">HAMMERHEAD</span>
+              <span class="mono-xs" style="display:block">AMMO 2 · DMG 40 · AOE 60 · BOOST 60</span></span>
+            <span class="row-cost">9<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <div class="mono-xs" style="padding:8px 12px;color:var(--ink-dim)">AMMO DOES NOT REPLENISH INSIDE A SKIRMISH.</div>
+        </div>
+
+        <!-- ---------------- ENGINE -->
+        <div class="tabpane" id="pane-engine" hidden>
+          <div class="grp"><span class="t-label">ENGINE · 6 ENTRIES</span><span class="mono-xs">DELTA-V PER TURN</span></div>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-engine" aria-hidden="true">E</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">COMMUTER DRIVE</span>
+              <span class="mono-xs" style="display:block">ΔV 40/T · ΔV/PT 40.0 · ACCEL @M66 0.61</span></span>
+            <span class="row-cost">1<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-engine" aria-hidden="true">E</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">ION CASCADE <span class="chip chip-cyan" style="height:15px;padding:0 6px;font-size:9px">▸ FITTED E1</span></span>
+              <span class="mono-xs" style="display:block">ΔV 70/T · ΔV/PT 17.5 · ACCEL @M66 1.06</span></span>
+            <span class="row-cost">4<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-engine" aria-hidden="true">E</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">VECTOR TRIM</span>
+              <span class="mono-xs" style="display:block">ΔV 80/T · ΔV/PT 16.0 · ACCEL @M66 1.21</span></span>
+            <span class="row-cost">5<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-engine" aria-hidden="true">E</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">MASS DRIVER CORE</span>
+              <span class="mono-xs" style="display:block">ΔV 55/T · ΔV/PT 9.2 · ACCEL @M66 0.83</span></span>
+            <span class="row-cost">6<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-engine" aria-hidden="true">E</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">KICK THRUSTER</span>
+              <span class="mono-xs" style="display:block">ΔV 95/T · ΔV/PT 13.6 · ACCEL @M66 1.44</span></span>
+            <span class="row-cost">7<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-engine" aria-hidden="true">E</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">TORCH-9</span>
+              <span class="mono-xs" style="display:block">ΔV 120/T · ΔV/PT 13.3 · ACCEL @M66 1.82</span></span>
+            <span class="row-cost">9<span class="mono-xs c-dim">pt</span></span>
+          </button>
+        </div>
+
+        <!-- ---------------- SPECIAL -->
+        <div class="tabpane" id="pane-special" hidden>
+          <div class="grp"><span class="t-label">SPECIAL · 5 ENTRIES</span><span class="mono-xs">2 BAYS OPEN ON MERIDIAN</span></div>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-special" aria-hidden="true">X</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">THRUST BOOSTER</span>
+              <span class="mono-xs" style="display:block">+15 ΔV/T · NO MASS PENALTY</span></span>
+            <span class="row-cost">3<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-special" aria-hidden="true">X</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">ABLATIVE PLATING</span>
+              <span class="mono-xs" style="display:block">+30 HULL · HULL/PT 7.5</span></span>
+            <span class="row-cost">4<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-special" aria-hidden="true">X</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">DECOY LAUNCHER</span>
+              <span class="mono-xs" style="display:block">BREAKS ONE MISSILE LOCK PER TURN</span></span>
+            <span class="row-cost">4<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-special" aria-hidden="true">X</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">POINT-DEFENSE GRID</span>
+              <span class="mono-xs" style="display:block">INTERCEPTS INBOUND ORDNANCE IN R 60</span></span>
+            <span class="row-cost">5<span class="mono-xs c-dim">pt</span></span>
+          </button>
+          <button class="row" style="width:100%;text-align:left">
+            <span class="tag-slot tag-special" aria-hidden="true">X</span>
+            <span class="grow"><span class="c-hi" style="font-size:12px;font-weight:700">DAMAGE CONTROL</span>
+              <span class="mono-xs" style="display:block">REPAIRS ONE DISABLED COMPONENT / TURN</span></span>
+            <span class="row-cost">6<span class="mono-xs c-dim">pt</span></span>
+          </button>
+        </div>
+
+      </div>
+
+      <div class="panel-ft mono-xs" style="display:flex;justify-content:space-between;border-left:0;border-right:0;border-bottom:0">
+        <span>12 CHASSIS · 28 COMPONENTS</span><span>schemaVersion 3</span>
+      </div>
+    </section>
+
+    <!-- ============================================ CENTER: FITTING BENCH -->
+    <section class="col" aria-label="Fitting bench">
+
+      <!-- header block -->
+      <div style="padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel)">
+        <div style="display:flex;align-items:center;gap:10px">
+          <label class="sr-only" for="buildName">Build name</label>
+          <input id="buildName" class="field field-xl" value="THE WIDOWMAKER" spellcheck="false">
+          <span class="chip chip-amber" title="Unsaved changes">● UNSAVED</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:7px;flex-wrap:wrap">
+          <span class="mono-xs"><span class="c-amber">◆ MERIDIAN</span> · CRUISER · <span class="c-dim">ch_meridian</span> · 3W/2S/2M/1E/2X</span>
+          <span class="mono-xs c-dim">|</span>
+          <span class="t-label">TAGS</span>
+          <span class="chip">alpha <button class="x x-sm" aria-label="Remove tag alpha">✕</button></span>
+          <span class="chip">meta <button class="x x-sm" aria-label="Remove tag meta">✕</button></span>
+          <span class="chip">wip <button class="x x-sm" aria-label="Remove tag wip">✕</button></span>
+          <button class="btn btn-sm btn-ghost">+ TAG</button>
+          <span class="grow"></span>
+          <span class="mono-xs">bld_7f3a91 · EDITED 14:02</span>
+        </div>
+      </div>
+
+      <div class="col-scroll" style="padding:12px 16px">
+
+        <!-- wireframe tac display -->
+        <div class="panel ticks" style="overflow:hidden">
+          <div class="panel-hd">
+            <span class="t-h2">HULL SCHEMATIC</span>
+            <span class="mono-xs">· TAC WIREFRAME · 10 BAYS · 7 FITTED / 3 OPEN</span>
+            <span class="grow"></span>
+            <span class="mono-xs">SCALE 1:400 · BEAM 62 m</span>
+          </div>
+          <div class="viewport" style="border:0;display:flex;align-items:center;justify-content:center;padding:8px 0">
+            <div class="viewport-grid" aria-hidden="true"></div>
+            <svg class="svg-glow anim-flick" viewBox="0 0 320 214" height="204" role="img"
+                 aria-label="Wireframe schematic of the MERIDIAN cruiser showing ten slot positions, seven fitted and three open"
+                 style="position:relative">
+              <!-- reticle frame -->
+              <g class="wire-ret">
+                <path d="M96 16 H86 V26 M224 16 H234 V26 M96 200 H86 V190 M224 200 H234 V190"/>
+                <path d="M160 6 V16 M160 204 V214" stroke-dasharray="3 3"/>
+                <path d="M60 108 H80 M240 108 H260" stroke-dasharray="3 3"/>
+                <path d="M64 178 H96 M64 174 V182 M96 174 V182"/>
+              </g>
+              <text x="64" y="192" class="pip-lbl" style="opacity:.5">62 m</text>
+              <text x="234" y="34" class="pip-lbl" style="opacity:.5">CRUISER</text>
+
+              <!-- hull -->
+              <path class="wire" d="M160 10 L172 40 L176 92 L204 108 L208 136 L186 138 L182 168 L166 200 L154 200 L138 168 L134 138 L112 136 L116 108 L144 92 L148 40 Z"/>
+              <!-- structure -->
+              <g class="wire-faint">
+                <path d="M160 18 V196"/>
+                <path d="M149 60 H171"/>
+                <path d="M145 90 H175"/>
+                <path d="M136 128 H184"/>
+                <path d="M139 164 H181"/>
+                <path d="M116 108 L134 122 L134 138"/>
+                <path d="M204 108 L186 122 L186 138"/>
+                <path d="M150 200 L152 210 H168 L170 200"/>
+                <path d="M154 40 L160 26 L166 40"/>
+              </g>
+
+              <!-- slot pips: filled = solid dot, open = dashed ring. Label carries the code. -->
+              <g>
+                <circle class="pip-on"  cx="134" cy="126" r="3"/><text class="pip-lbl" x="108" y="129">W1</text>
+                <circle class="pip-on"  cx="186" cy="126" r="3"/><text class="pip-lbl" x="194" y="129">W2</text>
+                <circle class="pip-on"  cx="160" cy="48"  r="3"/><text class="pip-lbl" x="167" y="45">W3</text>
+                <circle class="pip-on"  cx="150" cy="80"  r="3"/><text class="pip-lbl" x="126" y="76">S1</text>
+                <circle class="pip-off" cx="170" cy="80"  r="3"/><text class="pip-lbl pip-lbl-off" x="177" y="76">S2 ○</text>
+                <circle class="pip-on"  cx="146" cy="150" r="3"/><text class="pip-lbl" x="120" y="153">M1</text>
+                <circle class="pip-on"  cx="174" cy="150" r="3"/><text class="pip-lbl" x="181" y="153">M2</text>
+                <circle class="pip-on"  cx="160" cy="188" r="3"/><text class="pip-lbl" x="167" y="191">E1</text>
+                <circle class="pip-off" cx="120" cy="118" r="3"/><text class="pip-lbl pip-lbl-off" x="86" y="112">X1 ○</text>
+                <circle class="pip-off" cx="200" cy="118" r="3"/><text class="pip-lbl pip-lbl-off" x="207" y="112">X2 ○</text>
+              </g>
+            </svg>
+          </div>
+          <div class="panel-ft mono-xs" style="display:flex;gap:16px;align-items:center">
+            <span><span class="c-cyan">●</span> FITTED BAY</span>
+            <span><span class="c-dim">○</span> OPEN BAY (LEGAL)</span>
+            <span class="grow"></span>
+            <span>ORIENTATION IS PRESENTATIONAL — WEAPONS ARE OMNIDIRECTIONAL (RULING G)</span>
+          </div>
+        </div>
+
+        <!-- ---- SLOT BAYS ---- -->
+        <div style="margin-top:14px;display:flex;align-items:baseline;gap:10px">
+          <span class="t-h2">SLOT BAYS</span>
+          <span class="mono-xs">CRUISER LAYOUT · PUBLISHED PER CLASS, NOT PER CHASSIS</span>
+          <span class="grow"></span>
+          <span class="mono-xs">COMPONENT SUBTOTAL <span class="c-amber" style="font-weight:700">27 pt</span></span>
+        </div>
+
+        <!-- WEAPON -->
+        <div style="margin-top:8px;display:flex;align-items:baseline;justify-content:space-between">
+          <span class="t-label">WEAPON BAYS · 3</span><span class="mono-xs">8 pt · EXP. DPT 24.8</span>
+        </div>
+        <div class="stack" style="margin-top:5px">
+          <div class="bay is-filled">
+            <span class="tag-slot tag-weapon" aria-hidden="true">W</span>
+            <span class="mono-xs" style="width:20px">W1</span>
+            <span class="bay-name">PULSE ARRAY
+              <span class="mono-xs" style="display:block">R 180 · D 6 · ×2 · ACC .72 · DPT 8.6 · cp_pulse_array</span></span>
+            <span class="bay-cost">3<span class="mono-xs c-dim">pt</span></span>
+            <button class="x" aria-label="Clear bay W1">✕</button>
+          </div>
+          <div class="bay is-filled">
+            <span class="tag-slot tag-weapon" aria-hidden="true">W</span>
+            <span class="mono-xs" style="width:20px">W2</span>
+            <span class="bay-name">PULSE ARRAY
+              <span class="mono-xs" style="display:block">R 180 · D 6 · ×2 · ACC .72 · DPT 8.6 · cp_pulse_array</span></span>
+            <span class="bay-cost">3<span class="mono-xs c-dim">pt</span></span>
+            <button class="x" aria-label="Clear bay W2">✕</button>
+          </div>
+          <div class="bay is-filled">
+            <span class="tag-slot tag-weapon" aria-hidden="true">W</span>
+            <span class="mono-xs" style="width:20px">W3</span>
+            <span class="bay-name">SCATTER GUN
+              <span class="mono-xs" style="display:block">R 90 · D 9 · ×1 · ACC .84 · DPT 7.6 · cp_scatter_gun</span></span>
+            <span class="bay-cost">2<span class="mono-xs c-dim">pt</span></span>
+            <button class="x" aria-label="Clear bay W3">✕</button>
+          </div>
+        </div>
+
+        <!-- SHIELD -->
+        <div style="margin-top:12px;display:flex;align-items:baseline;justify-content:space-between">
+          <span class="t-label">SHIELD BAYS · 2</span><span class="mono-xs">5 pt · CAP 45 · REGEN 8/T</span>
+        </div>
+        <div class="stack" style="margin-top:5px">
+          <div class="bay is-filled is-selected">
+            <span class="tag-slot tag-shield" aria-hidden="true">S</span>
+            <span class="mono-xs" style="width:20px">S1</span>
+            <span class="bay-name">AEGIS-II <span class="chip chip-cyan" style="height:15px;padding:0 6px;font-size:9px">▸ SELECTED</span>
+              <span class="mono-xs" style="display:block">CAP 45 · REGEN 8/T · cp_aegis_ii · WAS FILM BARRIER</span></span>
+            <span class="bay-cost">5<span class="mono-xs c-dim">pt</span></span>
+            <button class="x" aria-label="Clear bay S1">✕</button>
+          </div>
+          <div class="bay is-empty">
+            <span class="tag-slot tag-shield" style="opacity:.45" aria-hidden="true">S</span>
+            <span class="mono-xs" style="width:20px">S2</span>
+            <span class="bay-name">— EMPTY BAY —
+              <span class="mono-xs" style="display:block;font-style:normal">LEGAL &amp; CHEAPER · A SECOND SHIELD WOULD COST 2–13 pt</span></span>
+            <span class="bay-cost c-dim">0<span class="mono-xs c-dim">pt</span></span>
+            <span class="x" style="cursor:default" aria-hidden="true">·</span>
+          </div>
+        </div>
+
+        <!-- MISSILE -->
+        <div style="margin-top:12px;display:flex;align-items:baseline;justify-content:space-between">
+          <span class="t-label">MISSILE BAYS · 2</span><span class="mono-xs">10 pt · AMMO 10 · NO RESUPPLY</span>
+        </div>
+        <div class="stack" style="margin-top:5px">
+          <div class="bay is-filled">
+            <span class="tag-slot tag-missile" aria-hidden="true">M</span>
+            <span class="mono-xs" style="width:20px">M1</span>
+            <span class="bay-name">SWARM POD
+              <span class="mono-xs" style="display:block">AMMO 6 · DMG 8 · AOE 30 · BOOST 90 · cp_swarm_pod</span></span>
+            <span class="bay-cost">4<span class="mono-xs c-dim">pt</span></span>
+            <button class="x" aria-label="Clear bay M1">✕</button>
+          </div>
+          <div class="bay is-filled">
+            <span class="tag-slot tag-missile" aria-hidden="true">M</span>
+            <span class="mono-xs" style="width:20px">M2</span>
+            <span class="bay-name">TALON
+              <span class="mono-xs" style="display:block">AMMO 4 · DMG 18 · AOE 40 · BOOST 80 · cp_talon</span></span>
+            <span class="bay-cost">6<span class="mono-xs c-dim">pt</span></span>
+            <button class="x" aria-label="Clear bay M2">✕</button>
+          </div>
+        </div>
+
+        <!-- ENGINE -->
+        <div style="margin-top:12px;display:flex;align-items:baseline;justify-content:space-between">
+          <span class="t-label">ENGINE BAY · 1</span><span class="mono-xs">4 pt · ΔV 70/T</span>
+        </div>
+        <div class="stack" style="margin-top:5px">
+          <div class="bay is-filled">
+            <span class="tag-slot tag-engine" aria-hidden="true">E</span>
+            <span class="mono-xs" style="width:20px">E1</span>
+            <span class="bay-name">ION CASCADE
+              <span class="mono-xs" style="display:block">ΔV 70/T · ACCEL 1.06 @ MASS 66 · cp_ion_cascade · WAS KICK THRUSTER</span></span>
+            <span class="bay-cost">4<span class="mono-xs c-dim">pt</span></span>
+            <button class="x" aria-label="Clear bay E1">✕</button>
+          </div>
+        </div>
+
+        <!-- SPECIAL -->
+        <div style="margin-top:12px;display:flex;align-items:baseline;justify-content:space-between">
+          <span class="t-label">SPECIAL BAYS · 2</span><span class="mono-xs">0 pt · BOTH OPEN</span>
+        </div>
+        <div class="stack" style="margin-top:5px">
+          <div class="bay is-empty">
+            <span class="tag-slot tag-special" style="opacity:.45" aria-hidden="true">X</span>
+            <span class="mono-xs" style="width:20px">X1</span>
+            <span class="bay-name">— EMPTY BAY —
+              <span class="mono-xs" style="display:block;font-style:normal">LEGAL &amp; CHEAPER · POINT-DEFENSE GRID WOULD COST 5 pt</span></span>
+            <span class="bay-cost c-dim">0<span class="mono-xs c-dim">pt</span></span>
+            <span class="x" style="cursor:default" aria-hidden="true">·</span>
+          </div>
+          <div class="bay is-empty">
+            <span class="tag-slot tag-special" style="opacity:.45" aria-hidden="true">X</span>
+            <span class="mono-xs" style="width:20px">X2</span>
+            <span class="bay-name">— EMPTY BAY —
+              <span class="mono-xs" style="display:block;font-style:normal">LEGAL &amp; CHEAPER · ABLATIVE PLATING WOULD COST 4 pt (+30 HULL)</span></span>
+            <span class="bay-cost c-dim">0<span class="mono-xs c-dim">pt</span></span>
+            <span class="x" style="cursor:default" aria-hidden="true">·</span>
+          </div>
+        </div>
+
+        <div class="banner banner-info" style="margin-top:14px">
+          <span class="c-cyan" style="font-weight:700;font-size:14px" aria-hidden="true">ⓘ</span>
+          <span>
+            <span class="t-h2" style="font-size:11px">EMPTY SLOTS ARE LEGAL.</span>
+            <span class="t-prose" style="display:block;color:var(--ink)">An under-fitted ship is a valid, cheaper ship. Three bays are open on this hull; the fit is complete as it stands.</span>
+          </span>
+        </div>
+
+        <div style="height:8px"></div>
+      </div>
+
+      <!-- trade hint strip -->
+      <div class="panel-ft" style="border-left:0;border-right:0;border-bottom:0;display:flex;align-items:center;gap:10px">
+        <span class="chip chip-cyan" style="flex:none">⇄ TRADE</span>
+        <span class="t-prose" style="font-style:italic;color:var(--ink-dim);line-height:1.4">
+          FLUXWEAVE vs DEEPWELL — gives up 52 shield capacity, gains +14 regen/turn. Survives attrition; folds to alpha strike.
+        </span>
+        <span class="grow"></span>
+        <span class="mono-xs" style="flex:none">HOVERING · SHIELD TAB</span>
+      </div>
+    </section>
+
+    <!-- ============================================ RIGHT: LEDGER + DERIVED -->
+    <section class="col" aria-label="Point ledger and derived stats">
+
+      <!-- PINNED POINT TOTAL (FR-5) -->
+      <div class="ledger">
+        <div style="padding:10px 14px 12px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span class="t-label">POINT TOTAL</span>
+            <span class="chip chip-amber">● UNSAVED</span>
+          </div>
+          <div style="display:flex;align-items:flex-end;gap:8px;margin-top:4px">
+            <span class="t-num-xl c-cyan" style="text-shadow:0 0 18px rgba(34,227,255,.45)">63</span>
+            <span class="t-h2" style="padding-bottom:3px">PTS</span>
+            <span class="grow"></span>
+            <span class="delta delta-none" style="padding-bottom:5px" title="No change versus pre-change value">± 0</span>
+          </div>
+
+          <div class="stat" style="margin-top:8px">
+            <span class="stat-k">CHASSIS · MERIDIAN</span><span class="stat-v">36</span>
+          </div>
+          <div class="stat">
+            <span class="stat-k">COMPONENTS · 7 FITTED</span><span class="stat-v">27</span>
+          </div>
+          <div class="stat">
+            <span class="stat-k">OPEN BAYS · 3</span><span class="stat-v c-dim">0</span>
+          </div>
+
+          <div style="margin-top:9px;display:flex;gap:6px;flex-wrap:wrap">
+            <span class="chip chip-green">✓ FITS 75 BUDGET</span>
+            <span class="chip chip-amber">▲ OVER 50 BUDGET</span>
+          </div>
+
+          <div style="margin-top:9px" class="stack">
+            <div>
+              <div class="mono-xs" style="display:flex;justify-content:space-between">
+                <span>VS 75-PT BUDGET</span><span class="c-green">✓ 63 / 75 · 12 UNSPENT</span>
+              </div>
+              <div class="meter" style="margin-top:3px"><span class="meter-fill f-ok" style="width:84%"></span></div>
+            </div>
+            <div>
+              <div class="mono-xs" style="display:flex;justify-content:space-between">
+                <span>VS 50-PT BUDGET</span><span class="c-amber">▲ 63 / 50 · 13 OVER</span>
+              </div>
+              <div class="meter" style="margin-top:3px"><span class="meter-fill f-hot" style="width:100%"></span></div>
+            </div>
+          </div>
+
+          <p class="mono-xs" style="margin:9px 0 0;line-height:1.5;color:var(--ink-dim)">
+            <span class="c-amber">!</span> LEFTOVER POINTS ARE WASTED — THERE IS NO CONVERSION.
+            12 UNSPENT AT THE 75 BUDGET BUYS NOTHING.
+          </p>
+        </div>
+      </div>
+
+      <div class="col-scroll" style="padding:12px 14px">
+
+        <!-- DERIVED READOUT (FR-6) -->
+        <div class="panel ticks">
+          <div class="panel-hd">
+            <span class="t-h2">DERIVED</span>
+            <span class="grow"></span>
+            <span class="mono-xs">Δ VS PRE-CHANGE</span>
+          </div>
+          <div class="panel-bd" style="padding-top:6px;padding-bottom:6px">
+            <div class="stat">
+              <span class="stat-k">TOTAL HULL</span>
+              <span style="display:flex;align-items:baseline;gap:8px"><span class="delta delta-none" title="unchanged">— 0</span><span class="stat-v">138</span></span>
+            </div>
+            <div class="stat">
+              <span class="stat-k">SHIELD CAP</span>
+              <span style="display:flex;align-items:baseline;gap:8px"><span class="delta delta-up">▲ +25</span><span class="stat-v">45</span></span>
+            </div>
+            <div class="stat">
+              <span class="stat-k">SHIELD REGEN</span>
+              <span style="display:flex;align-items:baseline;gap:8px"><span class="delta delta-up">▲ +2</span><span class="stat-v">8 <span class="mono-xs">/turn</span></span></span>
+            </div>
+            <div class="stat">
+              <span class="stat-k">DELTA-V</span>
+              <span style="display:flex;align-items:baseline;gap:8px"><span class="delta delta-down">▼ −25</span><span class="stat-v">70 <span class="mono-xs">/turn</span></span></span>
+            </div>
+            <div class="stat">
+              <span class="stat-k">MASS</span>
+              <span style="display:flex;align-items:baseline;gap:8px"><span class="delta delta-none" title="unchanged">— 0</span><span class="stat-v">66</span></span>
+            </div>
+            <div class="stat">
+              <span class="stat-k">EFFECTIVE ACCEL</span>
+              <span style="display:flex;align-items:baseline;gap:8px"><span class="delta delta-down">▼ −0.38</span><span class="stat-v">1.06</span></span>
+            </div>
+            <div class="stat">
+              <span class="stat-k">MISSILE AMMO</span>
+              <span style="display:flex;align-items:baseline;gap:8px"><span class="delta delta-none" title="unchanged">— 0</span><span class="stat-v">10</span></span>
+            </div>
+            <div class="stat">
+              <span class="stat-k">EVASION</span>
+              <span style="display:flex;align-items:baseline;gap:8px"><span class="delta delta-none" title="unchanged">— 0</span><span class="stat-v">0.11</span></span>
+            </div>
+          </div>
+          <div class="panel-ft mono-xs" style="line-height:1.5">
+            LAST CHANGE · <span class="c-hi">S1 FILM BARRIER → AEGIS-II</span> (+3 pt) ·
+            <span class="c-hi">E1 KICK THRUSTER → ION CASCADE</span> (−3 pt)<br>
+            NET 0 PT. SAME COST, DIFFERENT SHIP — 25 ΔV TRADED FOR 25 SHIELD CAPACITY.
+          </div>
+        </div>
+
+        <!-- HULL / SHIELD / DV BARS -->
+        <div class="panel" style="margin-top:12px">
+          <div class="panel-hd"><span class="t-h2">AT SCALE</span><span class="grow"></span><span class="mono-xs">VS CRUISER CLASS MAX</span></div>
+          <div class="panel-bd stack" style="padding-top:8px">
+            <div>
+              <div class="mono-xs" style="display:flex;justify-content:space-between"><span>H HULL 138</span><span>OF 150 · VALKYRIE</span></div>
+              <div class="meter" style="margin-top:3px"><span class="meter-fill f-hull" style="width:92%"></span></div>
+            </div>
+            <div>
+              <div class="mono-xs" style="display:flex;justify-content:space-between"><span>S SHIELD 45</span><span>OF 280 · 2× BASTION</span></div>
+              <div class="meter" style="margin-top:3px"><span class="meter-fill f-shield" style="width:16%"></span>
+                <span class="meter-notch" style="left:16%"></span></div>
+            </div>
+            <div>
+              <div class="mono-xs" style="display:flex;justify-content:space-between"><span>E ΔV 70/T</span><span>OF 135 · TORCH-9 + BOOSTER</span></div>
+              <div class="meter" style="margin-top:3px"><span class="meter-fill f-dv" style="width:52%"></span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PER-WEAPON BREAKDOWN -->
+        <div class="panel" style="margin-top:12px">
+          <div class="panel-hd"><span class="t-h2">PER-WEAPON</span><span class="grow"></span><span class="mono-xs">3 OF 3 BAYS</span></div>
+          <table class="tbl wtbl">
+            <thead>
+              <tr><th>BAY</th><th style="text-align:right">RNG</th><th style="text-align:right">DMG</th><th style="text-align:right">SHOTS</th><th style="text-align:right">ACC</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="tag-slot tag-weapon" style="vertical-align:-3px;margin-right:5px" aria-hidden="true">W</span>W1 PULSE ARRAY</td>
+                <td style="text-align:right" class="c-hi">180</td><td style="text-align:right" class="c-hi">6</td>
+                <td style="text-align:right" class="c-hi">×2</td><td style="text-align:right" class="c-hi">.72</td>
+              </tr>
+              <tr>
+                <td><span class="tag-slot tag-weapon" style="vertical-align:-3px;margin-right:5px" aria-hidden="true">W</span>W2 PULSE ARRAY</td>
+                <td style="text-align:right" class="c-hi">180</td><td style="text-align:right" class="c-hi">6</td>
+                <td style="text-align:right" class="c-hi">×2</td><td style="text-align:right" class="c-hi">.72</td>
+              </tr>
+              <tr>
+                <td><span class="tag-slot tag-weapon" style="vertical-align:-3px;margin-right:5px" aria-hidden="true">W</span>W3 SCATTER GUN</td>
+                <td style="text-align:right" class="c-hi">90</td><td style="text-align:right" class="c-hi">9</td>
+                <td style="text-align:right" class="c-hi">×1</td><td style="text-align:right" class="c-hi">.84</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="panel-ft mono-xs" style="display:flex;justify-content:space-between">
+            <span>EXPECTED DPT <span class="c-hi" style="font-weight:700">24.8</span></span>
+            <span>EFFECTIVE ENVELOPE <span class="c-hi" style="font-weight:700">90–180</span></span>
+            <span>SHORT-RANGED</span>
+          </div>
+        </div>
+
+        <!-- ACTIONS -->
+        <div class="panel" style="margin-top:12px">
+          <div class="panel-hd"><span class="t-h2">ACTIONS</span><span class="grow"></span><span class="chip chip-amber">● UNSAVED</span></div>
+          <div class="panel-bd stack">
+            <button class="btn btn-primary" style="width:100%">▣ SAVE TO ENCYCLOPEDIA</button>
+            <div style="display:flex;gap:6px">
+              <button class="btn grow">⧉ COPY SHARE LINK</button>
+              <button class="btn grow">⇄ COMPARE</button>
+            </div>
+            <button class="btn btn-ghost" style="width:100%">＋ DUPLICATE</button>
+          </div>
+          <div class="panel-ft mono-xs" style="display:flex;justify-content:space-between">
+            <span>schemaVersion 3</span><span>catalogVersion 7</span><span class="c-green">✓ VALID FIT</span>
+          </div>
+        </div>
+
+        <div style="height:8px"></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+(function () {
+  /* Reduced-motion toggle (NFR-Accessibility) */
+  var rm = document.getElementById('rmToggle');
+  rm.addEventListener('click', function () {
+    var on = document.body.classList.toggle('rm');
+    rm.setAttribute('aria-pressed', String(on));
+    rm.textContent = on ? '◉ REDUCED MOTION ON' : '◐ REDUCED MOTION';
+  });
+
+  /* Catalog tabs */
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.tabs .tab'));
+  var panes = Array.prototype.slice.call(document.querySelectorAll('.tabpane'));
+  var search = document.getElementById('catSearch');
+  var count = document.getElementById('catCount');
+
+  function activePane() {
+    return panes.filter(function (p) { return !p.hidden; })[0];
+  }
+  function refreshCount() {
+    var p = activePane(); if (!p) return;
+    var rows = p.querySelectorAll('.row');
+    var shown = 0;
+    Array.prototype.forEach.call(rows, function (r) { if (r.style.display !== 'none') shown++; });
+    count.textContent = shown + (shown === 1 ? ' ENTRY' : ' ENTRIES');
+  }
+  function applyFilter() {
+    var q = (search.value || '').trim().toLowerCase();
+    var p = activePane(); if (!p) return;
+    Array.prototype.forEach.call(p.querySelectorAll('.row'), function (r) {
+      r.style.display = (!q || r.textContent.toLowerCase().indexOf(q) > -1) ? '' : 'none';
+    });
+    refreshCount();
+  }
+  tabs.forEach(function (t) {
+    t.addEventListener('click', function () {
+      tabs.forEach(function (o) { o.classList.remove('is-active'); o.setAttribute('aria-selected', 'false'); });
+      t.classList.add('is-active'); t.setAttribute('aria-selected', 'true');
+      panes.forEach(function (p) { p.hidden = (p.id !== t.dataset.pane); });
+      document.getElementById('catScroll').scrollTop = 0;
+      applyFilter();
+    });
+  });
+  search.addEventListener('input', applyFilter);
+
+  /* Row + bay selection (visual only in this mock) */
+  document.addEventListener('click', function (e) {
+    var row = e.target.closest ? e.target.closest('.row') : null;
+    if (row) {
+      var scope = row.parentElement;
+      Array.prototype.forEach.call(scope.querySelectorAll('.row.is-selected'), function (r) {
+        r.classList.remove('is-selected'); r.removeAttribute('aria-current');
+      });
+      row.classList.add('is-selected'); row.setAttribute('aria-current', 'true');
+    }
+    var bay = e.target.closest ? e.target.closest('.bay') : null;
+    if (bay && !e.target.classList.contains('x')) {
+      Array.prototype.forEach.call(document.querySelectorAll('.bay.is-selected'), function (b) {
+        b.classList.remove('is-selected');
+      });
+      bay.classList.add('is-selected');
+    }
+  });
+
+  refreshCount();
+})();
+</script>
+
+<!-- Prototype flow runner (mock-only; not for src/) -->
+<script src="prototype.js"></script>
+</body>
+</html>

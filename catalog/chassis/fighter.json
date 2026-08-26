@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "kind": "chassis",
+  "classId": "fighter",
+  "entries": [
+    {
+      "id": "fig-needle",
+      "ordinal": 1,
+      "name": "Needle",
+      "classId": "fighter",
+      "pointCost": 4,
+      "hullPoints": 18,
+      "mass": 6,
+      "hullRadius": 7,
+      "baseEvasion": 0.42,
+      "addedInCatalogVersion": 1
+    },
+    {
+      "id": "fig-wasp",
+      "ordinal": 2,
+      "name": "Wasp",
+      "classId": "fighter",
+      "pointCost": 6,
+      "hullPoints": 26,
+      "mass": 8,
+      "hullRadius": 8,
+      "baseEvasion": 0.36,
+      "addedInCatalogVersion": 1
+    },
+    {
+      "id": "fig-shrike",
+      "ordinal": 3,
+      "name": "Shrike",
+      "classId": "fighter",
+      "pointCost": 8,
+      "hullPoints": 34,
+      "mass": 10,
+      "hullRadius": 9,
+      "baseEvasion": 0.30,
+      "addedInCatalogVersion": 1
+    }
+  ]
+}

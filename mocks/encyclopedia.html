@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ship Encyclopedia — Starship Skirmish</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="console.css">
+<style>
+  /* Page-local composition only. No token redefinition, no second design language. */
+  .wrap { max-width: 1680px; margin: 0 auto; padding: var(--s5) var(--s5) var(--s8); }
+  /* fill/stroke are inherited, so they cross the <use> shadow boundary. */
+  .hull { display: block; width: 100%; height: 58px;
+          fill: none; stroke: var(--cyan); stroke-width: 1.15;
+          stroke-linejoin: round; stroke-linecap: round;
+          filter: drop-shadow(0 0 6px rgba(34,227,255,.45)); }
+  .hull-amber { stroke: var(--amber); filter: drop-shadow(0 0 6px rgba(255,176,32,.45)); }
+
+  .grid-builds { display: grid; grid-template-columns: repeat(auto-fill, minmax(372px, 1fr));
+                 gap: var(--s3); align-items: start; }
+  .card { display: flex; flex-direction: column; }
+  .card:hover { border-color: var(--line-hot); background: var(--panel-hi); }
+  .card.is-sel { border-color: var(--cyan); box-shadow: var(--glow-2); }
+  .card.is-refit { border-left: 3px solid var(--amber); }
+  .card-hd { display: flex; gap: var(--s2); align-items: flex-start; padding: var(--s3) var(--s3) var(--s2); }
+  .card-name { font-size: 14px; font-weight: 700; letter-spacing: .1em;
+               text-transform: uppercase; color: var(--ink-hi); line-height: 1.2; }
+  .card-art { padding: var(--s1) var(--s3) var(--s2); border-bottom: 1px solid rgba(30,44,60,.55);
+              background: radial-gradient(ellipse at 50% 50%, rgba(34,227,255,.055), transparent 70%); }
+  .card-bd { padding: var(--s2) var(--s3); }
+  .card-ft { padding: var(--s2) var(--s3); border-top: 1px solid rgba(30,44,60,.55);
+             display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+  .card-acts { display: flex; gap: 4px; flex-wrap: wrap; padding: var(--s2) var(--s3);
+               border-top: 1px solid rgba(30,44,60,.55); background: var(--panel-in);
+               opacity: .55; transition: opacity .12s; }
+  .card:hover .card-acts, .card:focus-within .card-acts, .card.is-hover .card-acts { opacity: 1; }
+
+  .slots { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s3); align-items: center; }
+  .slotgrp { display: inline-flex; align-items: center; gap: 5px; }
+  .pips { letter-spacing: .12em; font-size: 12px; line-height: 1; }
+  .pip-on { color: var(--ink-hi); }
+  .pip-off { color: var(--ink-ghost); }
+  .pip-na { color: var(--ink-ghost); }
+
+  .filterbar { display: flex; flex-wrap: wrap; gap: var(--s3); align-items: center; }
+  .chip-btn { cursor: pointer; font-family: var(--mono); }
+  .chip-btn:hover { border-color: var(--line-hot); color: var(--ink-hi); }
+  .chip-btn[aria-pressed="true"] { color: var(--cyan); border-color: rgba(34,227,255,.55);
+                                   background: rgba(34,227,255,.12); }
+  .chip-btn[aria-pressed="true"]::before { content: "✓ "; }
+
+  .selbar { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s3);
+            background: rgba(34,227,255,.08); border: 1px solid rgba(34,227,255,.35);
+            border-left: 3px solid var(--cyan); border-radius: var(--r); }
+
+  .toastwrap { position: fixed; right: var(--s5); bottom: var(--s5); z-index: 90; }
+  .is-hidden { display: none !important; }
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 2px var(--s3); }
+</style>
+</head>
+<body>
+
+<!-- Hull silhouette symbol library ------------------------------------------ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <!-- FIGHTER — sharp dart, swept wings, tiny body -->
+  <symbol id="h-fighter" viewBox="0 0 160 64">
+    <path d="M156 32 L100 27 L70 26 L30 5 L44 28 L12 29 L12 35 L44 36 L30 59 L70 38 L100 37 Z"/>
+    <path d="M100 27 L120 32 L100 37"/>
+    <path d="M70 26 L70 38 M44 28 L44 36 M30 5 L58 27 M30 59 L58 37"/>
+  </symbol>
+  <!-- FRIGATE — elongated, thin, dorsal + ventral fins -->
+  <symbol id="h-frigate" viewBox="0 0 160 64">
+    <path d="M157 32 L128 26 L38 25 L16 28 L10 32 L16 36 L38 39 L128 38 Z"/>
+    <path d="M54 25 L62 12 L86 13 L82 25"/>
+    <path d="M54 39 L62 52 L86 51 L82 39"/>
+    <path d="M38 25 L38 39 M104 25.5 L104 38.5 M128 26 L128 38 M22 27 L22 37"/>
+  </symbol>
+  <!-- CRUISER — broad wedge, deep hull, spine -->
+  <symbol id="h-cruiser" viewBox="0 0 160 64">
+    <path d="M157 32 L132 18 L88 6 L32 10 L12 22 L8 32 L12 42 L32 54 L88 58 L132 46 Z"/>
+    <path d="M48 8 L58 1 L100 3 L108 9"/>
+    <path d="M48 56 L58 63 L100 61 L108 55"/>
+    <path d="M32 10 L32 54 M88 6 L88 58 M120 12 L120 52"/>
+    <path d="M132 24 L149 32 L132 40"/>
+    <path d="M20 20 L20 44 M100 16 L124 20 M100 48 L124 44"/>
+  </symbol>
+  <symbol id="h-mega" viewBox="0 0 160 64">
+    <path d="M12 9 L110 9 L136 15 L158 32 L136 49 L110 55 L12 55 L4 43 L4 21 Z"/>
+    <path d="M12 9 L12 55 M40 9 L40 55 M74 9 L74 55 M110 9 L110 55 M136 15 L136 49"/>
+    <path d="M50 9 L50 2 L66 2 L66 9 M50 55 L50 62 L66 62 L66 55"/>
+    <path d="M84 14 L128 20 M84 50 L128 44 M84 24 L128 27 M84 40 L128 37"/>
+    <path d="M136 25 L152 32 L136 39"/>
+    <path d="M4 27 L12 27 M4 37 L12 37 M20 15 L34 15 M20 49 L34 49"/>
+  </symbol>
+</svg>
+
+<!-- Mobile gate -------------------------------------------------------------- -->
+<div class="mobile-gate">
+  <div class="panel ticks" style="max-width:460px;padding:var(--s5)">
+    <div class="t-h1" style="margin-bottom:var(--s2)">DESKTOP REQUIRED</div>
+    <p class="t-prose" style="margin:0">Starship Skirmish needs a viewport of at least 1280&times;720.
+      Open this on a desktop browser — there is no mobile layout in v1, and a squeezed one would lie
+      to you about the tactical field.</p>
+  </div>
+</div>
+
+<div class="desktop-only">
+
+<!-- Topbar ------------------------------------------------------------------- -->
+<header class="topbar">
+  <div class="brand"><span class="brand-mark" aria-hidden="true"></span>STARSHIP SKIRMISH</div>
+  <nav class="nav" aria-label="Primary">
+    <a href="shipyard.html">SHIPYARD</a>
+    <a href="encyclopedia.html" class="is-active" aria-current="page">ENCYCLOPEDIA</a>
+    <a href="skirmish-setup.html">SKIRMISH</a>
+    <a href="index.html">INDEX</a>
+  </nav>
+  <div class="grow"></div>
+  <div style="display:flex;align-items:center;gap:var(--s2)">
+    <span class="mono-xs">LOCAL STORAGE 1.2&nbsp;MB / ~5&nbsp;MB</span>
+    <span class="meter meter-sm" style="width:84px" role="img" aria-label="Local storage 24 percent used">
+      <span class="meter-fill f-shield" style="width:24%"></span>
+    </span>
+  </div>
+  <span class="chip chip-cyan">CATALOG v7</span>
+  <button class="btn btn-sm btn-ghost" id="rmToggle" aria-pressed="false">◐ REDUCED MOTION</button>
+</header>
+
+<main class="wrap layer stack-lg">
+
+  <!-- Header row ------------------------------------------------------------- -->
+  <div style="display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap">
+    <h1 class="t-h1" style="margin:0">SHIP ENCYCLOPEDIA</h1>
+    <span class="chip">24 BUILDS</span>
+    <span class="chip">SCHEMA v3</span>
+    <div class="grow"></div>
+    <a class="btn btn-primary" href="shipyard.html">＋ NEW BUILD</a>
+    <button class="btn">⭳ IMPORT JSON</button>
+    <button class="btn">⭱ EXPORT ALL (JSON)</button>
+    <a class="btn" href="share-import.html">🔗 IMPORT FROM LINK</a>
+  </div>
+
+  <!-- Backup nudge (FR-7) ---------------------------------------------------- -->
+  <div id="backupNudge">
+    <div class="banner">
+      <span class="c-amber" style="font-size:16px" aria-hidden="true">⚠</span>
+      <div class="grow">
+        <div style="font-weight:700;letter-spacing:.1em;color:var(--ink-hi)">
+          YOUR LIBRARY LIVES IN THIS BROWSER ONLY.
+        </div>
+        <div class="t-meta">Clearing site data deletes 24 builds. Last export: 18 days ago.</div>
+      </div>
+      <button class="btn btn-warn">⭱ EXPORT NOW</button>
+      <button class="btn btn-ghost" data-dismiss="backupNudge">REMIND ME LATER</button>
+    </div>
+    <div class="mono-xs" style="padding:4px var(--s3) 0">
+      FR-7 — DISMISSIBLE BUT RECURRING. RE-APPEARS ON NEXT SESSION, AND IMMEDIATELY AFTER ANY
+      SESSION THAT ADDS OR EDITS A BUILD, UNTIL AN EXPORT IS WRITTEN.
+    </div>
+  </div>
+
+  <!-- Storage + counts ------------------------------------------------------- -->
+  <div style="display:grid;grid-template-columns:340px 1fr;gap:var(--s3);align-items:stretch">
+    <section class="panel ticks">
+      <div class="panel-hd"><span class="t-label">STORAGE HEADROOM</span>
+        <div class="grow"></div><span class="chip chip-green">◉ OK</span></div>
+      <div class="panel-bd stack">
+        <div style="display:flex;align-items:baseline;justify-content:space-between">
+          <span class="t-num">1.2 MB</span><span class="mono-xs">/ ~5 MB LOCALSTORAGE</span>
+        </div>
+        <div class="meter" role="img" aria-label="1.2 megabytes of about 5 megabytes used">
+          <span class="meter-fill f-shield" style="width:24%"></span>
+          <span class="meter-notch" style="left:80%" title="Quota warning threshold 80%"></span>
+        </div>
+        <div class="stat"><span class="stat-k">HEADROOM</span><span class="stat-v">~380 MORE BUILDS</span></div>
+        <div class="stat"><span class="stat-k">AVG BUILD SIZE</span><span class="stat-v">3.1 KB</span></div>
+        <div class="stat"><span class="stat-k">WARN AT</span><span class="stat-v c-amber">80% · 4.0 MB</span></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-hd"><span class="t-label">LIBRARY</span>
+        <div class="grow"></div>
+        <span class="mono-xs">LAST EXPORT 2026-08-07 · 18 DAYS AGO</span></div>
+      <div class="panel-bd" style="display:grid;grid-template-columns:repeat(6,1fr);gap:var(--s3)">
+        <div><div class="t-label">TOTAL</div><div class="t-num-xl">24</div></div>
+        <div><div class="t-label">FIGHTER</div><div class="t-num-xl">7</div></div>
+        <div><div class="t-label">FRIGATE</div><div class="t-num-xl">8</div></div>
+        <div><div class="t-label">CRUISER</div><div class="t-num-xl">6</div></div>
+        <div><div class="t-label">MEGA DEST.</div><div class="t-num-xl">3</div></div>
+        <div><div class="t-label">⚠ NEEDS REFIT</div><div class="t-num-xl c-amber">2</div></div>
+      </div>
+      <div class="panel-ft mono-xs">
+        POINT RANGE 9–152 · MEDIAN 37 · ALL 24 BUILDS MIGRATED TO SCHEMA v3 / CATALOG v7 ON LOAD (FR-2)
+      </div>
+    </section>
+  </div>
+
+  <!-- Filter bar ------------------------------------------------------------- -->
+  <section class="panel">
+    <div class="panel-bd filterbar">
+      <label class="sr-only" for="q">Search builds</label>
+      <input id="q" class="field" type="search" placeholder="SEARCH NAME, CHASSIS, TAG…"
+             style="width:260px" value="">
+
+      <div style="display:flex;align-items:center;gap:var(--s2)">
+        <span class="t-label">SORT</span>
+        <div class="seg" role="group" aria-label="Sort builds">
+          <button aria-pressed="true">RECENT</button>
+          <button aria-pressed="false">NAME</button>
+          <button aria-pressed="false">POINTS</button>
+          <button aria-pressed="false">CLASS</button>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:5px">
+        <span class="t-label">CLASS</span>
+        <button class="chip chip-btn" aria-pressed="true">ALL</button>
+        <button class="chip chip-btn" aria-pressed="false">FIGHTER</button>
+        <button class="chip chip-btn" aria-pressed="false">FRIGATE</button>
+        <button class="chip chip-btn" aria-pressed="false">CRUISER</button>
+        <button class="chip chip-btn" aria-pressed="false">MEGA DESTROYER</button>
+      </div>
+
+      <div class="grow"></div>
+
+      <div style="display:flex;align-items:center;gap:var(--s2)">
+        <span class="t-label">VIEW</span>
+        <div class="seg" role="group" aria-label="View mode" id="viewSeg">
+          <button aria-pressed="true" data-view="grid">▦ GRID</button>
+          <button aria-pressed="false" data-view="table">☰ TABLE</button>
+        </div>
+      </div>
+    </div>
+    <div class="panel-ft" style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+      <span class="t-label">TAGS</span>
+      <button class="chip chip-btn" aria-pressed="true">alpha</button>
+      <button class="chip chip-btn" aria-pressed="false">meta</button>
+      <button class="chip chip-btn" aria-pressed="false">swarm</button>
+      <button class="chip chip-btn" aria-pressed="false">attrition</button>
+      <button class="chip chip-btn" aria-pressed="false">cheap</button>
+      <button class="chip chip-btn" aria-pressed="false">wip</button>
+      <button class="chip chip-btn" aria-pressed="false">untested</button>
+      <div class="grow"></div>
+      <span class="mono-xs">SHOWING 10 OF 24 · FILTER: TAG=alpha (CLEARED FOR THIS MOCK VIEW)</span>
+    </div>
+  </section>
+
+  <!-- Selection bar ---------------------------------------------------------- -->
+  <div class="selbar" id="selbar">
+    <span class="glyph fl-0" aria-hidden="true">✕</span>
+    <strong class="c-hi" id="selCount">3 SELECTED</strong>
+    <span class="mono-xs">THE WIDOWMAKER · TIN CAN · GLASS HAMMER — 143 PTS COMBINED</span>
+    <div class="grow"></div>
+    <button class="btn btn-sm">⭱ EXPORT SELECTED (JSON)</button>
+    <button class="btn btn-sm btn-danger" data-open-modal>🗑 DELETE SELECTED</button>
+    <button class="btn btn-sm btn-ghost" id="clearSel">CLEAR SELECTION</button>
+  </div>
+
+  <!-- ===================== GRID VIEW ===================== -->
+  <div class="grid-builds" id="viewGrid">
+
+    <!-- 1 · THE WIDOWMAKER (selected) -->
+    <article class="card panel is-sel">
+      <div class="card-hd">
+        <input class="chk" type="checkbox" checked aria-label="Select THE WIDOWMAKER">
+        <div class="grow">
+          <div class="card-name">THE WIDOWMAKER</div>
+          <div class="mono-xs">MERIDIAN · CRUISER · 3W/2S/2M/1E/2X</div>
+        </div>
+        <div style="text-align:right;line-height:1">
+          <div class="t-num-xl">63</div><div class="t-label">PTS</div>
+        </div>
+      </div>
+      <div class="card-art"><svg class="hull" viewBox="0 0 160 64" role="img"
+        aria-label="Cruiser hull silhouette, broad"><use href="#h-cruiser"/></svg></div>
+      <div class="card-bd stack">
+        <div class="slots">
+          <span class="slotgrp"><i class="tag-slot tag-weapon">W</i><span class="pips"><b class="pip-on">●●●</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-shield">S</i><span class="pips"><b class="pip-on">●</b><b class="pip-off">○</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-missile">M</i><span class="pips"><b class="pip-on">●</b><b class="pip-off">○</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-engine">E</i><span class="pips"><b class="pip-on">●</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-special">X</i><span class="pips"><b class="pip-off">○○</b></span></span>
+          <span class="sr-only">Weapons 3 of 3, shields 1 of 2, missiles 1 of 2, engine 1 of 1, special 0 of 2.</span>
+          <div class="grow"></div><span class="mono-xs">6 / 10 BAYS</span>
+        </div>
+        <div class="mono-xs">FUSION LANCE · MASS RAIL · PULSE ARRAY · AEGIS-II · SWARM POD · COMMUTER DRIVE</div>
+      </div>
+      <div class="card-ft">
+        <span class="chip chip-cyan">alpha</span><span class="chip">meta</span>
+        <div class="grow"></div><span class="mono-xs">MOD 2026-08-24 · 1D AGO</span>
+      </div>
+      <div class="card-acts">
+        <a class="btn btn-sm" href="skirmish-setup.html">▲ FIELD</a>
+        <a class="btn btn-sm" href="shipyard.html">✎ EDIT</a>
+        <button class="btn btn-sm">⧉ DUPLICATE</button>
+        <button class="btn btn-sm" data-share>🔗 SHARE</button>
+        <button class="btn btn-sm">⭱ EXPORT</button>
+        <div class="grow"></div>
+        <button class="btn btn-sm btn-danger" data-open-modal data-name="THE WIDOWMAKER">🗑 DELETE</button>
+      </div>
+    </article>
+
+    <!-- 2 · THE ARGUMENT (needs refit) -->
+    <article class="card panel is-refit is-hover">
+      <div class="card-hd">
+        <input class="chk" type="checkbox" aria-label="Select THE ARGUMENT">
+        <div class="grow">
+          <div class="card-name">THE ARGUMENT</div>
+          <div class="mono-xs">OBELISK · MEGA DESTROYER · 5W/3S/3M/1E/3X</div>
+        </div>
+        <div style="text-align:right;line-height:1">
+          <div class="t-num-xl c-amber">152</div><div class="t-label">PTS</div>
+        </div>
+      </div>
+      <div class="card-art"><svg class="hull hull-amber" viewBox="0 0 160 64" role="img"
+        aria-label="Mega destroyer hull silhouette, massive slab"><use href="#h-mega"/></svg></div>
+      <div class="card-bd stack">
+        <div><span class="chip chip-amber">⚠ NEEDS REFIT</span>
+             <span class="chip">WAS 148 PTS</span>
+             <span class="chip">WRITTEN v5</span></div>
+        <div class="slots">
+          <span class="slotgrp"><i class="tag-slot tag-weapon">W</i><span class="pips"><b class="pip-on">●●●●●</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-shield">S</i><span class="pips"><b class="pip-on">●●●</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-missile">M</i><span class="pips"><b class="pip-on">●</b><b class="pip-off">○○</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-engine">E</i><span class="pips"><b class="pip-on">●</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-special">X</i><span class="pips"><b class="pip-on">●</b><b class="pip-off">○○</b></span></span>
+          <span class="sr-only">Weapons 5 of 5, shields 3 of 3, missiles 1 of 3, engine 1 of 1, special 1 of 3.</span>
+          <div class="grow"></div><span class="mono-xs">11 / 15 BAYS</span>
+        </div>
+        <div class="mono-xs">FUSION LANCE ×3 · MASS RAIL · FLAK BATTERY · FLUXWEAVE · NULLSHEET · FILM BARRIER · HAMMERHEAD</div>
+        <div class="banner" style="align-items:flex-start">
+          <span class="c-amber" aria-hidden="true">⚠</span>
+          <div class="grow">
+            <div class="mono-xs" style="color:var(--ink-hi);letter-spacing:.06em">
+              Catalog v5 → v7. Recalculated 148 → 152 PTS.
+              FLUXWEAVE regen 16 → 18 (+1 pt), FUSION LANCE 7 → 8 pts.
+            </div>
+            <div style="display:flex;gap:4px;margin-top:6px">
+              <button class="btn btn-sm btn-warn">⟳ RE-FIT</button>
+              <button class="btn btn-sm btn-ghost">KEEP AS IS</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card-ft">
+        <span class="chip">meta</span>
+        <div class="grow"></div><span class="mono-xs">MOD 2026-08-21 · 4D AGO</span>
+      </div>
+      <div class="card-acts">
+        <a class="btn btn-sm" href="skirmish-setup.html">▲ FIELD</a>
+        <a class="btn btn-sm" href="shipyard.html">✎ EDIT</a>
+        <button class="btn btn-sm">⧉ DUPLICATE</button>
+        <button class="btn btn-sm" data-share>🔗 SHARE</button>
+        <button class="btn btn-sm">⭱ EXPORT</button>
+        <div class="grow"></div>
+        <button class="btn btn-sm btn-danger" data-open-modal data-name="THE ARGUMENT">🗑 DELETE</button>
+      </div>
+    </article>
+
+    <!-- 3 · TIN CAN (selected) -->
+    <article class="card panel is-sel">
+      <div class="card-hd">
+        <input class="chk" type="checkbox" checked aria-label="Select TIN CAN">
+        <div class="grow">
+          <div class="card-name">TIN CAN</div>
+          <div class="mono-xs">NEEDLE · FIGHTER · 1W/1S/0M/1E/1X</div>
+        </div>
+        <div style="text-align:right;line-height:1">
+          <div class="t-num-xl">9</div><div class="t-label">PTS</div>
+        </div>
+      </div>
+      <div class="card-art"><svg class="hull" viewBox="0 0 160 64" role="img"
+        aria-label="Fighter hull silhouette, sharp dart"><use href="#h-fighter"/></svg></div>
+      <div class="card-bd stack">
+        <div class="slots">
+          <span class="slotgrp"><i class="tag-slot tag-weapon">W</i><span class="pips"><b class="pip-on">●</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-shield">S</i><span class="pips"><b class="pip-on">●</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-missile">M</i><span class="pips"><b class="pip-na">— N/A</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-engine">E</i><span class="pips"><b class="pip-on">●</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-special">X</i><span class="pips"><b class="pip-off">○</b></span></span>
+          <span class="sr-only">Weapons 1 of 1, shields 1 of 1, no missile bays on this class, engine 1 of 1, special 0 of 1.</span>
+          <div class="grow"></div><span class="mono-xs">3 / 4 BAYS</span>
+        </div>
+        <div class="mono-xs">SCATTER GUN · FILM BARRIER · COMMUTER DRIVE</div>
+      </div>
+      <div class="card-ft">
+        <span class="chip chip-cyan">swarm</span><span class="chip">cheap</span>
+        <div class="grow"></div><span class="mono-xs">MOD 2026-08-23 · 2D AGO</span>
+      </div>
+      <div class="card-acts">
+        <a class="btn btn-sm" href="skirmish-setup.html">▲ FIELD</a>
+        <a class="btn btn-sm" href="shipyard.html">✎ EDIT</a>
+        <button class="btn btn-sm">⧉ DUPLICATE</button>
+        <button class="btn btn-sm" data-share>🔗 SHARE</button>
+        <button class="btn btn-sm">⭱ EXPORT</button>
+        <div class="grow"></div>
+        <button class="btn btn-sm btn-danger" data-open-modal data-name="TIN CAN">🗑 DELETE</button>
+      </div>
+    </article>
+
+    <!-- 4 · LEVIATHAN PRIME (needs refit) -->
+    <article class="card panel is-refit">
+      <div class="card-hd">
+        <input class="chk" type="checkbox" aria-label="Select LEVIATHAN PRIME">
+        <div class="grow">
+          <div class="card-name">LEVIATHAN PRIME</div>
+          <div class="mono-xs">LEVIATHAN · MEGA DESTROYER · 5W/3S/3M/1E/3X</div>
+        </div>
+        <div style="text-align:right;line-height:1">
+          <div class="t-num-xl c-amber">121</div><div class="t-label">PTS</div>
+        </div>
+      </div>
+      <div class="card-art"><svg class="hull hull-amber" viewBox="0 0 160 64" role="img"
+        aria-label="Mega destroyer hull silhouette, massive slab"><use href="#h-mega"/></svg></div>
+      <div class="card-bd stack">
+        <div><span class="chip chip-amber">⚠ NEEDS REFIT</span>
+             <span class="chip">WAS 119 PTS</span>
+             <span class="chip">WRITTEN v5</span></div>
+        <div class="slots">
+          <span class="slotgrp"><i class="tag-slot tag-weapon">W</i><span class="pips"><b class="pip-on">●●●●</b><b class="pip-off">○</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-shield">S</i><span class="pips"><b class="pip-on">●●</b><b class="pip-off">○</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-missile">M</i><span class="pips"><b class="pip-on">●</b><b class="pip-off">○○</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-engine">E</i><span class="pips"><b class="pip-on">●</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-special">X</i><span class="pips"><b class="pip-on">●</b><b class="pip-off">○○</b></span></span>
+          <span class="sr-only">Weapons 4 of 5, shields 2 of 3, missiles 1 of 3, engine 1 of 1, special 1 of 3.</span>
+          <div class="grow"></div><span class="mono-xs">9 / 15 BAYS</span>
+        </div>
+        <div class="mono-xs">FUSION LANCE · MASS RAIL ×2 · PULSE ARRAY · FLUXWEAVE · AEGIS-II · TALON · ION CASCADE · POINT-DEFENSE GRID</div>
+        <div class="banner" style="align-items:flex-start">
+          <span class="c-amber" aria-hidden="true">⚠</span>
+          <div class="grow">
+            <div class="mono-xs" style="color:var(--ink-hi);letter-spacing:.06em">
+              Catalog v5 → v7. Recalculated 119 → 121 PTS.
+              FLUXWEAVE regen 16 → 18 (+1 pt), FUSION LANCE 7 → 8 pts.
+            </div>
+            <div style="display:flex;gap:4px;margin-top:6px">
+              <button class="btn btn-sm btn-warn">⟳ RE-FIT</button>
+              <button class="btn btn-sm btn-ghost">KEEP AS IS</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card-ft">
+        <span class="chip">wip</span>
+        <div class="grow"></div><span class="mono-xs">MOD 2026-07-12 · 44D AGO</span>
+      </div>
+      <div class="card-acts">
+        <a class="btn btn-sm" href="skirmish-setup.html">▲ FIELD</a>
+        <a class="btn btn-sm" href="shipyard.html">✎ EDIT</a>
+        <button class="btn btn-sm">⧉ DUPLICATE</button>
+        <button class="btn btn-sm" data-share>🔗 SHARE</button>
+        <button class="btn btn-sm">⭱ EXPORT</button>
+        <div class="grow"></div>
+        <button class="btn btn-sm btn-danger" data-open-modal data-name="LEVIATHAN PRIME">🗑 DELETE</button>
+      </div>
+    </article>
+
+    <!-- 5 · GLASS HAMMER (selected) -->
+    <article class="card panel is-sel">
+      <div class="card-hd">
+        <input class="chk" type="checkbox" checked aria-label="Select GLASS HAMMER">
+        <div class="grow">
+          <div class="card-name">GLASS HAMMER</div>
+          <div class="mono-xs">VALKYRIE · CRUISER · 3W/2S/2M/1E/2X</div>
+        </div>
+        <div style="text-align:right;line-height:1">
+          <div class="t-num-xl">71</div><div class="t-label">PTS</div>
+        </div>
+      </div>
+      <div class="card-art"><svg class="hull" viewBox="0 0 160 64" role="img"
+        aria-label="Cruiser hull silhouette, broad"><use href="#h-cruiser"/></svg></div>
+      <div class="card-bd stack">
+        <div class="slots">
+          <span class="slotgrp"><i class="tag-slot tag-weapon">W</i><span class="pips"><b class="pip-on">●●</b><b class="pip-off">○</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-shield">S</i><span class="pips"><b class="pip-off">○○</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-missile">M</i><span class="pips"><b class="pip-off">○○</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-engine">E</i><span class="pips"><b class="pip-on">●</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-special">X</i><span class="pips"><b class="pip-on">●</b><b class="pip-off">○</b></span></span>
+          <span class="sr-only">Weapons 2 of 3, shields 0 of 2, missiles 0 of 2, engine 1 of 1, special 1 of 2.</span>
+          <div class="grow"></div><span class="mono-xs">4 / 10 BAYS</span>
+        </div>
+        <div class="mono-xs">PHASE BEAM ×2 · COMMUTER DRIVE · THRUST BOOSTER · NO SHIELD FITTED — 150 HULL, 0 CAP</div>
+      </div>
+      <div class="card-ft">
+        <span class="chip chip-cyan">alpha</span>
+        <div class="grow"></div><span class="mono-xs">MOD 2026-08-17 · 8D AGO</span>
+      </div>
+      <div class="card-acts">
+        <a class="btn btn-sm" href="skirmish-setup.html">▲ FIELD</a>
+        <a class="btn btn-sm" href="shipyard.html">✎ EDIT</a>
+        <button class="btn btn-sm">⧉ DUPLICATE</button>
+        <button class="btn btn-sm" data-share>🔗 SHARE</button>
+        <button class="btn btn-sm">⭱ EXPORT</button>
+        <div class="grow"></div>
+        <button class="btn btn-sm btn-danger" data-open-modal data-name="GLASS HAMMER">🗑 DELETE</button>
+      </div>
+    </article>
+
+    <!-- 6 · REGEN BRICK -->
+    <article class="card panel">
+      <div class="card-hd">
+        <input class="chk" type="checkbox" aria-label="Select REGEN BRICK">
+        <div class="grow">
+          <div class="card-name">REGEN BRICK</div>
+          <div class="mono-xs">BULWARK · CRUISER · 3W/2S/2M/1E/2X</div>
+        </div>
+        <div style="text-align:right;line-height:1">
+          <div class="t-num-xl">58</div><div class="t-label">PTS</div>
+        </div>
+      </div>
+      <div class="card-art"><svg class="hull" viewBox="0 0 160 64" role="img"
+        aria-label="Cruiser hull silhouette, broad"><use href="#h-cruiser"/></svg></div>
+      <div class="card-bd stack">
+        <div class="slots">
+          <span class="slotgrp"><i class="tag-slot tag-weapon">W</i><span class="pips"><b class="pip-on">●</b><b class="pip-off">○○</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-shield">S</i><span class="pips"><b class="pip-on">●●</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-missile">M</i><span class="pips"><b class="pip-off">○○</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-engine">E</i><span class="pips"><b class="pip-on">●</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-special">X</i><span class="pips"><b class="pip-on">●●</b></span></span>
+          <span class="sr-only">Weapons 1 of 3, shields 2 of 2, missiles 0 of 2, engine 1 of 1, special 2 of 2.</span>
+          <div class="grow"></div><span class="mono-xs">6 / 10 BAYS</span>
+        </div>
+        <div class="mono-xs">PULSE ARRAY · FLUXWEAVE ×2 · COMMUTER DRIVE · ABLATIVE PLATING · DAMAGE CONTROL — 36 REGEN/TURN</div>
+      </div>
+      <div class="card-ft">
+        <span class="chip">attrition</span>
+        <div class="grow"></div><span class="mono-xs">MOD 2026-08-14 · 11D AGO</span>
+      </div>
+      <div class="card-acts">
+        <a class="btn btn-sm" href="skirmish-setup.html">▲ FIELD</a>
+        <a class="btn btn-sm" href="shipyard.html">✎ EDIT</a>
+        <button class="btn btn-sm">⧉ DUPLICATE</button>
+        <button class="btn btn-sm" data-share>🔗 SHARE</button>
+        <button class="btn btn-sm">⭱ EXPORT</button>
+        <div class="grow"></div>
+        <button class="btn btn-sm btn-danger" data-open-modal data-name="REGEN BRICK">🗑 DELETE</button>
+      </div>
+    </article>
+
+    <!-- 7 · PD WALL -->
+    <article class="card panel">
+      <div class="card-hd">
+        <input class="chk" type="checkbox" aria-label="Select PD WALL">
+        <div class="grow">
+          <div class="card-name">PD WALL</div>
+          <div class="mono-xs">HARRIER · FRIGATE · 2W/1S/1M/1E/1X</div>
+        </div>
+        <div style="text-align:right;line-height:1">
+          <div class="t-num-xl">37</div><div class="t-label">PTS</div>
+        </div>
+      </div>
+      <div class="card-art"><svg class="hull" viewBox="0 0 160 64" role="img"
+        aria-label="Frigate hull silhouette, elongated"><use href="#h-frigate"/></svg></div>
+      <div class="card-bd stack">
+        <div class="slots">
+          <span class="slotgrp"><i class="tag-slot tag-weapon">W</i><span class="pips"><b class="pip-on">●●</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-shield">S</i><span class="pips"><b class="pip-off">○</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-missile">M</i><span class="pips"><b class="pip-off">○</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-engine">E</i><span class="pips"><b class="pip-on">●</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-special">X</i><span class="pips"><b class="pip-on">●</b></span></span>
+          <span class="sr-only">Weapons 2 of 2, shields 0 of 1, missiles 0 of 1, engine 1 of 1, special 1 of 1.</span>
+          <div class="grow"></div><span class="mono-xs">4 / 6 BAYS</span>
+        </div>
+        <div class="mono-xs">FLAK BATTERY ×2 · ION CASCADE · POINT-DEFENSE GRID — 8 SHOTS/TURN AT R120</div>
+      </div>
+      <div class="card-ft">
+        <span class="mono-xs c-dim">NO TAGS</span>
+        <div class="grow"></div><span class="mono-xs">MOD 2026-08-06 · 19D AGO</span>
+      </div>
+      <div class="card-acts">
+        <a class="btn btn-sm" href="skirmish-setup.html">▲ FIELD</a>
+        <a class="btn btn-sm" href="shipyard.html">✎ EDIT</a>
+        <button class="btn btn-sm">⧉ DUPLICATE</button>
+        <button class="btn btn-sm" data-share>🔗 SHARE</button>
+        <button class="btn btn-sm">⭱ EXPORT</button>
+        <div class="grow"></div>
+        <button class="btn btn-sm btn-danger" data-open-modal data-name="PD WALL">🗑 DELETE</button>
+      </div>
+    </article>
+
+    <!-- 8 · SPEARHEAD -->
+    <article class="card panel">
+      <div class="card-hd">
+        <input class="chk" type="checkbox" aria-label="Select SPEARHEAD">
+        <div class="grow">
+          <div class="card-name">SPEARHEAD</div>
+          <div class="mono-xs">LANCER · FRIGATE · 2W/1S/1M/1E/1X</div>
+        </div>
+        <div style="text-align:right;line-height:1">
+          <div class="t-num-xl">31</div><div class="t-label">PTS</div>
+        </div>
+      </div>
+      <div class="card-art"><svg class="hull" viewBox="0 0 160 64" role="img"
+        aria-label="Frigate hull silhouette, elongated"><use href="#h-frigate"/></svg></div>
+      <div class="card-bd stack">
+        <div class="slots">
+          <span class="slotgrp"><i class="tag-slot tag-weapon">W</i><span class="pips"><b class="pip-on">●</b><b class="pip-off">○</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-shield">S</i><span class="pips"><b class="pip-off">○</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-missile">M</i><span class="pips"><b class="pip-on">●</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-engine">E</i><span class="pips"><b class="pip-on">●</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-special">X</i><span class="pips"><b class="pip-off">○</b></span></span>
+          <span class="sr-only">Weapons 1 of 2, shields 0 of 1, missiles 1 of 1, engine 1 of 1, special 0 of 1.</span>
+          <div class="grow"></div><span class="mono-xs">3 / 6 BAYS</span>
+        </div>
+        <div class="mono-xs">MASS RAIL · LONGSPEAR · COMMUTER DRIVE — R420 SNIPE + 130 BOOST MISSILE</div>
+      </div>
+      <div class="card-ft">
+        <span class="chip">untested</span>
+        <div class="grow"></div><span class="mono-xs">MOD 2026-08-11 · 14D AGO</span>
+      </div>
+      <div class="card-acts">
+        <a class="btn btn-sm" href="skirmish-setup.html">▲ FIELD</a>
+        <a class="btn btn-sm" href="shipyard.html">✎ EDIT</a>
+        <button class="btn btn-sm">⧉ DUPLICATE</button>
+        <button class="btn btn-sm" data-share>🔗 SHARE</button>
+        <button class="btn btn-sm">⭱ EXPORT</button>
+        <div class="grow"></div>
+        <button class="btn btn-sm btn-danger" data-open-modal data-name="SPEARHEAD">🗑 DELETE</button>
+      </div>
+    </article>
+
+    <!-- 9 · PICKET FENCE -->
+    <article class="card panel">
+      <div class="card-hd">
+        <input class="chk" type="checkbox" aria-label="Select PICKET FENCE">
+        <div class="grow">
+          <div class="card-name">PICKET FENCE</div>
+          <div class="mono-xs">PICKET · FRIGATE · 2W/1S/1M/1E/1X</div>
+        </div>
+        <div style="text-align:right;line-height:1">
+          <div class="t-num-xl">24</div><div class="t-label">PTS</div>
+        </div>
+      </div>
+      <div class="card-art"><svg class="hull" viewBox="0 0 160 64" role="img"
+        aria-label="Frigate hull silhouette, elongated"><use href="#h-frigate"/></svg></div>
+      <div class="card-bd stack">
+        <div class="slots">
+          <span class="slotgrp"><i class="tag-slot tag-weapon">W</i><span class="pips"><b class="pip-on">●●</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-shield">S</i><span class="pips"><b class="pip-on">●</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-missile">M</i><span class="pips"><b class="pip-off">○</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-engine">E</i><span class="pips"><b class="pip-on">●</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-special">X</i><span class="pips"><b class="pip-on">●</b></span></span>
+          <span class="sr-only">Weapons 2 of 2, shields 1 of 1, missiles 0 of 1, engine 1 of 1, special 1 of 1.</span>
+          <div class="grow"></div><span class="mono-xs">5 / 6 BAYS</span>
+        </div>
+        <div class="mono-xs">SCATTER GUN · FLAK BATTERY · FILM BARRIER · COMMUTER DRIVE · THRUST BOOSTER</div>
+      </div>
+      <div class="card-ft">
+        <span class="mono-xs c-dim">NO TAGS</span>
+        <div class="grow"></div><span class="mono-xs">MOD 2026-08-19 · 6D AGO</span>
+      </div>
+      <div class="card-acts">
+        <a class="btn btn-sm" href="skirmish-setup.html">▲ FIELD</a>
+        <a class="btn btn-sm" href="shipyard.html">✎ EDIT</a>
+        <button class="btn btn-sm">⧉ DUPLICATE</button>
+        <button class="btn btn-sm" data-share>🔗 SHARE</button>
+        <button class="btn btn-sm">⭱ EXPORT</button>
+        <div class="grow"></div>
+        <button class="btn btn-sm btn-danger" data-open-modal data-name="PICKET FENCE">🗑 DELETE</button>
+      </div>
+    </article>
+
+    <!-- 10 · MOTE -->
+    <article class="card panel">
+      <div class="card-hd">
+        <input class="chk" type="checkbox" aria-label="Select MOTE">
+        <div class="grow">
+          <div class="card-name">MOTE</div>
+          <div class="mono-xs">WASP · FIGHTER · 1W/1S/0M/1E/1X</div>
+        </div>
+        <div style="text-align:right;line-height:1">
+          <div class="t-num-xl">11</div><div class="t-label">PTS</div>
+        </div>
+      </div>
+      <div class="card-art"><svg class="hull" viewBox="0 0 160 64" role="img"
+        aria-label="Fighter hull silhouette, sharp dart"><use href="#h-fighter"/></svg></div>
+      <div class="card-bd stack">
+        <div class="slots">
+          <span class="slotgrp"><i class="tag-slot tag-weapon">W</i><span class="pips"><b class="pip-on">●</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-shield">S</i><span class="pips"><b class="pip-on">●</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-missile">M</i><span class="pips"><b class="pip-na">— N/A</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-engine">E</i><span class="pips"><b class="pip-on">●</b></span></span>
+          <span class="slotgrp"><i class="tag-slot tag-special">X</i><span class="pips"><b class="pip-off">○</b></span></span>
+          <span class="sr-only">Weapons 1 of 1, shields 1 of 1, no missile bays on this class, engine 1 of 1, special 0 of 1.</span>
+          <div class="grow"></div><span class="mono-xs">3 / 4 BAYS</span>
+        </div>
+        <div class="mono-xs">SCATTER GUN · FILM BARRIER · COMMUTER DRIVE — EV .31, 22 HULL</div>
+      </div>
+      <div class="card-ft">
+        <span class="chip">swarm</span>
+        <div class="grow"></div><span class="mono-xs">MOD 2026-07-30 · 26D AGO</span>
+      </div>
+      <div class="card-acts">
+        <a class="btn btn-sm" href="skirmish-setup.html">▲ FIELD</a>
+        <a class="btn btn-sm" href="shipyard.html">✎ EDIT</a>
+        <button class="btn btn-sm">⧉ DUPLICATE</button>
+        <button class="btn btn-sm" data-share>🔗 SHARE</button>
+        <button class="btn btn-sm">⭱ EXPORT</button>
+        <div class="grow"></div>
+        <button class="btn btn-sm btn-danger" data-open-modal data-name="MOTE">🗑 DELETE</button>
+      </div>
+    </article>
+
+  </div><!-- /grid -->
+
+  <!-- ===================== TABLE VIEW ===================== -->
+  <section class="panel is-hidden" id="viewTable">
+    <div class="panel-hd"><span class="t-label">ALL BUILDS — TABLE</span>
+      <div class="grow"></div><span class="mono-xs">SORTED BY: RECENT · 10 OF 24 SHOWN</span></div>
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th style="width:28px"><span class="sr-only">Select</span></th>
+          <th>NAME</th><th>CHASSIS</th><th>CLASS</th><th style="text-align:right">PTS</th>
+          <th>BAYS FILLED</th><th>TAGS</th><th>STATUS</th><th>MODIFIED</th><th>ACTIONS</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><input class="chk" type="checkbox" checked aria-label="Select THE WIDOWMAKER"></td>
+          <td class="c-hi">THE WIDOWMAKER</td><td>MERIDIAN</td><td>CRUISER</td>
+          <td style="text-align:right" class="t-num">63</td><td class="mono-xs">6 / 10</td>
+          <td><span class="chip chip-cyan">alpha</span> <span class="chip">meta</span></td>
+          <td><span class="chip chip-green">✓ OK</span></td><td class="mono-xs">2026-08-24</td>
+          <td><button class="btn btn-sm btn-ghost">✎</button><button class="btn btn-sm btn-ghost" data-share>🔗</button><button class="btn btn-sm btn-ghost" data-open-modal data-name="THE WIDOWMAKER">🗑</button></td></tr>
+
+        <tr><td><input class="chk" type="checkbox" aria-label="Select THE ARGUMENT"></td>
+          <td class="c-hi">THE ARGUMENT</td><td>OBELISK</td><td>MEGA DESTROYER</td>
+          <td style="text-align:right" class="t-num c-amber">152</td><td class="mono-xs">11 / 15</td>
+          <td><span class="chip">meta</span></td>
+          <td><span class="chip chip-amber">⚠ NEEDS REFIT</span></td><td class="mono-xs">2026-08-21</td>
+          <td><button class="btn btn-sm btn-ghost">✎</button><button class="btn btn-sm btn-ghost" data-share>🔗</button><button class="btn btn-sm btn-ghost" data-open-modal data-name="THE ARGUMENT">🗑</button></td></tr>
+
+        <tr><td><input class="chk" type="checkbox" checked aria-label="Select TIN CAN"></td>
+          <td class="c-hi">TIN CAN</td><td>NEEDLE</td><td>FIGHTER</td>
+          <td style="text-align:right" class="t-num">9</td><td class="mono-xs">3 / 4</td>
+          <td><span class="chip chip-cyan">swarm</span> <span class="chip">cheap</span></td>
+          <td><span class="chip chip-green">✓ OK</span></td><td class="mono-xs">2026-08-23</td>
+          <td><button class="btn btn-sm btn-ghost">✎</button><button class="btn btn-sm btn-ghost" data-share>🔗</button><button class="btn btn-sm btn-ghost" data-open-modal data-name="TIN CAN">🗑</button></td></tr>
+
+        <tr><td><input class="chk" type="checkbox" aria-label="Select PICKET FENCE"></td>
+          <td class="c-hi">PICKET FENCE</td><td>PICKET</td><td>FRIGATE</td>
+          <td style="text-align:right" class="t-num">24</td><td class="mono-xs">5 / 6</td>
+          <td class="mono-xs">—</td>
+          <td><span class="chip chip-green">✓ OK</span></td><td class="mono-xs">2026-08-19</td>
+          <td><button class="btn btn-sm btn-ghost">✎</button><button class="btn btn-sm btn-ghost" data-share>🔗</button><button class="btn btn-sm btn-ghost" data-open-modal data-name="PICKET FENCE">🗑</button></td></tr>
+
+        <tr><td><input class="chk" type="checkbox" checked aria-label="Select GLASS HAMMER"></td>
+          <td class="c-hi">GLASS HAMMER</td><td>VALKYRIE</td><td>CRUISER</td>
+          <td style="text-align:right" class="t-num">71</td><td class="mono-xs">4 / 10</td>
+          <td><span class="chip chip-cyan">alpha</span></td>
+          <td><span class="chip chip-green">✓ OK</span></td><td class="mono-xs">2026-08-17</td>
+          <td><button class="btn btn-sm btn-ghost">✎</button><button class="btn btn-sm btn-ghost" data-share>🔗</button><button class="btn btn-sm btn-ghost" data-open-modal data-name="GLASS HAMMER">🗑</button></td></tr>
+
+        <tr><td><input class="chk" type="checkbox" aria-label="Select REGEN BRICK"></td>
+          <td class="c-hi">REGEN BRICK</td><td>BULWARK</td><td>CRUISER</td>
+          <td style="text-align:right" class="t-num">58</td><td class="mono-xs">6 / 10</td>
+          <td><span class="chip">attrition</span></td>
+          <td><span class="chip chip-green">✓ OK</span></td><td class="mono-xs">2026-08-14</td>
+          <td><button class="btn btn-sm btn-ghost">✎</button><button class="btn btn-sm btn-ghost" data-share>🔗</button><button class="btn btn-sm btn-ghost" data-open-modal data-name="REGEN BRICK">🗑</button></td></tr>
+
+        <tr><td><input class="chk" type="checkbox" aria-label="Select SPEARHEAD"></td>
+          <td class="c-hi">SPEARHEAD</td><td>LANCER</td><td>FRIGATE</td>
+          <td style="text-align:right" class="t-num">31</td><td class="mono-xs">3 / 6</td>
+          <td><span class="chip">untested</span></td>
+          <td><span class="chip chip-green">✓ OK</span></td><td class="mono-xs">2026-08-11</td>
+          <td><button class="btn btn-sm btn-ghost">✎</button><button class="btn btn-sm btn-ghost" data-share>🔗</button><button class="btn btn-sm btn-ghost" data-open-modal data-name="SPEARHEAD">🗑</button></td></tr>
+
+        <tr><td><input class="chk" type="checkbox" aria-label="Select PD WALL"></td>
+          <td class="c-hi">PD WALL</td><td>HARRIER</td><td>FRIGATE</td>
+          <td style="text-align:right" class="t-num">37</td><td class="mono-xs">4 / 6</td>
+          <td class="mono-xs">—</td>
+          <td><span class="chip chip-green">✓ OK</span></td><td class="mono-xs">2026-08-06</td>
+          <td><button class="btn btn-sm btn-ghost">✎</button><button class="btn btn-sm btn-ghost" data-share>🔗</button><button class="btn btn-sm btn-ghost" data-open-modal data-name="PD WALL">🗑</button></td></tr>
+
+        <tr><td><input class="chk" type="checkbox" aria-label="Select MOTE"></td>
+          <td class="c-hi">MOTE</td><td>WASP</td><td>FIGHTER</td>
+          <td style="text-align:right" class="t-num">11</td><td class="mono-xs">3 / 4</td>
+          <td><span class="chip">swarm</span></td>
+          <td><span class="chip chip-green">✓ OK</span></td><td class="mono-xs">2026-07-30</td>
+          <td><button class="btn btn-sm btn-ghost">✎</button><button class="btn btn-sm btn-ghost" data-share>🔗</button><button class="btn btn-sm btn-ghost" data-open-modal data-name="MOTE">🗑</button></td></tr>
+
+        <tr><td><input class="chk" type="checkbox" aria-label="Select LEVIATHAN PRIME"></td>
+          <td class="c-hi">LEVIATHAN PRIME</td><td>LEVIATHAN</td><td>MEGA DESTROYER</td>
+          <td style="text-align:right" class="t-num c-amber">121</td><td class="mono-xs">9 / 15</td>
+          <td><span class="chip">wip</span></td>
+          <td><span class="chip chip-amber">⚠ NEEDS REFIT</span></td><td class="mono-xs">2026-07-12</td>
+          <td><button class="btn btn-sm btn-ghost">✎</button><button class="btn btn-sm btn-ghost" data-share>🔗</button><button class="btn btn-sm btn-ghost" data-open-modal data-name="LEVIATHAN PRIME">🗑</button></td></tr>
+      </tbody>
+    </table>
+    <div class="panel-ft mono-xs">14 MORE BUILDS BELOW THE FOLD · TABLE VIEW STAYS RESPONSIVE AT 500 BUILDS (NFR-PERFORMANCE)</div>
+  </section>
+
+  <!-- Design documentation strip -------------------------------------------- -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--s3);align-items:start">
+
+    <!-- needs-refit rules -->
+    <section class="panel">
+      <div class="panel-hd"><span class="chip chip-amber">⚠ NEEDS REFIT</span>
+        <span class="t-label">WHAT THE FLAG DOES AND DOES NOT GATE</span></div>
+      <div class="panel-bd stack">
+        <div class="stat"><span class="stat-k">✓ VIEWABLE</span><span class="stat-v c-green">YES</span></div>
+        <div class="stat"><span class="stat-k">✓ DUPLICABLE</span><span class="stat-v c-green">YES</span></div>
+        <div class="stat"><span class="stat-k">✓ SHAREABLE AS LINK</span><span class="stat-v c-green">YES</span></div>
+        <div class="stat"><span class="stat-k">✓ EXPORTABLE TO JSON</span><span class="stat-v c-green">YES</span></div>
+        <div class="stat"><span class="stat-k">◐ FIELDABLE IN SKIRMISH</span><span class="stat-v c-amber">ONLY IF IT FITS THE CHOSEN BUDGET</span></div>
+        <p class="t-prose" style="margin:var(--s2) 0 0">
+          A <code class="c-amber">needs-refit</code> build is never blocked and never auto-edited.
+          The migration chain recalculates its cost against catalog v7, records the old total and
+          the new one, and hands the decision back to you. <strong>RE-FIT</strong> accepts the new
+          total; <strong>KEEP AS IS</strong> leaves the flag up so the delta stays visible next time.
+          Corrupt artifacts fail for that build alone and never block the other 23.
+        </p>
+      </div>
+    </section>
+
+    <!-- degraded storage -->
+    <section class="panel">
+      <div class="panel-hd"><span class="chip chip-red">STATE: STORAGE UNAVAILABLE</span>
+        <div class="grow"></div><span class="mono-xs">ALTERNATE STATE — SHOWN FOR REFERENCE</span></div>
+      <div class="panel-bd stack">
+        <div class="banner banner-danger" style="align-items:flex-start">
+          <span class="c-red" style="font-size:16px" aria-hidden="true">⚠</span>
+          <div class="grow">
+            <div style="font-weight:700;letter-spacing:.1em;color:var(--ink-hi)">
+              LOCALSTORAGE IS UNAVAILABLE OR FULL.
+            </div>
+            <div class="t-meta">Running in session-only mode — builds will not persist.
+              Export before closing this tab.</div>
+            <div style="display:flex;gap:4px;margin-top:6px">
+              <button class="btn btn-sm btn-danger">⭱ EXPORT SESSION (JSON)</button>
+              <button class="btn btn-sm btn-ghost">⟳ RETRY STORAGE</button>
+            </div>
+          </div>
+        </div>
+        <div class="meter" role="img" aria-label="Storage unavailable">
+          <span class="meter-fill f-hot" style="width:100%"></span>
+        </div>
+        <div class="kv mono-xs">
+          <span>CAUSE</span><span class="c-hi">QuotaExceededError — private browsing or 5 MB ceiling reached</span>
+          <span>BEHAVIOUR</span><span class="c-hi">App degrades, never crashes. Shipyard, Encyclopedia and Skirmish all stay usable.</span>
+          <span>WRITES</span><span class="c-hi">Held in memory for this tab only. Every save shows this banner again.</span>
+          <span>DESTRUCTIVE?</span><span class="c-hi">No. Nothing already persisted is deleted or rewritten.</span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <footer class="mono-xs" style="text-align:center;padding-top:var(--s4)">
+    NO ACCOUNT · NO SERVER · NO TELEMETRY — EVERYTHING ON THIS PAGE LIVES IN YOUR BROWSER.
+    SCHEMA v3 · CATALOG v7 · DELETE IS THE ONLY DESTRUCTIVE ACTION IN THE APP.
+  </footer>
+</main>
+
+<!-- Toast (share confirm, FR-8) --------------------------------------------- -->
+<div class="toastwrap is-hidden" id="toast">
+  <div class="toast">
+    <span class="c-cyan" aria-hidden="true">🔗</span>
+    <div>
+      <div class="c-hi" style="font-weight:700;letter-spacing:.1em">LINK COPIED TO CLIPBOARD</div>
+      <div class="mono-xs">1,204 / 1900 CHARS · ENCODED AGAINST CATALOG v7</div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete confirmation modal ------------------------------------------------
+     Hidden on load so the library is what you land on. Open it from any card's
+     DELETE action, the bulk-selection bar, or the table rows. Delete is the only
+     destructive action in the app (FR-7), which is why it is the only one behind
+     a modal. -->
+<div class="scrim is-hidden" id="scrim" data-close-modal></div>
+<div class="modal is-hidden" id="delModal" role="alertdialog" aria-modal="true"
+     aria-labelledby="delTitle" aria-describedby="delDesc">
+  <div class="panel-hd">
+    <span class="glyph" style="color:var(--red)" aria-hidden="true">🗑</span>
+    <span class="t-h2" id="delTitle">DELETE &lsquo;<span id="delName">TIN CAN</span>&rsquo;?</span>
+    <div class="grow"></div>
+    <span class="chip chip-red">DESTRUCTIVE</span>
+  </div>
+  <div class="panel-bd stack-lg">
+    <p class="t-prose" id="delDesc" style="margin:0">
+      This is the only destructive action in the app and it cannot be undone.
+      There is no server-side copy, no trash, and no version history — the build exists
+      in this browser and nowhere else.
+    </p>
+
+    <div class="panel-in" style="padding:var(--s3)">
+      <div style="display:flex;align-items:center;gap:var(--s3)">
+        <svg class="hull" viewBox="0 0 160 64" style="width:120px;height:44px" role="img"
+             aria-label="Fighter hull silhouette, sharp dart"><use href="#h-fighter"/></svg>
+        <div class="grow">
+          <div class="card-name">TIN CAN</div>
+          <div class="mono-xs">NEEDLE · FIGHTER · 9 PTS · SCATTER GUN · FILM BARRIER · COMMUTER DRIVE</div>
+          <div class="mono-xs">SCHEMA v3 · CATALOG v7 · MODIFIED 2026-08-23 · TAGS swarm, cheap</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="banner">
+      <span class="c-amber" aria-hidden="true">⚠</span>
+      <div class="grow"><span class="c-hi">Consider exporting first.</span>
+        <span class="t-meta">A one-build JSON is 3.1 KB and re-imports cleanly on any future catalog version.</span></div>
+      <button class="btn btn-sm btn-warn">⭱ EXPORT THIS BUILD</button>
+    </div>
+  </div>
+  <div class="panel-ft" style="display:flex;align-items:center;gap:var(--s2)">
+    <span class="mono-xs">ESC OR CANCEL LEAVES EVERYTHING UNCHANGED.</span>
+    <div class="grow"></div>
+    <button class="btn btn-ghost" data-close-modal>CANCEL</button>
+    <button class="btn btn-danger" data-close-modal>🗑 DELETE</button>
+  </div>
+</div>
+
+</div><!-- /desktop-only -->
+
+<script>
+(function () {
+  'use strict';
+
+  /* Reduced motion ------------------------------------------------------- */
+  var rm = document.getElementById('rmToggle');
+  rm.addEventListener('click', function () {
+    var on = document.body.classList.toggle('rm');
+    rm.setAttribute('aria-pressed', String(on));
+    rm.textContent = on ? '◉ REDUCED MOTION ON' : '◐ REDUCED MOTION';
+  });
+
+  /* Segmented controls --------------------------------------------------- */
+  Array.prototype.forEach.call(document.querySelectorAll('.seg'), function (seg) {
+    seg.addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (!b) return;
+      Array.prototype.forEach.call(seg.querySelectorAll('button'), function (x) {
+        x.setAttribute('aria-pressed', String(x === b));
+      });
+      if (seg.id === 'viewSeg') {
+        var grid = b.dataset.view === 'grid';
+        document.getElementById('viewGrid').classList.toggle('is-hidden', !grid);
+        document.getElementById('viewTable').classList.toggle('is-hidden', grid);
+      }
+    });
+  });
+
+  /* Filter chips --------------------------------------------------------- */
+  Array.prototype.forEach.call(document.querySelectorAll('.chip-btn'), function (c) {
+    c.addEventListener('click', function () {
+      c.setAttribute('aria-pressed', c.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+    });
+  });
+
+  /* Selection count ------------------------------------------------------ */
+  var out = document.getElementById('selCount');
+  function recount() {
+    var n = document.querySelectorAll('#viewGrid .chk:checked').length;
+    out.textContent = n + ' SELECTED';
+    document.getElementById('selbar').style.display = n ? '' : 'none';
+    Array.prototype.forEach.call(document.querySelectorAll('#viewGrid .card'), function (card) {
+      var box = card.querySelector('.chk');
+      card.classList.toggle('is-sel', !!(box && box.checked));
+    });
+  }
+  document.addEventListener('change', function (e) {
+    if (e.target.classList && e.target.classList.contains('chk')) recount();
+  });
+  document.getElementById('clearSel').addEventListener('click', function () {
+    Array.prototype.forEach.call(document.querySelectorAll('.chk'), function (b) { b.checked = false; });
+    recount();
+  });
+
+  /* Dismissible banner --------------------------------------------------- */
+  document.addEventListener('click', function (e) {
+    var d = e.target.closest('[data-dismiss]');
+    if (d) document.getElementById(d.dataset.dismiss).classList.add('is-hidden');
+  });
+
+  /* Delete modal --------------------------------------------------------- */
+  var scrim = document.getElementById('scrim'), modal = document.getElementById('delModal'),
+      nameEl = document.getElementById('delName');
+  function setModal(open) {
+    scrim.classList.toggle('is-hidden', !open);
+    modal.classList.toggle('is-hidden', !open);
+  }
+  document.addEventListener('click', function (e) {
+    var open = e.target.closest('[data-open-modal]');
+    if (open) { if (open.dataset.name) nameEl.textContent = open.dataset.name; setModal(true); return; }
+    if (e.target.closest('[data-close-modal]')) setModal(false);
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') setModal(false); });
+
+  /* Share confirm toast (FR-8: "copy link is one action and confirms visibly") */
+  var toast = document.getElementById('toast'), t;
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('[data-share]')) return;
+    toast.classList.remove('is-hidden');
+    clearTimeout(t); t = setTimeout(function () { toast.classList.add('is-hidden'); }, 2600);
+  });
+})();
+</script>
+
+<!-- Prototype flow runner (mock-only; not for src/) -->
+<script src="prototype.js"></script>
+</body>
+</html>

@@ -1,0 +1,58 @@
+{
+  "$comment": "SCHEMA DECISION: engines publish thrustImpulse (momentum per turn), NOT a flat delta-V number. Per-ship deltaVPerTurn = thrustImpulse / totalMass. This is what makes FR-6's separate 'delta-V/turn' and 'effective acceleration' readouts mass-sensitive and makes component mass a real trade everywhere. Setting every mass equal degenerates this back to flat delta-V, so the decision is reversible in data alone. There is NO free stop: deceleration spends from the same budget (FR-18).",
+  "schemaVersion": 1,
+  "kind": "component",
+  "slotType": "engine",
+  "entries": [
+    {
+      "id": "eng-ion-trickle",
+      "ordinal": 29,
+      "name": "Ion Trickle",
+      "slotType": "engine",
+      "pointCost": 1,
+      "mass": 2,
+      "addedInCatalogVersion": 1,
+      "stats": { "thrustImpulse": 2400 }
+    },
+    {
+      "id": "eng-standard-drive",
+      "ordinal": 30,
+      "name": "Standard Drive",
+      "slotType": "engine",
+      "pointCost": 3,
+      "mass": 4,
+      "addedInCatalogVersion": 1,
+      "stats": { "thrustImpulse": 6000 }
+    },
+    {
+      "id": "eng-vector-cluster",
+      "ordinal": 31,
+      "name": "Vector Cluster",
+      "slotType": "engine",
+      "pointCost": 6,
+      "mass": 3,
+      "addedInCatalogVersion": 1,
+      "stats": { "thrustImpulse": 7500 }
+    },
+    {
+      "id": "eng-burner",
+      "ordinal": 32,
+      "name": "Burner",
+      "slotType": "engine",
+      "pointCost": 5,
+      "mass": 6,
+      "addedInCatalogVersion": 1,
+      "stats": { "thrustImpulse": 10000 }
+    },
+    {
+      "id": "eng-torch",
+      "ordinal": 33,
+      "name": "Torch",
+      "slotType": "engine",
+      "pointCost": 8,
+      "mass": 9,
+      "addedInCatalogVersion": 1,
+      "stats": { "thrustImpulse": 15000 }
+    }
+  ]
+}

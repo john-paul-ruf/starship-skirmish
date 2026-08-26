@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "kind": "chassis",
+  "classId": "mega-destroyer",
+  "entries": [
+    {
+      "id": "meg-anvil",
+      "ordinal": 10,
+      "name": "Anvil",
+      "classId": "mega-destroyer",
+      "pointCost": 72,
+      "hullPoints": 430,
+      "mass": 210,
+      "hullRadius": 54,
+      "baseEvasion": 0.06,
+      "addedInCatalogVersion": 1
+    },
+    {
+      "id": "meg-leviathan",
+      "ordinal": 11,
+      "name": "Leviathan",
+      "classId": "mega-destroyer",
+      "pointCost": 90,
+      "hullPoints": 540,
+      "mass": 250,
+      "hullRadius": 60,
+      "baseEvasion": 0.05,
+      "addedInCatalogVersion": 1
+    },
+    {
+      "id": "meg-oblivion",
+      "ordinal": 12,
+      "name": "Oblivion",
+      "classId": "mega-destroyer",
+      "pointCost": 108,
+      "hullPoints": 640,
+      "mass": 290,
+      "hullRadius": 66,
+      "baseEvasion": 0.04,
+      "addedInCatalogVersion": 1
+    }
+  ]
+}

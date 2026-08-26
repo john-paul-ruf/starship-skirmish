@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prototype Index — Starship Skirmish</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="console.css">
+<style>
+  .hero {
+    position: relative; overflow: hidden;
+    border: 1px solid var(--line); border-radius: var(--r);
+    background:
+      radial-gradient(ellipse at 50% 120%, rgba(34,227,255,.16), transparent 62%),
+      radial-gradient(ellipse at 12% -10%, rgba(255,46,99,.10), transparent 55%),
+      var(--deep);
+  }
+  .hero-grid {
+    position: absolute; inset: -30% -20% -20% -20%; pointer-events: none;
+    background:
+      linear-gradient(rgba(34,227,255,.13) 1px, transparent 1px) 0 0 / 100% 44px,
+      linear-gradient(90deg, rgba(34,227,255,.13) 1px, transparent 1px) 0 0 / 44px 100%;
+    transform: perspective(600px) rotateX(66deg); transform-origin: 50% 100%;
+    mask-image: radial-gradient(ellipse at 50% 68%, #000 18%, transparent 70%);
+    -webkit-mask-image: radial-gradient(ellipse at 50% 68%, #000 18%, transparent 70%);
+  }
+  .card {
+    display: block; text-decoration: none; color: inherit;
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
+    transition: border-color .14s, background .14s, box-shadow .14s, transform .14s;
+  }
+  .card:hover { background: var(--panel-hi); border-color: var(--cyan); box-shadow: var(--glow-2); transform: translateY(-1px); }
+  .card:hover .card-go { color: var(--cyan); }
+  .thumb { height: 132px; position: relative; overflow: hidden; background: var(--deep); border-bottom: 1px solid var(--line); }
+  .thumb-grid {
+    position: absolute; inset: -40% -10% -10% -10%;
+    background:
+      linear-gradient(rgba(34,227,255,.10) 1px, transparent 1px) 0 0 / 100% 26px,
+      linear-gradient(90deg, rgba(34,227,255,.10) 1px, transparent 1px) 0 0 / 26px 100%;
+    transform: perspective(400px) rotateX(68deg); transform-origin: 50% 100%;
+    mask-image: radial-gradient(ellipse at 50% 70%, #000 22%, transparent 74%);
+    -webkit-mask-image: radial-gradient(ellipse at 50% 70%, #000 22%, transparent 74%);
+  }
+  .flow-step {
+    display: flex; align-items: center; gap: var(--s2);
+    padding: var(--s2) var(--s3); background: var(--panel-in);
+    border: 1px solid var(--line); border-radius: var(--r);
+    text-decoration: none; color: var(--ink); white-space: nowrap;
+  }
+  .flow-step:hover { border-color: var(--cyan); color: var(--ink-hi); }
+  .flow-arrow { color: var(--ink-ghost); flex: none; }
+  .swatch { height: 34px; border: 1px solid var(--line); border-radius: var(--r-sm); position: relative; }
+  .swatch-lbl { position: absolute; bottom: 2px; left: 4px; font-size: 8px; letter-spacing: .1em; color: rgba(5,7,10,.75); font-weight: 700; }
+</style>
+</head>
+<body>
+
+<!-- ===== SUB-1024 GATE (NFR-Platform) ===== -->
+<div class="mobile-gate">
+  <div style="max-width:420px">
+    <div class="brand-mark" style="margin:0 auto 20px"></div>
+    <div class="t-h1" style="margin-bottom:12px">Desktop Required</div>
+    <p class="t-prose" style="color:var(--ink-dim)">
+      Starship Skirmish is a desktop-scale tactical console. It needs a viewport of at least
+      <span class="c-hi">1280&times;720</span>. Mobile and touch layouts are explicitly out of scope for v1.
+    </p>
+  </div>
+</div>
+
+<!-- ===== APP ===== -->
+<div class="desktop-only" id="app">
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <div class="brand"><span class="brand-mark"></span> Starship Skirmish</div>
+    <nav class="nav">
+      <a href="shipyard.html">Shipyard</a>
+      <a href="encyclopedia.html">Encyclopedia</a>
+      <a href="skirmish-setup.html">Skirmish</a>
+      <a href="index.html" class="is-active">Index</a>
+    </nav>
+    <div class="grow"></div>
+    <div class="mono-xs" style="display:flex;align-items:center;gap:8px">
+      <span>LOCAL STORAGE 1.2 MB / ~5 MB</span>
+      <span class="meter" style="width:56px"><span class="meter-fill f-ok" style="width:24%"></span></span>
+    </div>
+    <span class="chip chip-cyan">CATALOG v7</span>
+    <button class="btn btn-sm btn-ghost" onclick="document.body.classList.toggle('rm')">&#9688; Reduced Motion</button>
+  </div>
+
+  <div style="max-width:1440px;margin:0 auto;padding:24px 24px 64px">
+
+    <!-- ===== HERO ===== -->
+    <div class="hero" style="padding:44px 40px 48px;margin-bottom:24px">
+      <div class="hero-grid"></div>
+      <div class="sweeper" style="top:0"></div>
+      <!-- boundary arc suggestion -->
+      <div class="boundary" style="left:50%;top:56%;width:760px;height:300px;transform:translate(-50%,-50%)"></div>
+      <div style="position:relative;z-index:2;max-width:760px">
+        <div class="t-label" style="margin-bottom:10px">Design Phase &middot; Mock Index &middot; v1</div>
+        <div class="t-display anim-flick" style="font-size:34px;margin-bottom:14px">Starship Skirmish</div>
+        <p class="t-prose" style="max-width:640px;margin:0 0 22px;color:var(--ink)">
+          A 3D turn-based tactical combat game. Design point-costed warships in a deep shipyard, then
+          field them against AI fleets in simultaneous-turn battles where momentum, collision, and
+          exploding wreckage are as lethal as the guns.
+        </p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:26px">
+          <span class="chip chip-cyan">8 Screens</span>
+          <span class="chip">Desktop 1280&times;720 min</span>
+          <span class="chip">localStorage only</span>
+          <span class="chip">No backend</span>
+          <span class="chip chip-amber">Neon console aesthetic</span>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <a class="btn btn-primary btn-lg" href="shipyard.html">Open the Shipyard</a>
+          <a class="btn btn-lg" href="tactical-move.html">Open the Tactical View</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== THE TWO GAMES ===== -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:32px">
+      <div class="panel ticks">
+        <div class="panel-hd"><span class="tag-slot tag-shield">1</span><span class="t-h2">The Shipyard</span><span class="grow"></span><span class="mono-xs">A lab, not a menu</span></div>
+        <div class="panel-bd">
+          <p class="t-prose" style="margin:0;color:var(--ink-dim)">
+            A spreadsheet that respects you. Every choice is a trade &mdash; a high-capacity shield eats the
+            points you wanted for a second gun; a hot engine buys initiative but leaves you thin when a
+            lance connects. Dense rows, tabular figures, running totals, delta indicators.
+            <span class="c-hi">The design layer is first-class content.</span>
+          </p>
+        </div>
+      </div>
+      <div class="panel ticks">
+        <div class="panel-hd"><span class="tag-slot tag-missile">2</span><span class="t-h2">The Skirmish</span><span class="grow"></span><span class="mono-xs">A tac display, not a space sim</span></div>
+        <div class="panel-bd">
+          <p class="t-prose" style="margin:0;color:var(--ink-dim)">
+            Neon abstract geometry on black. Plans are made blind and resolve simultaneously. The arena is
+            the clock &mdash; a lethal boundary, accumulating debris, armed spent missiles.
+            <span class="c-hi">Abstraction is the art direction, not placeholder art.</span>
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== SCREENS ===== -->
+    <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:14px">
+      <div class="t-h1">Screens</div>
+      <div class="mono-xs">All mocks are standalone HTML &middot; no framework &middot; no build step</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:36px">
+
+      <!-- SHIPYARD -->
+      <a class="card" href="shipyard.html">
+        <div class="thumb">
+          <div class="thumb-grid"></div>
+          <svg viewBox="0 0 120 80" style="position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);width:112px;filter:drop-shadow(0 0 7px var(--cyan))">
+            <g fill="none" stroke="#22E3FF" stroke-width="1.1">
+              <path d="M60 8 L86 40 L74 62 L46 62 L34 40 Z"/>
+              <path d="M60 8 L60 62 M34 40 L86 40"/>
+              <path d="M34 40 L14 52 L28 54 M86 40 L106 52 L92 54"/>
+            </g>
+            <g fill="#FFB020"><circle cx="46" cy="50" r="1.8"/><circle cx="74" cy="50" r="1.8"/><circle cx="60" cy="26" r="1.8"/></g>
+          </svg>
+        </div>
+        <div style="padding:12px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span class="t-h2">Shipyard</span><span class="grow"></span><span class="card-go c-dim">&rarr;</span>
+          </div>
+          <p class="mono-xs" style="margin:0 0 10px;line-height:1.6">Chassis selection, slot fitting, live point total, derived stats with delta indicators.</p>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <span class="chip">FR-3</span><span class="chip">FR-4</span><span class="chip">FR-5</span><span class="chip">FR-6</span>
+          </div>
+        </div>
+      </a>
+
+      <!-- ENCYCLOPEDIA -->
+      <a class="card" href="encyclopedia.html">
+        <div class="thumb">
+          <div class="thumb-grid"></div>
+          <div style="position:absolute;inset:20px 24px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+            <div class="panel-in" style="border-color:rgba(34,227,255,.35)"></div>
+            <div class="panel-in"></div>
+            <div class="panel-in" style="border-color:rgba(255,176,32,.5);background:rgba(255,176,32,.06)"></div>
+            <div class="panel-in"></div>
+            <div class="panel-in" style="border-color:rgba(34,227,255,.35)"></div>
+            <div class="panel-in"></div>
+          </div>
+        </div>
+        <div style="padding:12px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span class="t-h2">Encyclopedia</span><span class="grow"></span><span class="card-go c-dim">&rarr;</span>
+          </div>
+          <p class="mono-xs" style="margin:0 0 10px;line-height:1.6">The personal library. Browse, tag, duplicate, delete, export. Backup nudge and <span class="c-amber">needs-refit</span> states.</p>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <span class="chip">FR-7</span><span class="chip">FR-9</span><span class="chip">FR-2</span>
+          </div>
+        </div>
+      </a>
+
+      <!-- SHARE / IMPORT -->
+      <a class="card" href="share-import.html">
+        <div class="thumb">
+          <div class="thumb-grid"></div>
+          <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:78%;text-align:center">
+            <div class="panel-in" style="padding:8px;font-size:9px;color:var(--cyan);overflow:hidden;white-space:nowrap;text-overflow:ellipsis">?b=A7f2K9x…Qm4</div>
+            <div class="mono-xs" style="margin-top:6px">1,204 / 1900 CHARS</div>
+          </div>
+        </div>
+        <div style="padding:12px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span class="t-h2">Share / Import</span><span class="grow"></span><span class="card-go c-dim">&rarr;</span>
+          </div>
+          <p class="mono-xs" style="margin:0 0 10px;line-height:1.6">The link <em>is</em> the ship. Import preview, name-collision handling, JSON fleet import, and the failure states.</p>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <span class="chip">FR-8</span><span class="chip">FR-2</span><span class="chip">SECURITY</span>
+          </div>
+        </div>
+      </a>
+
+      <!-- SKIRMISH SETUP -->
+      <a class="card" href="skirmish-setup.html">
+        <div class="thumb">
+          <div class="thumb-grid"></div>
+          <div class="boundary" style="left:50%;top:52%;width:150px;height:82px;transform:translate(-50%,-50%)"></div>
+          <div style="position:absolute;left:50%;top:52%;transform:translate(-50%,-50%);width:150px;height:82px">
+            <span class="glyph fl-0" style="position:absolute;left:6%;top:52%">&#9650;</span>
+            <span class="glyph fl-1" style="position:absolute;right:6%;top:22%">&#9679;</span>
+            <span class="glyph fl-2" style="position:absolute;left:46%;bottom:4%">&#9632;</span>
+          </div>
+        </div>
+        <div style="padding:12px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span class="t-h2">Skirmish Setup</span><span class="grow"></span><span class="card-go c-dim">&rarr;</span>
+          </div>
+          <p class="mono-xs" style="margin:0 0 10px;line-height:1.6">Budget, fleet draft, opponent count and difficulty, arena preview, match seed. Bot fleets fully visible.</p>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <span class="chip">FR-10</span><span class="chip">FR-11</span><span class="chip">FR-12</span><span class="chip">FR-30</span>
+          </div>
+        </div>
+      </a>
+
+      <!-- TACTICAL MOVE -->
+      <a class="card" href="tactical-move.html">
+        <div class="thumb">
+          <div class="thumb-grid"></div>
+          <div class="boundary" style="left:50%;top:50%;width:180px;height:100px;transform:translate(-50%,-50%)"></div>
+          <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:180px;height:100px">
+            <span class="glyph fl-0" style="position:absolute;left:24%;top:56%">&#9650;</span>
+            <span class="glyph fl-1" style="position:absolute;left:62%;top:26%">&#9679;</span>
+            <span style="position:absolute;left:34%;top:52%;width:52px;height:0;border-top:1px dashed var(--cyan);transform:rotate(-24deg);transform-origin:0 0"></span>
+            <span style="position:absolute;left:30%;top:66%;width:70px;height:0;border-top:1.5px solid var(--red);transform:rotate(22deg);transform-origin:0 0;filter:drop-shadow(0 0 5px var(--red))"></span>
+            <span style="position:absolute;left:74%;top:88%;color:var(--red);font-size:11px;font-weight:700">&#10005;</span>
+          </div>
+        </div>
+        <div style="padding:12px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span class="t-h2">Tactical &mdash; Movement</span><span class="grow"></span><span class="card-go c-dim">&rarr;</span>
+          </div>
+          <p class="mono-xs" style="margin:0 0 10px;line-height:1.6">Blind arc plotting against conserved momentum. Delta-V budget, roster sidebar, and <span class="c-red">the boundary-exit warning</span>.</p>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <span class="chip">FR-13</span><span class="chip">FR-14</span><span class="chip">FR-16</span><span class="chip">FR-18</span>
+          </div>
+        </div>
+      </a>
+
+      <!-- TACTICAL ATTACK -->
+      <a class="card" href="tactical-attack.html">
+        <div class="thumb">
+          <div class="thumb-grid"></div>
+          <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:180px;height:100px">
+            <span style="position:absolute;left:28%;top:50%;width:62px;height:62px;transform:translate(-50%,-50%);border:1px solid rgba(34,227,255,.28);border-radius:50%"></span>
+            <span style="position:absolute;left:28%;top:50%;width:96px;height:96px;transform:translate(-50%,-50%);border:1px dashed rgba(34,227,255,.16);border-radius:50%"></span>
+            <span class="glyph fl-0" style="position:absolute;left:28%;top:50%;transform:translate(-50%,-50%)">&#9650;</span>
+            <span class="glyph fl-1" style="position:absolute;left:74%;top:34%">&#9679;</span>
+            <span style="position:absolute;left:32%;top:50%;width:66px;height:0;border-top:1px solid rgba(255,46,99,.8);transform:rotate(-14deg);transform-origin:0 0"></span>
+            <span style="position:absolute;left:56%;top:36%;font-size:8px;color:var(--red);background:rgba(5,7,10,.8);padding:0 3px;border:1px solid rgba(255,46,99,.4)">68%</span>
+          </div>
+        </div>
+        <div style="padding:12px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span class="t-h2">Tactical &mdash; Attack</span><span class="grow"></span><span class="card-go c-dim">&rarr;</span>
+          </div>
+          <p class="mono-xs" style="margin:0 0 10px;line-height:1.6">Blind fire assignment, hit chance, missile ammo, AoE friendly-fire warning, and <span class="c-hi">called shots at exposed components</span>.</p>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <span class="chip">FR-20</span><span class="chip">FR-21</span><span class="chip">FR-25</span>
+          </div>
+        </div>
+      </a>
+
+      <!-- POST MATCH -->
+      <a class="card" href="post-match.html">
+        <div class="thumb">
+          <div class="thumb-grid"></div>
+          <div style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center">
+            <div class="t-display c-green anim-flick" style="font-size:22px">VICTORY</div>
+            <div class="mono-xs" style="margin-top:6px">LAST FLEET STANDING &middot; TURN 11</div>
+          </div>
+        </div>
+        <div style="padding:12px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span class="t-h2">Post-Match</span><span class="grow"></span><span class="card-go c-dim">&rarr;</span>
+          </div>
+          <p class="mono-xs" style="margin:0 0 10px;line-height:1.6">Outcome, per-ship fate, the match seed, and the full combat log. Includes the mutual-destruction and concede outcomes.</p>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <span class="chip">FR-27</span><span class="chip">FR-28</span>
+          </div>
+        </div>
+      </a>
+
+      <!-- DESIGN SYSTEM -->
+      <div class="card" style="cursor:default">
+        <div class="thumb" style="display:grid;place-items:center">
+          <div style="display:grid;grid-template-columns:repeat(5,26px);gap:5px">
+            <div class="swatch" style="background:#22E3FF"><span class="swatch-lbl">CY</span></div>
+            <div class="swatch" style="background:#FFB020"><span class="swatch-lbl">AM</span></div>
+            <div class="swatch" style="background:#FF2E63"><span class="swatch-lbl">RD</span></div>
+            <div class="swatch" style="background:#3DFF9E"><span class="swatch-lbl">GN</span></div>
+            <div class="swatch" style="background:#A45BFF"><span class="swatch-lbl">VI</span></div>
+          </div>
+        </div>
+        <div style="padding:12px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span class="t-h2">Design System</span><span class="grow"></span><span class="mono-xs">console.css</span>
+          </div>
+          <p class="mono-xs" style="margin:0 0 10px;line-height:1.6">Tokens, components, glow scale, and the reduced-motion contract. Every mock loads it; none redefine it.</p>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <span class="chip">38 COMPONENTS</span><span class="chip chip-green">WCAG AA</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- SPEC -->
+      <div class="card" style="cursor:default">
+        <div class="thumb" style="display:grid;place-items:center">
+          <div style="width:70%">
+            <div class="stat"><span class="stat-k">Screens</span><span class="stat-v">8</span></div>
+            <div class="stat"><span class="stat-k">Flows</span><span class="stat-v">6</span></div>
+            <div class="stat"><span class="stat-k">Load-bearing rules</span><span class="stat-v">11</span></div>
+          </div>
+        </div>
+        <div style="padding:12px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span class="t-h2">Design Spec</span><span class="grow"></span><span class="mono-xs">specs/design.md</span>
+          </div>
+          <p class="mono-xs" style="margin:0 0 10px;line-height:1.6">Design language, component inventory, screen inventory, user flows, and the interaction rules that each carry a locked decision.</p>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <span class="chip">v1</span><span class="chip">DESIGN PHASE</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ===== FLOWS ===== -->
+    <div class="t-h1" style="margin-bottom:14px">User Flows</div>
+    <div class="panel" style="margin-bottom:32px">
+      <div class="panel-bd stack-lg">
+
+        <div>
+          <div class="t-label" style="margin-bottom:8px">Flow 1 &mdash; Build a ship <span class="c-cyan">(primary)</span></div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <a class="flow-step" href="encyclopedia.html">Encyclopedia</a><span class="flow-arrow">&rarr;</span>
+            <a class="flow-step" href="shipyard.html">Pick chassis</a><span class="flow-arrow">&rarr;</span>
+            <a class="flow-step" href="shipyard.html">Fit components</a><span class="flow-arrow">&rarr;</span>
+            <a class="flow-step" href="shipyard.html">Read the deltas</a><span class="flow-arrow">&rarr;</span>
+            <a class="flow-step" href="encyclopedia.html">Save</a>
+          </div>
+          <p class="mono-xs" style="margin:8px 0 0">The loop that matters is <span class="c-hi">swap &rarr; read delta &rarr; swap again</span>. It must feel like editing a spreadsheet cell.</p>
+        </div>
+
+        <hr class="hr-dash">
+
+        <div>
+          <div class="t-label" style="margin-bottom:8px">Flow 2 &mdash; Fight <span class="c-cyan">(the payoff)</span></div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <a class="flow-step" href="skirmish-setup.html">Budget &amp; draft</a><span class="flow-arrow">&rarr;</span>
+            <a class="flow-step" href="skirmish-setup.html">Opponents</a><span class="flow-arrow">&rarr;</span>
+            <a class="flow-step" href="tactical-move.html">Plot arcs <span class="c-dim">blind</span></a><span class="flow-arrow">&rarr;</span>
+            <a class="flow-step" href="tactical-move.html">Movement resolves</a><span class="flow-arrow">&rarr;</span>
+            <a class="flow-step" href="tactical-attack.html">Assign fire <span class="c-dim">blind</span></a><span class="flow-arrow">&rarr;</span>
+            <a class="flow-step" href="tactical-attack.html">Fire resolves</a><span class="flow-arrow">&#8630;</span>
+            <a class="flow-step" href="post-match.html">Last fleet standing</a>
+          </div>
+        </div>
+
+        <hr class="hr-dash">
+
+        <div>
+          <div class="t-label" style="margin-bottom:8px">Flow 3 &mdash; Share a build <span class="c-cyan">(the meta)</span></div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <a class="flow-step" href="shipyard.html">Copy share link</a><span class="flow-arrow">&rarr;</span>
+            <span class="flow-step" style="cursor:default">Paste in chat</span><span class="flow-arrow">&rarr;</span>
+            <a class="flow-step" href="share-import.html">Import preview</a><span class="flow-arrow">&rarr;</span>
+            <a class="flow-step" href="share-import.html">Resolve collision</a><span class="flow-arrow">&rarr;</span>
+            <a class="flow-step" href="encyclopedia.html">Added</a>
+          </div>
+          <p class="mono-xs" style="margin:8px 0 0">&le;1900 characters, encoded against the versioned catalog. <span class="c-hi">Nothing is written until you confirm.</span></p>
+        </div>
+
+        <hr class="hr-dash">
+
+        <div>
+          <div class="t-label" style="margin-bottom:8px">Flow 5 &mdash; Return after a year <span class="c-amber">(no loss, ever)</span></div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span class="flow-step" style="cursor:default">Open the app</span><span class="flow-arrow">&rarr;</span>
+            <span class="flow-step" style="cursor:default">Migration chain runs</span><span class="flow-arrow">&rarr;</span>
+            <a class="flow-step" href="encyclopedia.html"><span class="c-amber">&#9888; needs-refit</span> flagged</a><span class="flow-arrow">&rarr;</span>
+            <a class="flow-step" href="encyclopedia.html">Re-fit or keep</a>
+          </div>
+          <p class="mono-xs" style="margin:8px 0 0">The flag is a <span class="c-hi">receipt, not a lock</span>. Every build ever saved, shared, or exported must load. Forever.</p>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ===== ACCESSIBILITY CONTRACT ===== -->
+    <div class="t-h1" style="margin-bottom:14px">Never Color Alone</div>
+    <div class="panel ticks" style="margin-bottom:32px">
+      <div class="panel-hd"><span class="t-h2">Identity Legend</span><span class="grow"></span><span class="mono-xs">Load-bearing for FR-13 &amp; NFR-Accessibility</span></div>
+      <div class="panel-bd">
+        <p class="t-prose" style="margin:0 0 16px;color:var(--ink-dim);max-width:760px">
+          Fleet ownership, hazard type, and missile state are each carried by <span class="c-hi">color + glyph + text label</span>,
+          always, everywhere &mdash; roster, viewport, legend, combat log, post-match summary. A colorblind player
+          loses zero information. This is not a courtesy; it is why the glyph set exists.
+        </p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+          <div>
+            <div class="t-label" style="margin-bottom:8px">Fleets &mdash; max 5 on field</div>
+            <div class="stack">
+              <div style="display:flex;align-items:center;gap:10px"><span class="glyph fl-0">&#9650;</span><span class="c-hi">YOU</span><span class="grow"></span><span class="mono-xs">cyan &middot; triangle</span></div>
+              <div style="display:flex;align-items:center;gap:10px"><span class="glyph fl-1">&#9679;</span><span class="c-hi">BOT-01</span><span class="grow"></span><span class="mono-xs">magenta &middot; circle</span></div>
+              <div style="display:flex;align-items:center;gap:10px"><span class="glyph fl-2">&#9632;</span><span class="c-hi">BOT-02</span><span class="grow"></span><span class="mono-xs">amber &middot; square</span></div>
+              <div style="display:flex;align-items:center;gap:10px"><span class="glyph fl-3">&#9670;</span><span class="c-hi">BOT-03</span><span class="grow"></span><span class="mono-xs">violet &middot; diamond</span></div>
+              <div style="display:flex;align-items:center;gap:10px"><span class="glyph fl-4">&#10010;</span><span class="c-hi">BOT-04</span><span class="grow"></span><span class="mono-xs">lime &middot; cross</span></div>
+            </div>
+          </div>
+          <div>
+            <div class="t-label" style="margin-bottom:8px">Body classes &mdash; distinct at a glance</div>
+            <div class="stack">
+              <div style="display:flex;align-items:center;gap:10px"><span class="glyph" style="color:var(--fleet-0)">&#9650;</span><span class="c-hi">SHIP</span><span class="grow"></span><span class="mono-xs">fleet color &middot; fleet glyph</span></div>
+              <div style="display:flex;align-items:center;gap:10px"><span class="glyph" style="color:var(--hazard)">&#10035;</span><span class="c-hi">DEBRIS</span><span class="grow"></span><span class="mono-xs">orange &middot; persistent, ownerless, lethal</span></div>
+              <div style="display:flex;align-items:center;gap:10px"><span class="glyph" style="color:var(--missile)">&#10148;</span><span class="c-hi">MISSILE &middot; TRACKING</span><span class="grow"></span><span class="mono-xs">red &middot; label T2 / T1</span></div>
+              <div style="display:flex;align-items:center;gap:10px"><span class="glyph" style="color:var(--spent)">&#9671;</span><span class="c-hi">MISSILE &middot; SPENT</span><span class="grow"></span><span class="mono-xs">brown &middot; label SPENT &middot; ARMED</span></div>
+            </div>
+            <hr class="hr-dash">
+            <div class="t-label" style="margin-bottom:8px">Slot types &mdash; letter, never color alone</div>
+            <div style="display:flex;gap:14px;flex-wrap:wrap">
+              <span style="display:flex;align-items:center;gap:5px"><span class="tag-slot tag-weapon">W</span><span class="mono-xs">Weapon</span></span>
+              <span style="display:flex;align-items:center;gap:5px"><span class="tag-slot tag-shield">S</span><span class="mono-xs">Shield</span></span>
+              <span style="display:flex;align-items:center;gap:5px"><span class="tag-slot tag-missile">M</span><span class="mono-xs">Missile</span></span>
+              <span style="display:flex;align-items:center;gap:5px"><span class="tag-slot tag-engine">E</span><span class="mono-xs">Engine</span></span>
+              <span style="display:flex;align-items:center;gap:5px"><span class="tag-slot tag-special">X</span><span class="mono-xs">Special</span></span>
+            </div>
+          </div>
+        </div>
+        <hr class="hr">
+        <div class="banner banner-info">
+          <span class="c-cyan">&#9688;</span>
+          <div>
+            <div class="c-hi" style="font-weight:700;margin-bottom:2px">Reduced motion loses nothing</div>
+            <div class="mono-xs">Glitch, flicker, scanlines, and screen-shake are all decorative and all opt-out &mdash; via <code style="color:var(--cyan)">prefers-reduced-motion</code> or the toggle in the chrome of every screen. No fact is ever conveyed by animation alone. Try it: <button class="btn btn-sm" onclick="document.body.classList.toggle('rm')">Toggle now</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== HONEST ACCOUNTING ===== -->
+    <div class="t-h1" style="margin-bottom:14px">What These Mocks Fake</div>
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:32px">
+      <div class="panel"><div class="panel-bd">
+        <div class="t-h2 c-amber" style="margin-bottom:8px">&#9888; The 3D is faked</div>
+        <p class="mono-xs" style="margin:0;line-height:1.7">CSS perspective, absolute positioning, and inline SVG. The mocks prove <span class="c-hi">layout, legibility, and information hierarchy</span> at fleet scale &mdash; not that a renderer can hit 60fps with 300 hazard bodies. That is Architect's call and Gate 1's job.</p>
+      </div></div>
+      <div class="panel"><div class="panel-bd">
+        <div class="t-h2 c-amber" style="margin-bottom:8px">&#9888; Silhouettes are placeholders</div>
+        <p class="mono-xs" style="margin:0;line-height:1.7">FR-13 requires ship class to be distinguishable by silhouette at fleet zoom. The mocks <em>assert</em> it. Real geometry must re-verify it in the <span class="c-hi">polish</span> phase.</p>
+      </div></div>
+      <div class="panel"><div class="panel-bd">
+        <div class="t-h2 c-amber" style="margin-bottom:8px">&#9888; CDN Tailwind + Google Fonts</div>
+        <p class="mono-xs" style="margin:0;line-height:1.7">Mock-only conveniences. Both violate the <span class="c-hi">offline-after-first-load</span> requirement and neither should survive into <code style="color:var(--cyan)">src/</code>. The token layer in <code style="color:var(--cyan)">console.css</code> is the part meant to carry forward.</p>
+      </div></div>
+      <div class="panel"><div class="panel-bd">
+        <div class="t-h2 c-amber" style="margin-bottom:8px">&#9888; No number here is balanced</div>
+        <p class="mono-xs" style="margin:0;line-height:1.7">Point totals are internally consistent fixtures, not tuned values. Balance comes from the headless harness (FR-33) &mdash; with no server and no telemetry, it is <span class="c-hi">the only instrument that exists</span>.</p>
+      </div></div>
+    </div>
+
+    <!-- ===== FOOTER ===== -->
+    <hr class="hr">
+    <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+      <span class="mono-xs">STARSHIP SKIRMISH &middot; DESIGN PHASE v1 &middot; schemaVersion 3 &middot; catalogVersion 7</span>
+      <span class="grow"></span>
+      <span class="mono-xs">specs/idea.md &rarr; specs/requirements.md &rarr; <span class="c-cyan">specs/design.md</span> &rarr; mocks/</span>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- Prototype flow runner (mock-only; not for src/) -->
+<script src="prototype.js"></script>
+</body>
+</html>

@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STARSHIP SKIRMISH — MATCH SUMMARY · VICTORY</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="console.css">
+<style>
+  /* Local layout only — no token redefinition. */
+  .wrap { max-width: 1180px; margin: 0 auto; padding: var(--s5) var(--s4) var(--s8); }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s3); }
+  .grid-6 { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--s3); }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); }
+
+  .hero { background:
+      radial-gradient(ellipse at 18% 0%, rgba(61,255,158,.10), transparent 62%),
+      linear-gradient(180deg, rgba(34,227,255,.045), transparent 55%),
+      var(--panel); }
+  /* .t-display, scaled up for the outcome headline */
+  .outcome { font-size: 56px; line-height: 1; color: var(--green);
+    text-shadow: 0 0 34px rgba(61,255,158,.45); }
+  .seedbox { display: flex; align-items: center; gap: var(--s3); padding: var(--s3);
+    background: var(--panel-in); border: 1px solid var(--line); border-left: 2px solid var(--cyan); border-radius: var(--r); }
+  .seedval { font-size: 22px; font-weight: 700; letter-spacing: .20em; color: var(--cyan);
+    text-shadow: 0 0 20px rgba(34,227,255,.35); }
+
+  .fate { font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+  .ship-blk { padding: var(--s2) var(--s3); border-bottom: 1px solid rgba(30,44,60,.6); }
+  .ship-blk:last-child { border-bottom: 0; }
+  .ship-blk.is-dead .sname { color: var(--ink-dim); text-decoration: line-through; }
+  .sname { font-size: 12px; font-weight: 700; color: var(--ink-hi); letter-spacing: .05em; }
+  .mini { width: 100%; border-collapse: collapse; margin-top: 5px; }
+  .mini td { padding: 1px 0; font-size: 10px; letter-spacing: .08em; color: var(--ink-dim); }
+  .mini td + td { text-align: right; color: var(--ink-hi); font-weight: 700; }
+
+  .hook { background:
+      radial-gradient(ellipse at 8% 0%, rgba(255,46,99,.13), transparent 58%),
+      linear-gradient(180deg, rgba(255,176,32,.05), transparent 60%), var(--panel);
+    border-color: var(--line-hot); }
+  .hook-q { font-family: var(--sans); font-size: 19px; line-height: 1.55; color: var(--ink-hi); font-weight: 500; }
+
+  .logwrap { max-height: 396px; overflow-y: auto; }
+  .log-line.is-hidden { display: none; }
+  .kbadge { font-size: 9px; letter-spacing: .12em; padding: 0 4px; border: 1px solid var(--line);
+    border-radius: var(--r-sm); color: var(--ink-dim); flex: none; }
+  .alt-row { display: grid; grid-template-columns: 168px 1fr; gap: var(--s3); align-items: start;
+    padding: var(--s2) 0; border-bottom: 1px dotted rgba(30,44,60,.8); }
+  .alt-row:last-of-type { border-bottom: 0; }
+</style>
+</head>
+<body>
+
+<div class="mobile-gate">
+  <div class="panel ticks" style="padding:32px;max-width:460px">
+    <div class="t-h1" style="color:var(--amber)">DESKTOP REQUIRED</div>
+    <p class="t-prose" style="margin:12px 0 0">STARSHIP SKIRMISH is a desktop tactical console. It needs a viewport of at least <strong class="c-hi">1280&times;720</strong>. Open this on a laptop or desktop browser.</p>
+  </div>
+</div>
+
+<div class="desktop-only">
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark"></span>SKIRMISH</div>
+    <nav class="nav">
+      <a href="shipyard.html">SHIPYARD</a>
+      <a href="skirmish-setup.html">SETUP</a>
+      <a href="tactical-attack.html">TACTICAL</a>
+      <a href="post-match.html" class="is-active">SUMMARY</a>
+    </nav>
+    <span class="grow"></span>
+    <span class="mono-xs">CATALOG v7 &middot; MATCH COMPLETE &middot; NO SERVER · NOTHING UPLOADED</span>
+    <button class="btn btn-sm" id="rmBtn" aria-pressed="false">◐ REDUCED MOTION</button>
+  </header>
+
+  <main class="wrap stack-lg">
+
+    <!-- ============ OUTCOME HERO ============ -->
+    <section class="panel ticks hero">
+      <div class="panel-bd" style="padding:var(--s5)">
+        <div style="display:flex;align-items:flex-start;gap:var(--s5);flex-wrap:wrap">
+          <div style="min-width:340px" class="grow">
+            <div class="t-label" style="margin-bottom:10px">MATCH OUTCOME &middot; FR-27</div>
+            <div class="t-display outcome anim-flick">VICTORY</div>
+            <div class="t-h1 c-green" style="margin-top:10px;font-size:14px">✓ LAST FLEET STANDING</div>
+            <div class="t-meta" style="margin-top:6px;letter-spacing:.14em">TURN 11 &middot; BUDGET 150 &middot; 2 OPPONENTS &middot; FREE-FOR-ALL</div>
+            <div style="display:flex;gap:6px;margin-top:14px;flex-wrap:wrap">
+              <span class="chip chip-cyan">▲ YOU &mdash; 2 / 5 SURVIVING</span>
+              <span class="chip chip-red">● BOT-01 &mdash; ELIMINATED</span>
+              <span class="chip chip-red">■ BOT-02 &mdash; ELIMINATED</span>
+            </div>
+          </div>
+
+          <div style="width:430px;flex:none">
+            <div class="t-label" style="margin-bottom:8px">MATCH SEED</div>
+            <div class="seedbox">
+              <div class="grow" style="min-width:0">
+                <div class="seedval truncate" id="seed">SK-7F3A-9C21-D4E8</div>
+                <div class="mono-xs" style="margin-top:4px">ARENA R 5400 &middot; BUDGET 150 &middot; CATALOG v7 &middot; 11 TURNS &middot; 4 122 RNG DRAWS</div>
+              </div>
+              <button class="btn" id="copyBtn">⧉ COPY</button>
+            </div>
+            <p class="t-prose" style="margin:10px 0 0;font-size:12px;color:var(--ink-dim)">
+              <strong class="c-hi">Same seed + same plans = identical outcome. Replayable.</strong>
+              Every roll in this match came from this one seed. Hand it to a friend with the fleet file and they will watch the exact same battle.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ THE HOOK ============ -->
+    <section class="panel ticks hook">
+      <div class="panel-bd" style="padding:var(--s5);display:flex;gap:var(--s5);align-items:center">
+        <div style="flex:none;width:76px;height:76px;display:grid;place-items:center;border:1px solid rgba(255,46,99,.45);border-radius:50%;box-shadow:var(--glow-red);font-size:30px;color:var(--hazard)">✳</div>
+        <div class="grow">
+          <div class="t-label" style="margin-bottom:8px">SIGNATURE MOMENT &middot; TURN 7 → TURN 9</div>
+          <p class="hook-q" style="margin:0">
+            &ldquo;TURN 7 &mdash; You destroyed <strong style="color:var(--fleet-1)">IRON VERDICT</strong>.
+            Its wreckage gutted your own <strong class="c-cyan">HARRIER-2</strong> two turns later.&rdquo;
+          </p>
+          <div class="mono-xs" style="margin-top:10px;line-height:1.8">
+            T7 &middot; WIDOWMAKER W1 PHASE BEAM → IRON VERDICT · HULL 0 &middot; AoE 60 &middot; <span class="c-amber">6 DEBRIS BODIES SPAWNED (✳ D-11 … D-16)</span><br>
+            T9 &middot; ✳ D-14 CONTACT HARRIER-2 AT 148 u/t CLOSING &middot; 91 DMG &middot; <span class="c-red">HULL 0 — DESTROYED</span><br>
+            THE ARENA IS THE CLOCK. YOUR OWN KILL BUILT THE HAZARD THAT KILLED YOU BACK.
+          </div>
+        </div>
+        <button class="btn btn-warn" style="flex:none">⧉ COPY MOMENT</button>
+      </div>
+    </section>
+
+    <!-- ============ STATS STRIP ============ -->
+    <section class="grid-6">
+      <div class="panel"><div class="panel-bd">
+        <div class="t-label">TURNS ELAPSED</div><div class="t-num-xl" style="margin-top:6px">11</div>
+        <div class="mono-xs" style="margin-top:4px">44 BEATS</div>
+      </div></div>
+      <div class="panel"><div class="panel-bd">
+        <div class="t-label">DAMAGE DEALT</div><div class="t-num-xl" style="margin-top:6px">2 008</div>
+        <div class="mono-xs" style="margin-top:4px">+262 BY HAZARDS</div>
+      </div></div>
+      <div class="panel"><div class="panel-bd">
+        <div class="t-label">HAZARD BODIES</div><div class="t-num-xl c-amber" style="margin-top:6px">14</div>
+        <div class="mono-xs" style="margin-top:4px">✳ SPAWNED &middot; 9 STILL LIVE</div>
+      </div></div>
+      <div class="panel"><div class="panel-bd">
+        <div class="t-label">MISSILES</div><div class="t-num-xl" style="margin-top:6px">9<span style="font-size:16px;color:var(--ink-dim)"> / 3</span></div>
+        <div class="mono-xs" style="margin-top:4px">➤ LAUNCHED / SHOT DOWN</div>
+      </div></div>
+      <div class="panel"><div class="panel-bd">
+        <div class="t-label">COLLISIONS</div><div class="t-num-xl" style="margin-top:6px">4</div>
+        <div class="mono-xs" style="margin-top:4px">1 SHOVED OUT OF BOUNDS</div>
+      </div></div>
+      <div class="panel"><div class="panel-bd">
+        <div class="t-label">BOUNDARY DEATHS</div><div class="t-num-xl c-red" style="margin-top:6px">1</div>
+        <div class="mono-xs" style="margin-top:4px">◌ NO GRACE PERIOD</div>
+      </div></div>
+    </section>
+
+    <!-- ============ FLEET COLUMNS ============ -->
+    <section>
+      <div style="display:flex;align-items:baseline;gap:var(--s3);margin-bottom:var(--s3)">
+        <h2 class="t-h1">FLEETS &amp; FATES</h2>
+        <span class="mono-xs">EVERY SHIP, EVERY CAUSE OF DEATH &middot; 10 OF 12 DESTROYED</span>
+      </div>
+
+      <div class="grid-3">
+
+        <!-- YOU -->
+        <div class="panel ticks">
+          <div class="panel-hd">
+            <span class="glyph fl-0">▲</span>
+            <span class="t-h2 grow" style="color:var(--fleet-0)">YOU</span>
+            <span class="chip chip-green">WINNER</span>
+          </div>
+          <div class="panel-bd" style="padding:var(--s2) var(--s3);border-bottom:1px solid var(--line)">
+            <div class="stat"><span class="stat-k">SURVIVORS</span><span class="stat-v c-green">2 / 5</span></div>
+            <div class="stat"><span class="stat-k">DRAFT</span><span class="stat-v">142 / 150</span></div>
+            <div class="stat"><span class="stat-k">KILLS</span><span class="stat-v">4</span></div>
+            <div class="stat"><span class="stat-k">DEALT / TAKEN</span><span class="stat-v">814 / 696</span></div>
+            <div class="mono-xs" style="padding-top:6px">▲ 63 + 37 + 9 + 9 + 24 = 142 &middot; 8 PTS WASTED</div>
+          </div>
+
+          <div class="ship-blk">
+            <div style="display:flex;align-items:center;gap:var(--s2)">
+              <span class="sname grow truncate">WIDOWMAKER</span>
+              <span class="fate c-green">SURVIVED</span>
+            </div>
+            <div class="mono-xs">MERIDIAN &middot; CRUISER &middot; 63 PTS &middot; HULL 71 / 140</div>
+            <table class="mini"><tbody>
+              <tr><td>KILLS</td><td>3</td></tr>
+              <tr><td>DMG DEALT / TAKEN</td><td>486 / 331</td></tr>
+              <tr><td>NOTES</td><td>MVP · 1 RAM</td></tr>
+            </tbody></table>
+          </div>
+
+          <div class="ship-blk">
+            <div style="display:flex;align-items:center;gap:var(--s2)">
+              <span class="sname grow truncate">TIN CAN 3</span>
+              <span class="fate c-green">SURVIVED</span>
+            </div>
+            <div class="mono-xs">NEEDLE &middot; FIGHTER &middot; 9 PTS &middot; HULL 6 / 34</div>
+            <table class="mini"><tbody>
+              <tr><td>KILLS</td><td>1</td></tr>
+              <tr><td>DMG DEALT / TAKEN</td><td>72 / 41</td></tr>
+              <tr><td>NOTES</td><td>SURVIVED FRIENDLY AoE T4 · KILLED MOTE II T11</td></tr>
+            </tbody></table>
+          </div>
+
+          <div class="ship-blk is-dead">
+            <div style="display:flex;align-items:center;gap:var(--s2)">
+              <span class="sname grow truncate">HARRIER-2</span>
+              <span class="fate c-amber">DESTROYED BY DEBRIS</span>
+            </div>
+            <div class="mono-xs">HARRIER &middot; FRIGATE &middot; 37 PTS &middot; T9 &middot; ✳ D-14 (IRON VERDICT WRECKAGE)</div>
+            <table class="mini"><tbody>
+              <tr><td>KILLS</td><td>0</td></tr>
+              <tr><td>DMG DEALT / TAKEN</td><td>194 / 202</td></tr>
+              <tr><td>NOTES</td><td>2 ASSISTS ON IRON VERDICT</td></tr>
+            </tbody></table>
+          </div>
+
+          <div class="ship-blk is-dead">
+            <div style="display:flex;align-items:center;gap:var(--s2)">
+              <span class="sname grow truncate">PICKET FENCE</span>
+              <span class="fate c-red">DESTROYED BY IRON VERDICT · FUSION LANCE</span>
+            </div>
+            <div class="mono-xs">PICKET &middot; FRIGATE &middot; 24 PTS &middot; T3 &middot; HULL 0</div>
+            <table class="mini"><tbody>
+              <tr><td>KILLS</td><td>0</td></tr>
+              <tr><td>DMG DEALT / TAKEN</td><td>44 / 88</td></tr>
+            </tbody></table>
+          </div>
+
+          <div class="ship-blk is-dead">
+            <div style="display:flex;align-items:center;gap:var(--s2)">
+              <span class="sname grow truncate">TIN CAN 1</span>
+              <span class="fate c-amber">DESTROYED BY DEBRIS</span>
+            </div>
+            <div class="mono-xs">NEEDLE &middot; FIGHTER &middot; 9 PTS &middot; T2 &middot; ✳ D-04 &middot; NO SHOOTER CREDIT</div>
+            <table class="mini"><tbody>
+              <tr><td>KILLS</td><td>0</td></tr>
+              <tr><td>DMG DEALT / TAKEN</td><td>18 / 34</td></tr>
+            </tbody></table>
+          </div>
+        </div>
+
+        <!-- BOT-01 -->
+        <div class="panel ticks">
+          <div class="panel-hd">
+            <span class="glyph fl-1">●</span>
+            <span class="t-h2 grow" style="color:var(--fleet-1)">BOT-01 &middot; VETERAN</span>
+            <span class="chip chip-red">ELIMINATED</span>
+          </div>
+          <div class="panel-bd" style="padding:var(--s2) var(--s3);border-bottom:1px solid var(--line)">
+            <div class="stat"><span class="stat-k">SURVIVORS</span><span class="stat-v c-red">0 / 4</span></div>
+            <div class="stat"><span class="stat-k">DRAFT</span><span class="stat-v">126 / 150</span></div>
+            <div class="stat"><span class="stat-k">KILLS</span><span class="stat-v">2</span></div>
+            <div class="stat"><span class="stat-k">DEALT / TAKEN</span><span class="stat-v">826 / 780</span></div>
+            <div class="mono-xs" style="padding-top:6px">● 88 + 16 + 16 + 6 = 126 &middot; 24 PTS WASTED</div>
+          </div>
+
+          <div class="ship-blk is-dead">
+            <div style="display:flex;align-items:center;gap:var(--s2)">
+              <span class="sname grow truncate">IRON VERDICT</span>
+              <span class="fate c-cyan">DESTROYED BY WIDOWMAKER · PHASE BEAM</span>
+            </div>
+            <div class="mono-xs">OBELISK &middot; MEGA DESTROYER &middot; 88 PTS &middot; T7 &middot; AoE 60 → 6 DEBRIS</div>
+            <table class="mini"><tbody>
+              <tr><td>KILLS</td><td>1</td></tr>
+              <tr><td>DMG DEALT / TAKEN</td><td>604 / 560</td></tr>
+              <tr><td>NOTES</td><td>SHIELD GEN KILLED T6</td></tr>
+            </tbody></table>
+          </div>
+
+          <div class="ship-blk is-dead">
+            <div style="display:flex;align-items:center;gap:var(--s2)">
+              <span class="sname grow truncate">SPUR</span>
+              <span class="fate c-cyan">DESTROYED BY WIDOWMAKER · TALON</span>
+            </div>
+            <div class="mono-xs">LANCER &middot; FRIGATE &middot; 16 PTS &middot; T5 &middot; CALLED SHOT S1 T4</div>
+            <table class="mini"><tbody>
+              <tr><td>KILLS</td><td>0</td></tr>
+              <tr><td>DMG DEALT / TAKEN</td><td>96 / 114</td></tr>
+              <tr><td>NOTES</td><td>SHIELD POOL REMOVED T4</td></tr>
+            </tbody></table>
+          </div>
+
+          <div class="ship-blk is-dead">
+            <div style="display:flex;align-items:center;gap:var(--s2)">
+              <span class="sname grow truncate">SPUR II</span>
+              <span class="fate c-red">DESTROYED BY BOUNDARY EXIT</span>
+            </div>
+            <div class="mono-xs">LANCER &middot; FRIGATE &middot; 16 PTS &middot; T3 &middot; SHOVED OUT BY WIDOWMAKER COLLISION</div>
+            <table class="mini"><tbody>
+              <tr><td>KILLS</td><td>0</td></tr>
+              <tr><td>DMG DEALT / TAKEN</td><td>52 / 76</td></tr>
+              <tr><td>NOTES</td><td>NO DEBRIS — DIED OUTSIDE</td></tr>
+            </tbody></table>
+          </div>
+
+          <div class="ship-blk is-dead">
+            <div style="display:flex;align-items:center;gap:var(--s2)">
+              <span class="sname grow truncate">WASP-A</span>
+              <span class="fate" style="color:var(--violet)">MUTUAL KILL</span>
+            </div>
+            <div class="mono-xs">WASP &middot; FIGHTER &middot; 6 PTS &middot; T10 &middot; WITH ■ MOTE — BOTH HULL 0 IN ONE PASS</div>
+            <table class="mini"><tbody>
+              <tr><td>KILLS</td><td>1</td></tr>
+              <tr><td>DMG DEALT / TAKEN</td><td>74 / 30</td></tr>
+            </tbody></table>
+          </div>
+        </div>
+
+        <!-- BOT-02 -->
+        <div class="panel ticks">
+          <div class="panel-hd">
+            <span class="glyph fl-2">■</span>
+            <span class="t-h2 grow" style="color:var(--fleet-2)">BOT-02 &middot; ROOKIE</span>
+            <span class="chip chip-red">ELIMINATED</span>
+          </div>
+          <div class="panel-bd" style="padding:var(--s2) var(--s3);border-bottom:1px solid var(--line)">
+            <div class="stat"><span class="stat-k">SURVIVORS</span><span class="stat-v c-red">0 / 3</span></div>
+            <div class="stat"><span class="stat-k">DRAFT</span><span class="stat-v c-amber">80 / 150</span></div>
+            <div class="stat"><span class="stat-k">KILLS</span><span class="stat-v">1</span></div>
+            <div class="stat"><span class="stat-k">DEALT / TAKEN</span><span class="stat-v">368 / 493</span></div>
+            <div class="mono-xs" style="padding-top:6px;line-height:1.7">■ ROOKIE DRAFTER &middot; <span class="c-amber">80 / 150</span> &middot; 70 PTS WASTED<br>
+              58 + 11 + 11 = 80 &middot; LEFTOVER POINTS ARE WASTED, NEVER CONVERTED.</div>
+          </div>
+
+          <div class="ship-blk is-dead">
+            <div style="display:flex;align-items:center;gap:var(--s2)">
+              <span class="sname grow truncate">DULL EDGE</span>
+              <span class="fate" style="color:var(--spent)">DESTROYED BY SPENT MISSILE</span>
+            </div>
+            <div class="mono-xs">BULWARK &middot; CRUISER &middot; 58 PTS &middot; T11 &middot; ◇ SWARM POD (ARMED, 4 BEATS OLD)</div>
+            <table class="mini"><tbody>
+              <tr><td>KILLS</td><td>0</td></tr>
+              <tr><td>DMG DEALT / TAKEN</td><td>214 / 262</td></tr>
+              <tr><td>NOTES</td><td>ITS OWN MISSILE, T7</td></tr>
+            </tbody></table>
+          </div>
+
+          <div class="ship-blk is-dead">
+            <div style="display:flex;align-items:center;gap:var(--s2)">
+              <span class="sname grow truncate">MOTE</span>
+              <span class="fate" style="color:var(--violet)">MUTUAL KILL</span>
+            </div>
+            <div class="mono-xs">WASP &middot; FIGHTER &middot; 11 PTS &middot; T10 &middot; WITH ● WASP-A</div>
+            <table class="mini"><tbody>
+              <tr><td>KILLS</td><td>1</td></tr>
+              <tr><td>DMG DEALT / TAKEN</td><td>88 / 30</td></tr>
+            </tbody></table>
+          </div>
+
+          <div class="ship-blk is-dead">
+            <div style="display:flex;align-items:center;gap:var(--s2)">
+              <span class="sname grow truncate">MOTE II</span>
+              <span class="fate c-cyan">DESTROYED BY TIN CAN 3 · AUTOCANNON</span>
+            </div>
+            <div class="mono-xs">WASP &middot; FIGHTER &middot; 11 PTS &middot; T11 &middot; FINAL SHIP OF THE MATCH</div>
+            <table class="mini"><tbody>
+              <tr><td>KILLS</td><td>0</td></tr>
+              <tr><td>DMG DEALT / TAKEN</td><td>66 / 201</td></tr>
+            </tbody></table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ FULL COMBAT LOG ============ -->
+    <section class="panel">
+      <div class="panel-hd">
+        <span class="t-h2">FULL COMBAT LOG</span>
+        <span class="chip">142 ENTRIES</span>
+        <span class="grow"></span>
+        <div class="seg" id="logFilter" role="group" aria-label="Filter combat log">
+          <button class="is-active" data-f="all" aria-pressed="true">ALL</button>
+          <button data-f="kill" aria-pressed="false">KILLS</button>
+          <button data-f="collision" aria-pressed="false">COLLISIONS</button>
+          <button data-f="boundary" aria-pressed="false">BOUNDARY</button>
+          <button data-f="missile" aria-pressed="false">MISSILES</button>
+        </div>
+      </div>
+      <div class="log logwrap" id="logBody">
+        <div class="log-line" data-k="shot"><span class="log-t">T1.4</span><span class="kbadge">SHOT</span><span><span class="c-cyan">WIDOWMAKER</span> W1 PHASE BEAM → <span style="color:var(--fleet-1)">SPUR II</span> &middot; ROLL 0.44 / 0.71 <span class="c-green">HIT ×2</span> &middot; 34 DMG (34 SHIELD / 0 HULL)</span></div>
+        <div class="log-line" data-k="missile"><span class="log-t">T1.4</span><span class="kbadge">MISSILE</span><span><span style="color:var(--fleet-2)">DULL EDGE</span> M1 SWARM POD → LAUNCH ↦ <span class="c-cyan">TIN CAN 1</span> &middot; AMMO 6 → 5</span></div>
+        <div class="log-line" data-k="collision"><span class="log-t">T2.2</span><span class="kbadge">COLLISION</span><span><span style="color:var(--fleet-2)">MOTE</span> CLIPS ✳ D-01 &middot; 12 DMG &middot; VECTOR DEFLECTED 19°</span></div>
+        <div class="log-line is-kill" data-k="kill"><span class="log-t">T2.3</span><span class="kbadge">KILL</span><span><span class="c-cyan">TIN CAN 1</span> CONTACT ✳ D-04 AT 121 u/t &mdash; <strong class="c-red">DESTROYED</strong> &middot; NO SHOOTER CREDIT &middot; HAZARD KILL</span></div>
+        <div class="log-line" data-k="missile"><span class="log-t">T2.4</span><span class="kbadge">MISSILE</span><span><span class="c-cyan">HARRIER-2</span> W1 FLAK BATTERY → INTERCEPT ➤ SWARM POD &middot; <span class="c-green">MISSILE DESTROYED</span> &middot; NO DETONATION</span></div>
+        <div class="log-line" data-k="collision"><span class="log-t">T3.2</span><span class="kbadge">COLLISION</span><span><span class="c-cyan">WIDOWMAKER</span> RAMS <span style="color:var(--fleet-1)">SPUR II</span> &middot; 41 DMG TO SPUR II / 17 SELF &middot; VECTOR TRANSFER 96 u/t</span></div>
+        <div class="log-line is-kill" data-k="boundary"><span class="log-t">T3.2</span><span class="kbadge">BOUNDARY</span><span><span style="color:var(--fleet-1)">SPUR II</span> SHOVED ACROSS BOUNDARY BY <span class="c-cyan">WIDOWMAKER</span> COLLISION &mdash; <strong class="c-red">DESTROYED</strong> &middot; DETONATION OUTSIDE ARENA &middot; NO DEBRIS</span></div>
+        <div class="log-line is-crit" data-k="shot"><span class="log-t">T3.4</span><span class="kbadge">CRIT</span><span><span style="color:var(--fleet-1)">IRON VERDICT</span> W1 FUSION LANCE → <span class="c-cyan">PICKET FENCE</span> &middot; ROLL 0.04 / 0.61 <span class="c-amber">CRIT ×1.5</span> &middot; 33 DMG</span></div>
+        <div class="log-line is-kill" data-k="kill"><span class="log-t">T3.4</span><span class="kbadge">KILL</span><span><span class="c-cyan">PICKET FENCE</span> HULL 0 &mdash; <strong class="c-red">DESTROYED</strong> BY <span style="color:var(--fleet-1)">IRON VERDICT · FUSION LANCE</span> &middot; AoE 22 &middot; DEBRIS ✳ D-09</span></div>
+        <div class="log-line" data-k="shot"><span class="log-t">T4.4</span><span class="kbadge">SHOT</span><span><span class="c-cyan">WIDOWMAKER</span> W1 PHASE BEAM → <span style="color:var(--fleet-1)">SPUR</span> <span class="c-amber">◎ CALLED SHOT S1 AEGIS-II</span> &middot; ROLL 0.22 / 0.68 <span class="c-green">HIT</span> &middot; S1 <strong class="c-red">DESTROYED</strong> &middot; SHIELD POOL REMOVED PERMANENTLY</span></div>
+        <div class="log-line" data-k="missile"><span class="log-t">T4.4</span><span class="kbadge">MISSILE</span><span><span class="c-cyan">HARRIER-2</span> M1 HAMMERHEAD DETONATES ON <span style="color:var(--fleet-2)">MOTE II</span> &middot; AoE r60 &middot; 40 DMG AT CENTRE &mdash; <span class="c-amber">FRIENDLY FIRE: TIN CAN 3 AT 44 / 60 TAKES 12 &middot; HULL 18 → 6</span></span></div>
+        <div class="log-line" data-k="missile"><span class="log-t">T4.4</span><span class="kbadge">MISSILE</span><span><span class="c-cyan">WIDOWMAKER</span> M1 TALON → LAUNCH ↦ <span style="color:var(--fleet-1)">IRON VERDICT</span> &middot; AMMO 3 → 2 &middot; TRACKING 2 BEATS</span></div>
+        <div class="log-line is-kill" data-k="kill"><span class="log-t">T5.4</span><span class="kbadge">KILL</span><span><span style="color:var(--fleet-1)">SPUR</span> HULL 0 &mdash; <strong class="c-red">DESTROYED</strong> BY <span class="c-cyan">WIDOWMAKER · TALON</span> &middot; NO SHIELD POOL TO ABSORB &middot; DEBRIS ✳ D-10</span></div>
+        <div class="log-line" data-k="shot"><span class="log-t">T6.4</span><span class="kbadge">SHOT</span><span><span class="c-cyan">HARRIER-2</span> W1 AUTOCANNON → <span style="color:var(--fleet-1)">IRON VERDICT</span> &middot; ROLL 0.29 / 0.55 <span class="c-green">HIT</span> &middot; 15 DMG &mdash; BASTION SHIELDS 0 / 140</span></div>
+        <div class="log-line" data-k="shot"><span class="log-t">T6.4</span><span class="kbadge">SHOT</span><span><span class="c-cyan">WIDOWMAKER</span> W1 PHASE BEAM → <span style="color:var(--fleet-1)">IRON VERDICT</span> <span class="c-amber">◎ CALLED SHOT S1 BASTION</span> &middot; S1 <strong class="c-red">DESTROYED</strong> &middot; NO REGEN FROM THIS TURN ON</span></div>
+        <div class="log-line" data-k="missile"><span class="log-t">T7.1</span><span class="kbadge">MISSILE</span><span>➤ LONGSPEAR FUELS OUT &mdash; NOW ◇ <span style="color:var(--spent)">SPENT · ARMED</span> &middot; RETAINS VECTOR 88 u/t &middot; BEHAVES AS DEBRIS</span></div>
+        <div class="log-line is-kill" data-k="kill"><span class="log-t">T7.4</span><span class="kbadge">KILL</span><span><span style="color:var(--fleet-1)">IRON VERDICT</span> HULL 0 &mdash; <strong class="c-red">DESTROYED</strong> BY <span class="c-cyan">WIDOWMAKER · PHASE BEAM</span> &middot; AoE 60 &middot; <span class="c-amber">6 DEBRIS BODIES SPAWNED ✳ D-11 … D-16</span></span></div>
+        <div class="log-line" data-k="collision"><span class="log-t">T8.2</span><span class="kbadge">COLLISION</span><span><span style="color:var(--fleet-2)">DULL EDGE</span> GRAZES ✳ D-12 &middot; 23 DMG &middot; SHIELDS 41 / 90</span></div>
+        <div class="log-line" data-k="shot"><span class="log-t">T8.4</span><span class="kbadge">SHOT</span><span><span style="color:var(--fleet-2)">DULL EDGE</span> W2 MASS RAIL → <span class="c-cyan">HARRIER-2</span> &middot; ROLL 0.11 / 0.55 <span class="c-green">HIT</span> &middot; 15 DMG (0 SHIELD / 15 HULL)</span></div>
+        <div class="log-line" data-k="collision"><span class="log-t">T9.2</span><span class="kbadge">COLLISION</span><span><span style="color:var(--fleet-1)">WASP-A</span> RAMS <span style="color:var(--fleet-2)">MOTE</span> &middot; 8 DMG EACH &middot; BOTH DEFLECTED &mdash; NO FLEET ALLIANCE EXISTS IN FREE-FOR-ALL</span></div>
+        <div class="log-line is-kill" data-k="kill"><span class="log-t">T9.3</span><span class="kbadge">KILL</span><span><span class="c-cyan">HARRIER-2</span> CONTACT ✳ D-14 (IRON VERDICT WRECKAGE) AT 148 u/t &middot; 91 DMG &mdash; <strong class="c-red">DESTROYED</strong> &middot; HAZARD KILL</span></div>
+        <div class="log-line is-kill" data-k="kill"><span class="log-t">T10.4</span><span class="kbadge">KILL</span><span><span style="color:var(--fleet-1)">WASP-A</span> AND <span style="color:var(--fleet-2)">MOTE</span> BOTH HULL 0 IN ONE PASS &mdash; <strong style="color:var(--violet)">MUTUAL KILL</strong> &middot; PRE-DAMAGE SNAPSHOT: BOTH SHOTS LANDED</span></div>
+        <div class="log-line is-kill" data-k="kill"><span class="log-t">T11.3</span><span class="kbadge">KILL</span><span><span style="color:var(--fleet-2)">DULL EDGE</span> CONTACT ◇ SWARM POD (SPENT · ARMED, ITS OWN, LAUNCHED T7) &middot; 30 DMG &mdash; <strong class="c-red">DESTROYED</strong></span></div>
+        <div class="log-line is-kill" data-k="kill"><span class="log-t">T11.4</span><span class="kbadge">KILL</span><span><span style="color:var(--fleet-2)">MOTE II</span> HULL 0 &mdash; <strong class="c-red">DESTROYED</strong> BY <span class="c-cyan">TIN CAN 3 · AUTOCANNON</span> &middot; ROLL 0.19 / 0.71 &middot; 9 DMG</span></div>
+        <div class="log-line" data-k="shot"><span class="log-t">T11.4</span><span class="kbadge">END</span><span>FLEET <span style="color:var(--fleet-2)">BOT-02</span> ELIMINATED &middot; ONE FLEET REMAINS &mdash; <strong class="c-green">MATCH ENDS: VICTORY ▲ YOU</strong></span></div>
+      </div>
+      <div class="panel-ft" style="display:flex;align-items:center;gap:var(--s3)">
+        <span class="mono-xs grow">SHOWING 25 OF 142 ENTRIES &middot; EVERY SHOT RECORDS SHOOTER, TARGET, ROLL, RESULT, DAMAGE</span>
+        <span class="mono-xs" id="filterState">FILTER: ALL</span>
+      </div>
+    </section>
+
+    <!-- ============ OTHER POSSIBLE OUTCOMES (design documentation) ============ -->
+    <section class="panel" style="opacity:.82">
+      <div class="panel-hd" style="background:none">
+        <span class="t-h2 c-dim">OTHER POSSIBLE OUTCOMES</span>
+        <span class="grow"></span>
+        <span class="mono-xs">REFERENCE &middot; THE ONLY OTHER ENDINGS THIS GAME PRODUCES</span>
+      </div>
+      <div class="panel-bd">
+        <div class="alt-row">
+          <div class="t-h2" style="color:var(--violet);font-size:12px">MUTUAL DESTRUCTION</div>
+          <div>
+            <div class="t-meta" style="color:var(--ink)">NO WINNER. All remaining fleets are eliminated in the same beat &mdash; simultaneous fire, an AoE cascade, or a hazard. Reported honestly as an <strong class="c-hi">outcome, not a draw state</strong>.</div>
+            <div class="mono-xs" style="margin-top:3px">HEADLINE READS: <span class="c-hi">MUTUAL DESTRUCTION — NO WINNER</span> &middot; SUMMARY, SEED AND LOG ARE STILL WRITTEN IN FULL.</div>
+          </div>
+        </div>
+        <div class="alt-row">
+          <div class="t-h2 c-red" style="font-size:12px">CONCEDED</div>
+          <div>
+            <div class="t-meta" style="color:var(--ink)">LOSS. The player withdrew. Concede is always available, requires confirmation, and ends the match immediately. <strong class="c-hi">Bots never concede</strong> &mdash; it is a player exit, not a game rule.</div>
+            <div class="mono-xs" style="margin-top:3px">HEADLINE READS: <span class="c-hi">CONCEDED — LOSS</span> &middot; SURVIVING SHIPS ARE LISTED AS <span class="c-dim">WITHDRAWN</span>, NOT DESTROYED.</div>
+          </div>
+        </div>
+        <div class="banner banner-info" style="margin-top:var(--s3)">
+          <span class="c-cyan" style="font-size:13px">◆</span>
+          <div class="mono-xs" style="letter-spacing:.16em;color:var(--ink)">NO TURN CAP &middot; NO DRAW &middot; NO POINTS TIEBREAK. The arena is the clock — boundary, debris, armed spent missiles.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ FOOTER ACTIONS ============ -->
+    <section class="panel ticks">
+      <div class="panel-bd" style="display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap">
+        <a class="btn btn-primary btn-lg" href="tactical-attack.html">↻ REMATCH · SAME SEED</a>
+        <a class="btn btn-lg" href="skirmish-setup.html">NEW SKIRMISH</a>
+        <a class="btn btn-lg" href="shipyard.html">BACK TO SHIPYARD</a>
+        <span class="grow"></span>
+        <button class="btn btn-ghost btn-lg" id="exportBtn">↧ EXPORT MATCH LOG (JSON)</button>
+      </div>
+      <div class="panel-ft">
+        <div class="mono-xs">REMATCH REPLAYS SEED SK-7F3A-9C21-D4E8 WITH THE SAME FLEETS AND THE SAME ARENA. YOUR PLANS DECIDE WHETHER IT ENDS THE SAME WAY.</div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+  // Reduced motion (NFR-Accessibility)
+  var rmBtn = document.getElementById('rmBtn');
+  rmBtn.addEventListener('click', function () {
+    var on = document.body.classList.toggle('rm');
+    rmBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    rmBtn.textContent = on ? '◑ MOTION OFF' : '◐ REDUCED MOTION';
+  });
+
+  // Seed copy
+  var copyBtn = document.getElementById('copyBtn');
+  copyBtn.addEventListener('click', function () {
+    var seed = document.getElementById('seed').textContent.trim();
+    if (navigator.clipboard) { navigator.clipboard.writeText(seed); }
+    copyBtn.textContent = '✓ COPIED';
+    setTimeout(function () { copyBtn.textContent = '⧉ COPY'; }, 1600);
+  });
+
+  // Combat log filter
+  var lines = Array.prototype.slice.call(document.querySelectorAll('#logBody .log-line'));
+  var state = document.getElementById('filterState');
+  document.querySelectorAll('#logFilter button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#logFilter button').forEach(function (x) {
+        x.classList.remove('is-active'); x.setAttribute('aria-pressed', 'false');
+      });
+      b.classList.add('is-active'); b.setAttribute('aria-pressed', 'true');
+      var f = b.dataset.f;
+      var shown = 0;
+      lines.forEach(function (l) {
+        var hit = (f === 'all') || l.dataset.k === f || (f === 'kill' && l.classList.contains('is-kill'));
+        l.classList.toggle('is-hidden', !hit);
+        if (hit) shown++;
+      });
+      state.textContent = 'FILTER: ' + b.textContent + ' · ' + shown + ' SHOWN';
+    });
+  });
+
+  // Export
+  document.getElementById('exportBtn').addEventListener('click', function () {
+    var blob = new Blob([JSON.stringify({
+      schema: 'skirmish.matchlog/1',
+      catalogVersion: 7,
+      seed: 'SK-7F3A-9C21-D4E8',
+      budget: 150,
+      arenaRadius: 5400,
+      outcome: { type: 'victory', reason: 'last-fleet-standing', winner: 'player', turns: 11 }
+    }, null, 2)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'skirmish-SK-7F3A-9C21-D4E8.json';
+    a.click();
+  });
+</script>
+
+<!-- Prototype flow runner (mock-only; not for src/) -->
+<script src="prototype.js"></script>
+</body>
+</html>

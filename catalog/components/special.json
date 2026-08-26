@@ -1,0 +1,58 @@
+{
+  "$comment": "The v1 starting set named in FR-4. 'stats.effect' is a CLOSED discriminant: each value maps to a rule implemented in sim/rules. Re-tuning any number here is pure content work; introducing a NEW effect value is the one catalog change that requires code, and that is called out in specs/database.md.",
+  "schemaVersion": 1,
+  "kind": "component",
+  "slotType": "special",
+  "entries": [
+    {
+      "id": "spc-armor-plating",
+      "ordinal": 34,
+      "name": "Armor Plating",
+      "slotType": "special",
+      "pointCost": 3,
+      "mass": 9,
+      "addedInCatalogVersion": 1,
+      "stats": { "effect": "armor-plating", "bonusHull": 60 }
+    },
+    {
+      "id": "spc-decoy-launcher",
+      "ordinal": 35,
+      "name": "Decoy Launcher",
+      "slotType": "special",
+      "pointCost": 3,
+      "mass": 2,
+      "addedInCatalogVersion": 1,
+      "stats": { "effect": "decoy-launcher", "charges": 3, "evasionBonus": 0.25, "durationTurns": 1 }
+    },
+    {
+      "id": "spc-thrust-booster",
+      "ordinal": 36,
+      "name": "Thrust Booster",
+      "slotType": "special",
+      "pointCost": 4,
+      "mass": 2,
+      "addedInCatalogVersion": 1,
+      "stats": { "effect": "thrust-booster", "thrustImpulseBonus": 3000 }
+    },
+    {
+      "id": "spc-point-defense",
+      "ordinal": 37,
+      "name": "Point Defense",
+      "slotType": "special",
+      "pointCost": 4,
+      "mass": 3,
+      "addedInCatalogVersion": 1,
+      "stats": { "effect": "point-defense", "interceptRange": 400, "interceptChance": 0.55, "interceptsPerTurn": 3 }
+    },
+    {
+      "id": "spc-damage-control",
+      "ordinal": 38,
+      "name": "Damage Control",
+      "slotType": "special",
+      "pointCost": 5,
+      "mass": 3,
+      "addedInCatalogVersion": 1,
+      "stats": { "effect": "damage-control", "hullRepairPerTurn": 8 }
+    }
+  ]
+}

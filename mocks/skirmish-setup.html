@@ -1,0 +1,1098 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SKIRMISH SETUP — Starship Skirmish</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="console.css">
+<style>
+  /* Layout scaffolding only. No new tokens, no second design language. */
+  html, body { height: 100%; }
+  #app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+  .layout {
+    flex: 1 1 auto; min-height: 0;
+    display: grid; grid-template-columns: 340px minmax(0,1fr) 380px;
+    gap: var(--s3); padding: var(--s3);
+  }
+  .col { display: flex; flex-direction: column; min-height: 0; }
+  .col-scroll { overflow-y: auto; min-height: 0; flex: 1 1 auto; }
+
+  /* Larger segmented control for the budget picker — size variant, same anatomy. */
+  .seg-lg > button { height: 42px; padding: 0 var(--s5); font-size: 15px; letter-spacing: .10em; }
+
+  /* Slot fill pips */
+  .pip { display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+         border: 1px solid currentColor; vertical-align: middle; }
+  .pip.on { background: currentColor; box-shadow: 0 0 5px -1px currentColor; }
+  .slotgrp { display: inline-flex; align-items: center; gap: 3px; margin-right: var(--s2); }
+
+  /* Wireframe silhouettes */
+  .sil { display: block; filter: drop-shadow(0 0 5px rgba(34,227,255,.55)); }
+  .sil-bay { width: 72px; height: 44px; flex: none; display: grid; place-items: center;
+             background: var(--deep); border: 1px solid var(--line); border-radius: var(--r); }
+
+  /* Class breakdown bar */
+  .classbar { display: flex; height: 20px; border: 1px solid var(--line);
+              border-radius: var(--r); overflow: hidden; background: var(--panel-in); }
+  .classbar > span { display: grid; place-items: center; font-size: 9px; font-weight: 700;
+                     letter-spacing: .14em; color: #04141A; }
+
+  .drow { display: flex; align-items: flex-start; gap: var(--s3); padding: var(--s3); }
+  .qty { display: inline-flex; align-items: center; border: 1px solid var(--line);
+         border-radius: var(--r); background: var(--panel-in); }
+  .qty > button { width: 22px; height: 22px; border: 0; background: transparent; cursor: pointer;
+                  color: var(--ink); font-family: var(--mono); font-size: 13px; font-weight: 700; line-height: 1; }
+  .qty > button:hover { background: var(--panel-hi); color: var(--cyan); }
+  .qty > button[disabled] { color: var(--ink-ghost); cursor: not-allowed; }
+  .qty > span { min-width: 26px; text-align: center; font-size: 12px; font-weight: 700;
+                color: var(--ink-hi); border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
+
+  .arena { height: 200px; }
+  .ring-dash { position: absolute; border-radius: 50%; border: 1px dotted rgba(34,227,255,.38);
+               pointer-events: none; }
+  .start-mk { position: absolute; transform: translate(-50%,-50%); text-align: center; }
+  .start-mk .mk-glyph { width: 20px; height: 20px; font-size: 12px; margin: 0 auto; }
+  .start-mk .cap { font-size: 8px; letter-spacing: .14em; white-space: nowrap; margin-top: 1px; }
+
+  #libList .row { flex-wrap: wrap; }
+  #libList .row > .grow { flex: 1 1 0; }
+  #libList .row > span[style*="text-align:right"] { flex: none; }
+  .row.is-locked { cursor: not-allowed; }
+  .row.is-locked:hover { background: transparent; }
+</style>
+</head>
+<body>
+
+<div class="mobile-gate">
+  <div class="panel ticks" style="max-width:420px;padding:var(--s5)">
+    <div class="t-h1" style="color:var(--amber)">DESKTOP REQUIRED</div>
+    <hr class="hr">
+    <p class="t-prose">Starship Skirmish is a command console. It needs a viewport of at least
+      <strong>1280&times;720</strong>. Come back on a real screen.</p>
+  </div>
+</div>
+
+<div class="desktop-only" id="app">
+
+  <!-- ============ TOPBAR ============ -->
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark"></span> Starship Skirmish</div>
+    <nav class="nav">
+      <a href="shipyard.html">Shipyard</a>
+      <a href="encyclopedia.html">Encyclopedia</a>
+      <a href="skirmish-setup.html" class="is-active">Skirmish</a>
+      <a href="index.html">Index</a>
+    </nav>
+    <div class="grow"></div>
+    <div style="display:flex;align-items:center;gap:var(--s2)">
+      <span class="mono-xs">LOCAL STORAGE 1.2 MB / ~5 MB</span>
+      <span class="meter" style="width:64px"><span class="meter-fill f-ok" style="width:24%"></span></span>
+    </div>
+    <span class="chip">Catalog v7</span>
+    <button class="btn btn-sm btn-ghost" onclick="document.body.classList.toggle('rm')">◐ Reduced Motion</button>
+  </header>
+
+  <!-- ============ TOP STRIP — BUDGET (FR-10) ============ -->
+  <section class="panel ticks" style="margin:var(--s3) var(--s3) 0;flex:none">
+    <div class="panel-bd" style="display:flex;align-items:center;gap:var(--s5)">
+
+      <div>
+        <div class="t-label" style="margin-bottom:var(--s2)">Point Budget</div>
+        <div class="seg seg-lg" id="budgetSeg" role="group" aria-label="Point budget">
+          <button type="button" data-b="25">25</button>
+          <button type="button" data-b="50">50</button>
+          <button type="button" data-b="75">75</button>
+          <button type="button" data-b="100" class="is-active" aria-pressed="true">100</button>
+          <button type="button" data-b="125">125</button>
+          <button type="button" data-b="150">150</button>
+        </div>
+      </div>
+
+      <div style="width:1px;align-self:stretch;background:var(--line)"></div>
+
+      <div style="min-width:270px">
+        <div class="t-label" style="margin-bottom:var(--s1)">Fleet Cost</div>
+        <div style="display:flex;align-items:baseline;gap:var(--s2)">
+          <span class="t-num-xl" id="spendNum">86</span>
+          <span class="t-num c-dim">/ <span id="budgetNum">100</span> PTS</span>
+        </div>
+        <div class="meter" style="margin-top:var(--s2)">
+          <span class="meter-fill f-ok" id="budgetMeter" style="width:86%"></span>
+        </div>
+        <div class="mono-xs" id="ledgerLine" style="margin-top:var(--s1)">
+          REMAINING <strong class="c-green">14</strong> · IN BUDGET · WASTED ON LAUNCH
+        </div>
+      </div>
+
+      <div style="min-width:150px">
+        <div class="t-label" style="margin-bottom:var(--s1)">Hulls</div>
+        <div style="display:flex;align-items:baseline;gap:var(--s2)">
+          <span class="t-num">5</span><span class="mono-xs">/ 20 CAP</span>
+        </div>
+        <div class="meter meter-sm" style="margin-top:var(--s2)">
+          <span class="meter-fill f-shield" style="width:25%"></span>
+        </div>
+        <div class="mono-xs" style="margin-top:var(--s1)">15 HULL SLOTS FREE</div>
+      </div>
+
+      <div class="banner banner-info grow" style="align-items:flex-start">
+        <span class="c-cyan" style="font-size:15px;line-height:1">◈</span>
+        <div>
+          <div style="font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--ink-hi)">
+            LEFTOVER POINTS ARE WASTED.
+          </div>
+          <div class="mono-xs" style="margin-top:2px">
+            There is no conversion to initiative, reserves, or rerolls. Spend it or lose it.
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ THREE COLUMNS ============ -->
+  <div class="layout">
+
+    <!-- ---------- LEFT: ENCYCLOPEDIA (DRAFT SOURCE) ---------- -->
+    <section class="col panel">
+      <div class="panel-hd">
+        <span class="t-h2">Your Encyclopedia</span>
+        <span class="grow"></span>
+        <span class="chip">10 BUILDS</span>
+      </div>
+
+      <div class="panel-bd" style="flex:none;border-bottom:1px solid var(--line)">
+        <input class="field" type="search" placeholder="SEARCH BUILDS / CHASSIS / CLASS…" value="" aria-label="Search saved builds">
+        <div style="display:flex;align-items:center;gap:var(--s2);margin-top:var(--s2)">
+          <span class="t-label" style="letter-spacing:.16em">Sort</span>
+          <div class="seg" role="group" aria-label="Sort builds">
+            <button type="button" class="is-active" aria-pressed="true">Points</button>
+            <button type="button">Name</button>
+            <button type="button">Class</button>
+          </div>
+        </div>
+        <div class="mono-xs" style="margin-top:var(--s2);color:var(--cyan)">
+          DUPLICATES ALLOWED — field as many copies as the points permit.
+        </div>
+      </div>
+
+      <div class="col-scroll" id="libList">
+
+        <!-- 152 — over budget, needs refit -->
+        <div class="row is-locked" style="align-items:flex-start">
+          <span class="tag-slot tag-missile" title="Mega Destroyer" style="margin-top:2px">D</span>
+          <span class="grow">
+            <span class="truncate" style="display:block;font-size:12px;font-weight:700;color:var(--ink-hi)">THE ARGUMENT</span>
+            <span class="mono-xs" style="display:block">OBELISK · MEGA DESTROYER</span>
+            <span class="mono-xs" style="display:block;color:var(--amber)">⚠ NEEDS REFIT · recalculated 152 under catalog v7</span>
+          </span>
+          <span style="text-align:right">
+            <span class="t-num" style="display:block">152</span>
+            <button class="btn btn-sm is-disabled" disabled>+ Add</button>
+            
+          </span><span class="mono-xs need-note" data-cost="152" data-kind="add" style="display:block;width:100%;text-align:right;margin-top:4px;color:var(--amber)">NEEDS 152 · ONLY 14 LEFT</span>
+        </div>
+
+        <!-- 121 — over budget, needs refit -->
+        <div class="row is-locked" style="align-items:flex-start">
+          <span class="tag-slot tag-missile" title="Mega Destroyer" style="margin-top:2px">D</span>
+          <span class="grow">
+            <span class="truncate" style="display:block;font-size:12px;font-weight:700;color:var(--ink-hi)">LEVIATHAN PRIME</span>
+            <span class="mono-xs" style="display:block">LEVIATHAN · MEGA DESTROYER</span>
+            <span class="mono-xs" style="display:block;color:var(--amber)">⚠ NEEDS REFIT · recalculated 121 under catalog v7</span>
+          </span>
+          <span style="text-align:right">
+            <span class="t-num" style="display:block">121</span>
+            <button class="btn btn-sm is-disabled" disabled>+ Add</button>
+            
+          </span><span class="mono-xs need-note" data-cost="121" data-kind="add" style="display:block;width:100%;text-align:right;margin-top:4px;color:var(--amber)">NEEDS 121 · ONLY 14 LEFT</span>
+        </div>
+
+        <!-- 71 — the flagged over-budget example -->
+        <div class="row is-locked" style="align-items:flex-start">
+          <span class="tag-slot tag-special" title="Cruiser" style="margin-top:2px">C</span>
+          <span class="grow">
+            <span class="truncate" style="display:block;font-size:12px;font-weight:700;color:var(--ink-hi)">GLASS HAMMER</span>
+            <span class="mono-xs" style="display:block">VALKYRIE · CRUISER</span>
+          </span>
+          <span style="text-align:right">
+            <span class="t-num" style="display:block">71</span>
+            <button class="btn btn-sm is-disabled" disabled>+ Add</button>
+            
+          </span><span class="mono-xs need-note" data-cost="71" data-kind="add" style="display:block;width:100%;text-align:right;margin-top:4px;color:var(--amber)">NEEDS 71 · ONLY 14 LEFT</span>
+        </div>
+
+        <!-- 63 -->
+        <div class="row is-locked" style="align-items:flex-start">
+          <span class="tag-slot tag-special" title="Cruiser" style="margin-top:2px">C</span>
+          <span class="grow">
+            <span class="truncate" style="display:block;font-size:12px;font-weight:700;color:var(--ink-hi)">THE WIDOWMAKER</span>
+            <span class="mono-xs" style="display:block">MERIDIAN · CRUISER</span>
+          </span>
+          <span style="text-align:right">
+            <span class="t-num" style="display:block">63</span>
+            <button class="btn btn-sm is-disabled" disabled>+ Add</button>
+            
+          </span><span class="mono-xs need-note" data-cost="63" data-kind="add" style="display:block;width:100%;text-align:right;margin-top:4px;color:var(--amber)">NEEDS 63 · ONLY 14 LEFT</span>
+        </div>
+
+        <!-- 58 -->
+        <div class="row is-locked" style="align-items:flex-start">
+          <span class="tag-slot tag-special" title="Cruiser" style="margin-top:2px">C</span>
+          <span class="grow">
+            <span class="truncate" style="display:block;font-size:12px;font-weight:700;color:var(--ink-hi)">REGEN BRICK</span>
+            <span class="mono-xs" style="display:block">BULWARK · CRUISER</span>
+          </span>
+          <span style="text-align:right">
+            <span class="t-num" style="display:block">58</span>
+            <button class="btn btn-sm is-disabled" disabled>+ Add</button>
+            
+          </span><span class="mono-xs need-note" data-cost="58" data-kind="add" style="display:block;width:100%;text-align:right;margin-top:4px;color:var(--amber)">NEEDS 58 · ONLY 14 LEFT</span>
+        </div>
+
+        <!-- 37 -->
+        <div class="row is-locked" style="align-items:flex-start">
+          <span class="tag-slot tag-engine" title="Frigate" style="margin-top:2px">R</span>
+          <span class="grow">
+            <span class="truncate" style="display:block;font-size:12px;font-weight:700;color:var(--ink-hi)">PD WALL</span>
+            <span class="mono-xs" style="display:block">HARRIER · FRIGATE</span>
+          </span>
+          <span style="text-align:right">
+            <span class="t-num" style="display:block">37</span>
+            <button class="btn btn-sm is-disabled" disabled>+ Add</button>
+            
+          </span><span class="mono-xs need-note" data-cost="37" data-kind="add" style="display:block;width:100%;text-align:right;margin-top:4px;color:var(--amber)">NEEDS 37 · ONLY 14 LEFT</span>
+        </div>
+
+        <!-- 31 — drafted x1 -->
+        <div class="row is-selected" style="align-items:flex-start">
+          <span class="tag-slot tag-engine" title="Frigate" style="margin-top:2px">R</span>
+          <span class="grow">
+            <span class="truncate" style="display:block;font-size:12px;font-weight:700;color:var(--ink-hi)">SPEARHEAD</span>
+            <span class="mono-xs" style="display:block">LANCER · FRIGATE</span>
+            <span class="mono-xs" style="display:block;color:var(--cyan)">IN FLEET ×1 = 31 PTS</span>
+          </span>
+          <span style="text-align:right">
+            <span class="t-num" style="display:block">31</span>
+            <span class="qty" style="margin-top:2px">
+              <button type="button" aria-label="Remove one SPEARHEAD">−</button>
+              <span>1</span>
+              <button type="button" disabled aria-label="Add one SPEARHEAD">+</button>
+            </span>
+            
+          </span><span class="mono-xs need-note" data-cost="31" data-kind="step" style="display:block;width:100%;text-align:right;margin-top:4px;color:var(--amber)">+1 NEEDS 31 · ONLY 14 LEFT</span>
+        </div>
+
+        <!-- 24 — drafted x1 -->
+        <div class="row is-selected" style="align-items:flex-start">
+          <span class="tag-slot tag-engine" title="Frigate" style="margin-top:2px">R</span>
+          <span class="grow">
+            <span class="truncate" style="display:block;font-size:12px;font-weight:700;color:var(--ink-hi)">PICKET FENCE</span>
+            <span class="mono-xs" style="display:block">PICKET · FRIGATE</span>
+            <span class="mono-xs" style="display:block;color:var(--cyan)">IN FLEET ×1 = 24 PTS</span>
+          </span>
+          <span style="text-align:right">
+            <span class="t-num" style="display:block">24</span>
+            <span class="qty" style="margin-top:2px">
+              <button type="button" aria-label="Remove one PICKET FENCE">−</button>
+              <span>1</span>
+              <button type="button" disabled aria-label="Add one PICKET FENCE">+</button>
+            </span>
+            
+          </span><span class="mono-xs need-note" data-cost="24" data-kind="step" style="display:block;width:100%;text-align:right;margin-top:4px;color:var(--amber)">+1 NEEDS 24 · ONLY 14 LEFT</span>
+        </div>
+
+        <!-- 11 — drafted x2, needs refit but DRAFTABLE -->
+        <div class="row is-selected" style="align-items:flex-start">
+          <span class="tag-slot tag-shield" title="Fighter" style="margin-top:2px">F</span>
+          <span class="grow">
+            <span class="truncate" style="display:block;font-size:12px;font-weight:700;color:var(--ink-hi)">MOTE</span>
+            <span class="mono-xs" style="display:block">WASP · FIGHTER</span>
+            <span class="mono-xs" style="display:block;color:var(--amber)">⚠ NEEDS REFIT · was 13, recalculated 11 under catalog v7</span>
+            <span class="mono-xs" style="display:block;color:var(--green)">Draftable — its current cost fits.</span>
+            <span class="mono-xs" style="display:block;color:var(--cyan)">IN FLEET ×2 = 22 PTS</span>
+          </span>
+          <span style="text-align:right">
+            <span class="t-num" style="display:block">11</span>
+            <span class="qty" style="margin-top:2px">
+              <button type="button" aria-label="Remove one MOTE">−</button>
+              <span>2</span>
+              <button type="button" aria-label="Add one MOTE">+</button>
+            </span>
+            
+          </span><span class="mono-xs need-note" data-cost="11" data-kind="step" style="display:block;width:100%;text-align:right;margin-top:4px">+1 COSTS 11 · 14 LEFT</span>
+        </div>
+
+        <!-- 9 — drafted x1 -->
+        <div class="row is-selected" style="align-items:flex-start">
+          <span class="tag-slot tag-shield" title="Fighter" style="margin-top:2px">F</span>
+          <span class="grow">
+            <span class="truncate" style="display:block;font-size:12px;font-weight:700;color:var(--ink-hi)">TIN CAN</span>
+            <span class="mono-xs" style="display:block">NEEDLE · FIGHTER</span>
+            <span class="mono-xs" style="display:block;color:var(--cyan)">IN FLEET ×1 = 9 PTS</span>
+          </span>
+          <span style="text-align:right">
+            <span class="t-num" style="display:block">9</span>
+            <span class="qty" style="margin-top:2px">
+              <button type="button" aria-label="Remove one TIN CAN">−</button>
+              <span>1</span>
+              <button type="button" aria-label="Add one TIN CAN">+</button>
+            </span>
+            
+          </span><span class="mono-xs need-note" data-cost="9" data-kind="step" style="display:block;width:100%;text-align:right;margin-top:4px">+1 COSTS 9 · 14 LEFT</span>
+        </div>
+
+      </div>
+
+      <div class="panel-ft mono-xs">
+        DRAFT SOURCE IS THE ENCYCLOPEDIA ONLY · SCHEMA v3 · CATALOG v7
+      </div>
+    </section>
+
+    <!-- ---------- CENTER: YOUR FLEET ---------- -->
+    <section class="col" style="gap:var(--s3)">
+
+      <div style="display:flex;align-items:center;gap:var(--s3);flex:none">
+        <span class="glyph fl-0" style="width:26px;height:26px;font-size:14px">▲</span>
+        <span class="t-h1">Your Fleet</span>
+        <span class="chip chip-cyan">5 HULLS · 86 PTS</span>
+        <span class="grow"></span>
+        <button class="btn btn-sm btn-ghost">↺ Clear Draft</button>
+      </div>
+
+      <div class="col-scroll" style="display:flex;flex-direction:column;gap:var(--s2)">
+
+        <!-- SPEARHEAD -->
+        <div class="panel">
+          <div class="drow">
+            <span class="sil-bay">
+              <svg class="sil" width="64" height="36" viewBox="0 0 64 40" aria-hidden="true">
+                <g fill="none" stroke="#22E3FF" stroke-width="1.2" stroke-linejoin="round">
+                  <path d="M6 20 L20 11 L46 13 L58 20 L46 27 L20 29 Z"/>
+                  <path d="M20 11 L24 20 L20 29"/><path d="M46 13 L42 20 L46 27"/>
+                  <path d="M28 6 L34 13"/><path d="M28 34 L34 27"/>
+                </g>
+              </svg>
+            </span>
+            <span class="grow">
+              <span style="display:flex;align-items:center;gap:var(--s2)">
+                <span class="tag-slot tag-engine" title="Frigate">R</span>
+                <strong style="font-size:13px;color:var(--ink-hi);letter-spacing:.06em">SPEARHEAD</strong>
+                <span class="mono-xs">LANCER · FRIGATE</span>
+              </span>
+              <span class="mono-xs" style="display:block;margin-top:4px">HULL 55 · SHLD 40 · ΔV 1200 · MSL AMMO 6</span>
+              <span style="display:block;margin-top:6px">
+                <span class="slotgrp tag-weapon"><span class="tag-slot tag-weapon">W</span><i class="pip on"></i><i class="pip on"></i></span>
+                <span class="slotgrp tag-shield"><span class="tag-slot tag-shield">S</span><i class="pip on"></i></span>
+                <span class="slotgrp tag-missile"><span class="tag-slot tag-missile">M</span><i class="pip on"></i></span>
+                <span class="slotgrp tag-engine"><span class="tag-slot tag-engine">E</span><i class="pip on"></i></span>
+                <span class="slotgrp tag-special"><span class="tag-slot tag-special">X</span><i class="pip"></i></span>
+                <span class="mono-xs">5 / 6 FILLED</span>
+              </span>
+            </span>
+            <span style="text-align:right;flex:none">
+              <span class="mono-xs" style="display:block">31 × 1 =</span>
+              <span class="t-num" style="display:block;font-size:18px">31</span>
+              <span style="display:flex;align-items:center;gap:var(--s2);margin-top:var(--s2)">
+                <span class="qty">
+                  <button type="button" aria-label="Decrease SPEARHEAD">−</button><span>1</span><button type="button" disabled aria-label="Increase SPEARHEAD">+</button>
+                </span>
+                <button class="btn btn-sm btn-danger" aria-label="Remove SPEARHEAD">✕</button>
+              </span>
+            </span>
+          </div>
+        </div>
+
+        <!-- PICKET FENCE -->
+        <div class="panel">
+          <div class="drow">
+            <span class="sil-bay">
+              <svg class="sil" width="64" height="36" viewBox="0 0 64 40" aria-hidden="true">
+                <g fill="none" stroke="#22E3FF" stroke-width="1.2" stroke-linejoin="round">
+                  <path d="M8 20 L18 12 L48 12 L56 20 L48 28 L18 28 Z"/>
+                  <path d="M18 12 L18 28"/><path d="M34 12 L34 28"/>
+                  <path d="M24 12 L24 5"/><path d="M42 12 L42 5"/>
+                  <path d="M24 28 L24 35"/><path d="M42 28 L42 35"/>
+                </g>
+              </svg>
+            </span>
+            <span class="grow">
+              <span style="display:flex;align-items:center;gap:var(--s2)">
+                <span class="tag-slot tag-engine" title="Frigate">R</span>
+                <strong style="font-size:13px;color:var(--ink-hi);letter-spacing:.06em">PICKET FENCE</strong>
+                <span class="mono-xs">PICKET · FRIGATE</span>
+              </span>
+              <span class="mono-xs" style="display:block;margin-top:4px">HULL 48 · SHLD 55 · ΔV 900 · MSL AMMO 4</span>
+              <span style="display:block;margin-top:6px">
+                <span class="slotgrp tag-weapon"><span class="tag-slot tag-weapon">W</span><i class="pip on"></i><i class="pip on"></i></span>
+                <span class="slotgrp tag-shield"><span class="tag-slot tag-shield">S</span><i class="pip on"></i></span>
+                <span class="slotgrp tag-missile"><span class="tag-slot tag-missile">M</span><i class="pip on"></i></span>
+                <span class="slotgrp tag-engine"><span class="tag-slot tag-engine">E</span><i class="pip on"></i></span>
+                <span class="slotgrp tag-special"><span class="tag-slot tag-special">X</span><i class="pip on"></i></span>
+                <span class="mono-xs">6 / 6 FILLED</span>
+              </span>
+            </span>
+            <span style="text-align:right;flex:none">
+              <span class="mono-xs" style="display:block">24 × 1 =</span>
+              <span class="t-num" style="display:block;font-size:18px">24</span>
+              <span style="display:flex;align-items:center;gap:var(--s2);margin-top:var(--s2)">
+                <span class="qty">
+                  <button type="button" aria-label="Decrease PICKET FENCE">−</button><span>1</span><button type="button" disabled aria-label="Increase PICKET FENCE">+</button>
+                </span>
+                <button class="btn btn-sm btn-danger" aria-label="Remove PICKET FENCE">✕</button>
+              </span>
+            </span>
+          </div>
+        </div>
+
+        <!-- MOTE ×2 -->
+        <div class="panel">
+          <div class="drow">
+            <span class="sil-bay">
+              <svg class="sil" width="64" height="36" viewBox="0 0 64 40" aria-hidden="true">
+                <g fill="none" stroke="#22E3FF" stroke-width="1.2" stroke-linejoin="round">
+                  <path d="M52 20 L26 8 L32 20 L26 32 Z"/>
+                  <path d="M32 20 L14 20"/><path d="M26 8 L18 4"/><path d="M26 32 L18 36"/>
+                </g>
+              </svg>
+            </span>
+            <span class="grow">
+              <span style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap">
+                <span class="tag-slot tag-shield" title="Fighter">F</span>
+                <strong style="font-size:13px;color:var(--ink-hi);letter-spacing:.06em">MOTE</strong>
+                <span class="chip chip-cyan">×2</span>
+                <span class="mono-xs">WASP · FIGHTER</span>
+                <span class="chip chip-amber">⚠ NEEDS REFIT</span>
+              </span>
+              <span class="mono-xs" style="display:block;margin-top:4px">HULL 22 · SHLD 18 · ΔV 1600 · NO MISSILE SLOT &nbsp;<span class="c-dim">(PER HULL)</span></span>
+              <span style="display:block;margin-top:6px">
+                <span class="slotgrp tag-weapon"><span class="tag-slot tag-weapon">W</span><i class="pip on"></i></span>
+                <span class="slotgrp tag-shield"><span class="tag-slot tag-shield">S</span><i class="pip on"></i></span>
+                <span class="slotgrp tag-engine"><span class="tag-slot tag-engine">E</span><i class="pip on"></i></span>
+                <span class="slotgrp tag-special"><span class="tag-slot tag-special">X</span><i class="pip"></i></span>
+                <span class="mono-xs">3 / 4 FILLED</span>
+              </span>
+            </span>
+            <span style="text-align:right;flex:none">
+              <span class="mono-xs" style="display:block">11 × 2 =</span>
+              <span class="t-num" style="display:block;font-size:18px">22</span>
+              <span style="display:flex;align-items:center;gap:var(--s2);margin-top:var(--s2)">
+                <span class="qty">
+                  <button type="button" aria-label="Decrease MOTE">−</button><span>2</span><button type="button" aria-label="Increase MOTE">+</button>
+                </span>
+                <button class="btn btn-sm btn-danger" aria-label="Remove MOTE">✕</button>
+              </span>
+            </span>
+          </div>
+        </div>
+
+        <!-- TIN CAN -->
+        <div class="panel">
+          <div class="drow">
+            <span class="sil-bay">
+              <svg class="sil" width="64" height="36" viewBox="0 0 64 40" aria-hidden="true">
+                <g fill="none" stroke="#22E3FF" stroke-width="1.2" stroke-linejoin="round">
+                  <path d="M54 20 L22 12 L28 20 L22 28 Z"/>
+                  <path d="M28 20 L10 20"/><path d="M22 12 L22 28"/>
+                </g>
+              </svg>
+            </span>
+            <span class="grow">
+              <span style="display:flex;align-items:center;gap:var(--s2)">
+                <span class="tag-slot tag-shield" title="Fighter">F</span>
+                <strong style="font-size:13px;color:var(--ink-hi);letter-spacing:.06em">TIN CAN</strong>
+                <span class="mono-xs">NEEDLE · FIGHTER</span>
+              </span>
+              <span class="mono-xs" style="display:block;margin-top:4px">HULL 18 · <span class="c-amber">SHLD 0 — SHIELD BAY EMPTY</span> · ΔV 2100 · NO MISSILE SLOT</span>
+              <span style="display:block;margin-top:6px">
+                <span class="slotgrp tag-weapon"><span class="tag-slot tag-weapon">W</span><i class="pip on"></i></span>
+                <span class="slotgrp tag-shield"><span class="tag-slot tag-shield">S</span><i class="pip"></i></span>
+                <span class="slotgrp tag-engine"><span class="tag-slot tag-engine">E</span><i class="pip on"></i></span>
+                <span class="slotgrp tag-special"><span class="tag-slot tag-special">X</span><i class="pip"></i></span>
+                <span class="mono-xs">2 / 4 FILLED</span>
+              </span>
+            </span>
+            <span style="text-align:right;flex:none">
+              <span class="mono-xs" style="display:block">9 × 1 =</span>
+              <span class="t-num" style="display:block;font-size:18px">9</span>
+              <span style="display:flex;align-items:center;gap:var(--s2);margin-top:var(--s2)">
+                <span class="qty">
+                  <button type="button" aria-label="Decrease TIN CAN">−</button><span>1</span><button type="button" aria-label="Increase TIN CAN">+</button>
+                </span>
+                <button class="btn btn-sm btn-danger" aria-label="Remove TIN CAN">✕</button>
+              </span>
+            </span>
+          </div>
+        </div>
+
+        <!-- FLEET SUBTOTAL -->
+        <div class="panel-in" style="padding:var(--s2) var(--s3);display:flex;align-items:center;gap:var(--s2)">
+          <span class="t-label">Draft Total</span>
+          <span class="grow"></span>
+          <span class="mono-xs">31 + 24 + (11 × 2) + 9 =</span>
+          <span class="t-num">86</span>
+          <span class="mono-xs">/ <span id="subtotalBudget">100</span> PTS · 5 HULLS</span>
+        </div>
+
+        <!-- FLEET COMPOSITION -->
+        <div class="panel ticks">
+          <div class="panel-hd"><span class="t-h2">Fleet Composition</span>
+            <span class="grow"></span><span class="mono-xs">DERIVED — NOT EDITABLE</span></div>
+          <div class="panel-bd" style="display:grid;grid-template-columns:1fr 1fr;gap:0 var(--s5)">
+            <div>
+              <div class="stat"><span class="stat-k">Total Hulls</span><span class="stat-v">5</span></div>
+              <div class="stat"><span class="stat-k">Total Hull Points</span><span class="stat-v">165</span></div>
+              <div class="stat"><span class="stat-k">Total Shield Capacity</span><span class="stat-v">131</span></div>
+            </div>
+            <div>
+              <div class="stat"><span class="stat-k">Average Delta-V</span><span class="stat-v">1 480</span></div>
+              <div class="stat"><span class="stat-k">Total Missile Ammo</span><span class="stat-v">10</span></div>
+              <div class="stat"><span class="stat-k">Fleet Cost</span><span class="stat-v">86 <span class="c-dim" style="font-weight:400">/ 100</span></span></div>
+            </div>
+          </div>
+          <div class="panel-bd" style="padding-top:0">
+            <div class="t-label" style="margin-bottom:var(--s1)">Class Breakdown</div>
+            <div class="classbar">
+              <span style="flex:3;background:linear-gradient(90deg,var(--cyan-deep),var(--cyan))">3 FIGHTERS</span>
+              <span style="flex:2;background:linear-gradient(90deg,#A8760F,var(--amber))">2 FRIGATES</span>
+            </div>
+            <div class="mono-xs" style="display:flex;gap:var(--s4);margin-top:var(--s1);flex-wrap:wrap">
+              <span><span class="tag-slot tag-shield">F</span> FIGHTERS 3</span>
+              <span><span class="tag-slot tag-engine">R</span> FRIGATES 2</span>
+              <span style="color:var(--ink-ghost)"><span class="tag-slot" style="color:var(--ink-ghost)">C</span> CRUISERS 0</span>
+              <span style="color:var(--ink-ghost)"><span class="tag-slot" style="color:var(--ink-ghost)">D</span> MEGA DESTROYERS 0</span>
+            </div>
+            <div class="mono-xs" style="margin-top:var(--s2)">
+              AMMO DOES NOT REPLENISH INSIDE A SKIRMISH (RULING B). ΔV IS SPENT, NOT REFUELLED.
+            </div>
+          </div>
+        </div>
+
+        <!-- BUDGET RULE BANNERS -->
+        <div class="banner banner-info">
+          <span class="c-cyan" style="font-size:14px">✓</span>
+          <div>
+            <div style="font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--ink-hi)">UNDER-BUDGET FLEETS CAN LAUNCH. OVER-BUDGET CANNOT.</div>
+            <div class="mono-xs" style="margin-top:2px" id="underNote">You are at 86 / 100. The 14 unspent points buy nothing — they are simply gone.</div>
+          </div>
+        </div>
+
+        <div class="banner banner-danger" id="overBanner">
+          <span class="c-red" style="font-size:14px">⚠</span>
+          <div>
+            <div style="font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--ink-hi)" id="overBannerLine">
+              ⚠ 104 / 100 — OVER BUDGET. REMOVE 4 POINTS TO LAUNCH.
+            </div>
+            <div class="mono-xs" style="margin-top:2px" id="overBannerNote">
+              EXAMPLE — BLOCKED STATE. This is what you would see after adding TIN CAN ×2 (86 + 18 = 104). LAUNCH stays disabled until the fleet fits.
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ---------- RIGHT: OPPOSITION + ARENA ---------- -->
+    <section class="col col-scroll" style="gap:var(--s3);display:flex">
+
+      <!-- OPPONENT COUNT -->
+      <div class="panel ticks" style="flex:none">
+        <div class="panel-hd"><span class="t-h2">Opposition</span>
+          <span class="grow"></span><span class="mono-xs">MAX 5 FLEETS ON FIELD</span></div>
+        <div class="panel-bd">
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:nowrap">
+            <span class="t-label" style="flex:none;white-space:nowrap">AI Opponents</span>
+            <div class="seg" id="botSeg" role="group" aria-label="Number of AI opponents">
+              <button type="button" data-n="1">1</button>
+              <button type="button" data-n="2" class="is-active" aria-pressed="true">2</button>
+              <button type="button" data-n="3">3</button>
+              <button type="button" data-n="4">4</button>
+            </div>
+            <span class="grow"></span>
+            <span class="chip chip-cyan" style="flex:none;white-space:nowrap" id="fleetCountChip">3 FLEETS / 5</span>
+          </div>
+          <div class="mono-xs" style="margin-top:var(--s2)">
+            EACH BOT FLEET IS BUILT TO THE SAME <strong class="c-hi" id="botBudgetLbl">100</strong>-PT BUDGET FROM THE SAME CATALOG (v7).
+          </div>
+        </div>
+      </div>
+
+      <!-- FREE FOR ALL -->
+      <div class="banner banner-danger" id="ffaBanner" style="flex:none">
+        <span class="c-red" style="font-size:14px">✳</span>
+        <div>
+          <div style="font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--ink-hi)">FREE-FOR-ALL — ALL FLEETS ARE HOSTILE TO ALL OTHER FLEETS.</div>
+          <div class="mono-xs" style="margin-top:2px">No alliances in v1. 3 fleets on the field. Last fleet standing wins.</div>
+        </div>
+      </div>
+      <div class="banner banner-info" id="duelBanner" style="flex:none;display:none">
+        <span class="c-cyan" style="font-size:14px">⚔</span>
+        <div>
+          <div style="font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--ink-hi)">DUEL — 2 FLEETS. FREE-FOR-ALL RULE INACTIVE.</div>
+          <div class="mono-xs" style="margin-top:2px">The free-for-all notice appears at 3 or more fleets.</div>
+        </div>
+      </div>
+
+      <!-- FAIRNESS -->
+      <div class="panel" style="flex:none;border-left:3px solid var(--cyan)">
+        <div class="panel-bd">
+          <div style="font-size:11px;font-weight:700;letter-spacing:.10em;color:var(--ink-hi);line-height:1.6">
+            BOTS USE THE SAME CATALOG, THE SAME BUDGET, AND THE SAME RULES. DIFFICULTY CHANGES
+            DECISION QUALITY ONLY — NEVER STATS, NEVER POINT DISCOUNTS, NEVER EXCLUSIVE HULLS.
+          </div>
+          <hr class="hr-dash">
+          <div class="mono-xs" style="line-height:1.8">
+            <div><strong class="c-hi">ROOKIE</strong> — 1-turn horizon, nearest-target priority, no evasion modelling</div>
+            <div><strong class="c-hi">VETERAN</strong> — 2-turn horizon, threat-weighted targeting, breaks shields then kills the generator</div>
+            <div><strong class="c-hi">ACE</strong> — 3-turn horizon, predictive intercepts, willing to overburn and to ram</div>
+          </div>
+          <div class="mono-xs" style="margin-top:var(--s2);color:var(--ink-ghost)">
+            NO DIFFICULTY MULTIPLIER FIELD EXISTS IN THE DATA MODEL (FR-30).
+          </div>
+        </div>
+      </div>
+
+      <!-- BOT-01 -->
+      <div class="panel" data-bot="1" style="flex:none">
+        <div class="panel-hd">
+          <span class="glyph fl-1">●</span>
+          <span class="t-h2">BOT-01</span>
+          <span class="grow"></span>
+          <div class="seg bot-diff" role="group" aria-label="BOT-01 difficulty">
+            <button type="button" data-d="rookie">Rookie</button>
+            <button type="button" data-d="veteran" class="is-active" aria-pressed="true">Veteran</button>
+            <button type="button" data-d="ace">Ace</button>
+          </div>
+        </div>
+        <div class="panel-bd" style="padding-bottom:var(--s2)">
+          <div class="mono-xs diff-note" style="color:var(--cyan)">2-TURN HORIZON · THREAT-WEIGHTED TARGETING · BREAKS SHIELDS THEN KILLS THE GENERATOR</div>
+        </div>
+        <div style="border-top:1px solid var(--line)">
+          <div class="row is-locked" style="padding:var(--s1) var(--s3)">
+            <span class="tag-slot tag-special" title="Cruiser">C</span>
+            <span class="grow truncate" style="font-size:12px;color:var(--ink-hi)">IRON VERDICT</span>
+            <span class="mono-xs">MERIDIAN · CRUISER</span>
+            <span class="t-num" style="font-size:13px;min-width:30px;text-align:right">61</span>
+          </div>
+          <div class="row is-locked" style="padding:var(--s1) var(--s3)">
+            <span class="tag-slot tag-engine" title="Frigate">R</span>
+            <span class="grow truncate" style="font-size:12px;color:var(--ink-hi)">SPUR</span>
+            <span class="mono-xs">LANCER · FRIGATE</span>
+            <span class="t-num" style="font-size:13px;min-width:30px;text-align:right">19</span>
+          </div>
+          <div class="row is-locked" style="padding:var(--s1) var(--s3);border-bottom:0">
+            <span class="tag-slot tag-engine" title="Frigate">R</span>
+            <span class="grow truncate" style="font-size:12px;color:var(--ink-hi)">SPUR II</span>
+            <span class="mono-xs">LANCER · FRIGATE</span>
+            <span class="t-num" style="font-size:13px;min-width:30px;text-align:right">19</span>
+          </div>
+        </div>
+        <div class="panel-ft">
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap">
+            <span class="mono-xs" style="white-space:nowrap">61 + 19 + 19 = <strong class="c-hi">99</strong> / 100 · 3 HULLS</span>
+            <span class="grow"></span>
+            <span class="chip chip-amber" style="flex:none;white-space:nowrap">1 PT WASTED</span>
+            <button class="btn btn-sm">↻ Reroll Fleet</button>
+          </div>
+          <div class="mono-xs" style="margin-top:var(--s1)">
+            DRAFTER REJECTED OBELISK (88) AT THIS BUDGET — NO POINTS LEFT TO ARM IT. 1 PT UNSPENT: CHEAPEST LEGAL HULL IS NEEDLE AT 4.
+          </div>
+        </div>
+      </div>
+
+      <!-- BOT-02 -->
+      <div class="panel" data-bot="2" style="flex:none">
+        <div class="panel-hd">
+          <span class="glyph fl-2">■</span>
+          <span class="t-h2">BOT-02</span>
+          <span class="grow"></span>
+          <div class="seg bot-diff" role="group" aria-label="BOT-02 difficulty">
+            <button type="button" data-d="rookie" class="is-active" aria-pressed="true">Rookie</button>
+            <button type="button" data-d="veteran">Veteran</button>
+            <button type="button" data-d="ace">Ace</button>
+          </div>
+        </div>
+        <div class="panel-bd" style="padding-bottom:var(--s2)">
+          <div class="mono-xs diff-note" style="color:var(--cyan)">1-TURN HORIZON · NEAREST-TARGET PRIORITY · NO EVASION MODELLING</div>
+        </div>
+        <div style="border-top:1px solid var(--line)">
+          <div class="row is-locked" style="padding:var(--s1) var(--s3)">
+            <span class="tag-slot tag-special" title="Cruiser">C</span>
+            <span class="grow truncate" style="font-size:12px;color:var(--ink-hi)">DULL EDGE</span>
+            <span class="mono-xs">BULWARK · CRUISER</span>
+            <span class="t-num" style="font-size:13px;min-width:30px;text-align:right">58</span>
+          </div>
+          <div class="row is-locked" style="padding:var(--s1) var(--s3)">
+            <span class="tag-slot tag-shield" title="Fighter">F</span>
+            <span class="grow truncate" style="font-size:12px;color:var(--ink-hi)">MOTE</span>
+            <span class="mono-xs">WASP · FIGHTER</span>
+            <span class="t-num" style="font-size:13px;min-width:30px;text-align:right">11</span>
+          </div>
+          <div class="row is-locked" style="padding:var(--s1) var(--s3)">
+            <span class="tag-slot tag-shield" title="Fighter">F</span>
+            <span class="grow truncate" style="font-size:12px;color:var(--ink-hi)">MOTE II</span>
+            <span class="mono-xs">WASP · FIGHTER</span>
+            <span class="t-num" style="font-size:13px;min-width:30px;text-align:right">11</span>
+          </div>
+          <div class="row is-locked" style="padding:var(--s1) var(--s3);border-bottom:0">
+            <span class="tag-slot tag-shield" title="Fighter">F</span>
+            <span class="grow truncate" style="font-size:12px;color:var(--ink-hi)">WASP-A</span>
+            <span class="mono-xs">WASP · FIGHTER</span>
+            <span class="t-num" style="font-size:13px;min-width:30px;text-align:right">11</span>
+          </div>
+        </div>
+        <div class="panel-ft">
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap">
+            <span class="mono-xs" style="white-space:nowrap">58 + 11 + 11 + 11 = <strong class="c-hi">91</strong> / 100 · 4 HULLS</span>
+            <span class="grow"></span>
+            <span class="chip chip-amber" style="flex:none;white-space:nowrap">9 PTS WASTED</span>
+            <button class="btn btn-sm">↻ Reroll Fleet</button>
+          </div>
+          <div class="mono-xs" style="margin-top:var(--s1)">
+            ROOKIE DRAFTER STOPPED AT 91 — A BARE NEEDLE (4) WOULD STILL HAVE FIT. ITS MOTE COSTS 11, THE SAME 11 YOURS COSTS.
+          </div>
+        </div>
+      </div>
+
+      <!-- BOT-03 (hidden until 3 opponents) -->
+      <div class="panel" data-bot="3" style="flex:none;display:none">
+        <div class="panel-hd">
+          <span class="glyph fl-3">◆</span>
+          <span class="t-h2">BOT-03</span>
+          <span class="grow"></span>
+          <div class="seg bot-diff" role="group" aria-label="BOT-03 difficulty">
+            <button type="button" data-d="rookie">Rookie</button>
+            <button type="button" data-d="veteran">Veteran</button>
+            <button type="button" data-d="ace" class="is-active" aria-pressed="true">Ace</button>
+          </div>
+        </div>
+        <div class="panel-bd" style="padding-bottom:var(--s2)">
+          <div class="mono-xs diff-note" style="color:var(--cyan)">3-TURN HORIZON · PREDICTIVE INTERCEPTS · WILLING TO OVERBURN AND TO RAM</div>
+        </div>
+        <div style="border-top:1px solid var(--line)">
+          <div class="row is-locked" style="padding:var(--s1) var(--s3)">
+            <span class="tag-slot tag-special" title="Cruiser">C</span>
+            <span class="grow truncate" style="font-size:12px;color:var(--ink-hi)">SILENT PARTNER</span>
+            <span class="mono-xs">VALKYRIE · CRUISER</span>
+            <span class="t-num" style="font-size:13px;min-width:30px;text-align:right">66</span>
+          </div>
+          <div class="row is-locked" style="padding:var(--s1) var(--s3)">
+            <span class="tag-slot tag-engine" title="Frigate">R</span>
+            <span class="grow truncate" style="font-size:12px;color:var(--ink-hi)">HOOK</span>
+            <span class="mono-xs">PICKET · FRIGATE</span>
+            <span class="t-num" style="font-size:13px;min-width:30px;text-align:right">17</span>
+          </div>
+          <div class="row is-locked" style="padding:var(--s1) var(--s3);border-bottom:0">
+            <span class="tag-slot tag-engine" title="Frigate">R</span>
+            <span class="grow truncate" style="font-size:12px;color:var(--ink-hi)">HOOK II</span>
+            <span class="mono-xs">PICKET · FRIGATE</span>
+            <span class="t-num" style="font-size:13px;min-width:30px;text-align:right">17</span>
+          </div>
+        </div>
+        <div class="panel-ft">
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap">
+            <span class="mono-xs" style="white-space:nowrap">66 + 17 + 17 = <strong class="c-hi">100</strong> / 100 · 3 HULLS</span>
+            <span class="grow"></span>
+            <span class="chip chip-green" style="flex:none;white-space:nowrap">0 WASTED</span>
+            <button class="btn btn-sm">↻ Reroll Fleet</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- BOT-04 (hidden until 4 opponents) -->
+      <div class="panel" data-bot="4" style="flex:none;display:none">
+        <div class="panel-hd">
+          <span class="glyph fl-4">✚</span>
+          <span class="t-h2">BOT-04</span>
+          <span class="grow"></span>
+          <div class="seg bot-diff" role="group" aria-label="BOT-04 difficulty">
+            <button type="button" data-d="rookie" class="is-active" aria-pressed="true">Rookie</button>
+            <button type="button" data-d="veteran">Veteran</button>
+            <button type="button" data-d="ace">Ace</button>
+          </div>
+        </div>
+        <div class="panel-bd" style="padding-bottom:var(--s2)">
+          <div class="mono-xs diff-note" style="color:var(--cyan)">1-TURN HORIZON · NEAREST-TARGET PRIORITY · NO EVASION MODELLING</div>
+        </div>
+        <div style="border-top:1px solid var(--line)">
+          <div class="row is-locked" style="padding:var(--s1) var(--s3)">
+            <span class="tag-slot tag-special" title="Cruiser">C</span>
+            <span class="grow truncate" style="font-size:12px;color:var(--ink-hi)">BIG STICK</span>
+            <span class="mono-xs">BULWARK · CRUISER</span>
+            <span class="t-num" style="font-size:13px;min-width:30px;text-align:right">62</span>
+          </div>
+          <div class="row is-locked" style="padding:var(--s1) var(--s3)">
+            <span class="tag-slot tag-shield" title="Fighter">F</span>
+            <span class="grow truncate" style="font-size:12px;color:var(--ink-hi)">PIN</span>
+            <span class="mono-xs">NEEDLE · FIGHTER</span>
+            <span class="t-num" style="font-size:13px;min-width:30px;text-align:right">12</span>
+          </div>
+          <div class="row is-locked" style="padding:var(--s1) var(--s3);border-bottom:0">
+            <span class="tag-slot tag-shield" title="Fighter">F</span>
+            <span class="grow truncate" style="font-size:12px;color:var(--ink-hi)">PIN II</span>
+            <span class="mono-xs">NEEDLE · FIGHTER</span>
+            <span class="t-num" style="font-size:13px;min-width:30px;text-align:right">12</span>
+          </div>
+        </div>
+        <div class="panel-ft">
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap">
+            <span class="mono-xs" style="white-space:nowrap">62 + 12 + 12 = <strong class="c-hi">86</strong> / 100 · 3 HULLS</span>
+            <span class="grow"></span>
+            <span class="chip chip-amber" style="flex:none;white-space:nowrap">14 PTS WASTED</span>
+            <button class="btn btn-sm">↻ Reroll Fleet</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="mono-xs" style="flex:none">
+        BOT FLEETS ARE BUILT, NOT SCRIPTED — THEY VARY BETWEEN MATCHES AT THE SAME BUDGET AND TIER (FR-31).
+        EVERY BOT FIT IS LEGAL UNDER SHIPYARD RULES.
+      </div>
+
+      <!-- ARENA PREVIEW -->
+      <div class="panel ticks" style="flex:none">
+        <div class="panel-hd"><span class="t-h2">Arena</span>
+          <span class="grow"></span><span class="mono-xs">PLAN VIEW · NOT TO SCALE</span></div>
+        <div class="viewport arena" id="arena">
+          <div class="boundary" id="boundaryEl"
+               style="width:176px;height:176px;left:50%;top:50%;transform:translate(-50%,-50%)"></div>
+          <div class="ring-dash" id="ringEl"
+               style="left:50%;top:50%;transform:translate(-50%,-50%)"></div>
+          <div class="boundary-label" style="left:50%;bottom:6px;transform:translateX(-50%)">LETHAL BOUNDARY</div>
+          <div id="marks"></div>
+        </div>
+        <div class="panel-bd">
+          <div class="stat"><span class="stat-k">Arena Radius</span>
+            <span class="stat-v"><span id="radiusVal">4 200</span> <span class="mono-xs">DERIVED FROM BUDGET <span id="radiusBudget">100</span></span></span></div>
+          <div class="stat"><span class="stat-k">Start Velocity</span><span class="stat-v">0 <span class="mono-xs">FOR ALL SHIPS</span></span></div>
+          <div class="stat"><span class="stat-k">Separation</span>
+            <span class="stat-v"><span id="sepVal">2 800</span> <span class="mono-xs">OUTSIDE MUTUAL WEAPONS RANGE</span></span></div>
+          <div class="stat"><span class="stat-k">Start Ring</span>
+            <span class="stat-v"><span id="ringVal">1 617</span> <span class="mono-xs">FROM CENTRE · EQUIDISTANT</span></span></div>
+          <div class="mono-xs" style="margin-top:var(--s2)">
+            NO FLEET STARTS CLOSER TO THE BOUNDARY THAN ANY OTHER. ARENA RADIUS = 1800 + 24 × BUDGET (RULING C).
+          </div>
+        </div>
+      </div>
+
+      <!-- SEED -->
+      <div class="panel" style="flex:none">
+        <div class="panel-bd">
+          <div style="display:flex;align-items:center;gap:var(--s2)">
+            <span class="t-label">Match Seed</span>
+            <span class="grow"></span>
+            <button class="btn btn-sm">↻ Reroll</button>
+            <button class="btn btn-sm">Copy</button>
+          </div>
+          <div class="t-num" style="font-size:16px;letter-spacing:.10em;margin-top:var(--s2)" id="seedVal">SK-7F3A-9C21-D4E8</div>
+          <div class="mono-xs" style="margin-top:var(--s1)">
+            RECORDED AT INSTANTIATION. SAME SEED + SAME PLANS = IDENTICAL OUTCOME.
+          </div>
+        </div>
+      </div>
+
+      <!-- LAUNCH -->
+      <div style="flex:none">
+        <a class="btn btn-commit" href="tactical-move.html" id="launchBtn">Launch Skirmish</a>
+        <div class="mono-xs" style="margin-top:var(--s2);line-height:1.7">
+          ONE SKIRMISH = ONE POINT-BUY, ONE FLEET. NO REINFORCEMENTS, NO CARRYOVER.
+          LAST FLEET STANDING WINS.
+        </div>
+      </div>
+
+    </section>
+  </div>
+</div>
+
+<script>
+(function () {
+  var SPEND = 86;                 // 31 + 24 + (11 x 2) + 9
+  var fmt = function (n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); };
+
+  var budget = 100, bots = 2;
+
+  var TIERS = {
+    rookie:  '1-TURN HORIZON · NEAREST-TARGET PRIORITY · NO EVASION MODELLING',
+    veteran: '2-TURN HORIZON · THREAT-WEIGHTED TARGETING · BREAKS SHIELDS THEN KILLS THE GENERATOR',
+    ace:     '3-TURN HORIZON · PREDICTIVE INTERCEPTS · WILLING TO OVERBURN AND TO RAM'
+  };
+  var GLYPHS = ['▲', '●', '■', '◆', '✚'];
+  var COLORS = ['var(--fleet-0)', 'var(--fleet-1)', 'var(--fleet-2)', 'var(--fleet-3)', 'var(--fleet-4)'];
+  var NAMES  = ['YOU', 'BOT-01', 'BOT-02', 'BOT-03', 'BOT-04'];
+
+  function setSeg(seg, btn) {
+    seg.querySelectorAll('button').forEach(function (b) {
+      var on = b === btn;
+      b.classList.toggle('is-active', on);
+      if (on) { b.setAttribute('aria-pressed', 'true'); } else { b.removeAttribute('aria-pressed'); }
+    });
+  }
+
+  // ---- budget ledger -------------------------------------------------
+  function renderBudget() {
+    var remain = budget - SPEND;
+    var over = remain < 0;
+
+    document.getElementById('budgetNum').textContent = budget;
+    document.getElementById('botBudgetLbl').textContent = budget;
+    document.getElementById('radiusBudget').textContent = budget;
+    document.getElementById('subtotalBudget').textContent = budget;
+
+    var meter = document.getElementById('budgetMeter');
+    meter.style.width = Math.min(100, (SPEND / budget) * 100) + '%';
+    meter.className = 'meter-fill ' + (over ? 'f-hot' : 'f-ok');
+
+    var ledger = document.getElementById('ledgerLine');
+    ledger.innerHTML = over
+      ? '<strong class="c-red">⚠ OVER BY ' + (-remain) + '</strong> · CANNOT LAUNCH'
+      : 'REMAINING <strong class="c-green">' + remain + '</strong> · IN BUDGET · WASTED ON LAUNCH';
+
+    var line = document.getElementById('overBannerLine');
+    var note = document.getElementById('overBannerNote');
+    if (over) {
+      line.textContent = '⚠ ' + SPEND + ' / ' + budget + ' — OVER BUDGET. REMOVE ' + (-remain) + ' POINTS TO LAUNCH.';
+      note.textContent = 'LIVE — BLOCKED STATE. Your 5-hull draft costs ' + SPEND + '. Drop hulls or raise the budget.';
+    } else {
+      line.textContent = '⚠ 104 / 100 — OVER BUDGET. REMOVE 4 POINTS TO LAUNCH.';
+      note.textContent = 'EXAMPLE — BLOCKED STATE. This is what you would see after adding TIN CAN ×2 (86 + 18 = 104). LAUNCH stays disabled until the fleet fits.';
+    }
+
+    document.getElementById('underNote').textContent =
+      'You are at ' + SPEND + ' / ' + budget + '. ' +
+      (over ? 'This draft does not fit — nothing launches until it does.'
+            : 'The ' + remain + ' unspent points buy nothing — they are simply gone.');
+
+    var launch = document.getElementById('launchBtn');
+    launch.classList.toggle('is-disabled', over);
+    launch.textContent = over ? 'OVER BUDGET — CANNOT LAUNCH' : 'LAUNCH SKIRMISH';
+
+    // Left column: every affordability note recomputed, never stale.
+    document.querySelectorAll('.need-note').forEach(function (note) {
+      var cost = parseInt(note.dataset.cost, 10);
+      var step = note.dataset.kind === 'step';
+      var fits = !over && cost <= remain;
+      note.textContent = (step ? '+1 ' : '') +
+        (fits ? 'COSTS ' + cost + ' · ' + remain + ' LEFT'
+              : 'NEEDS ' + cost + ' · ONLY ' + Math.max(0, remain) + ' LEFT');
+      note.style.color = fits ? '' : 'var(--amber)';
+
+      var row = note.closest('.row');
+      var btn = step ? row.querySelector('.qty > button:last-child') : row.querySelector('.btn');
+      if (btn) {
+        btn.disabled = !fits;
+        if (!step) { btn.classList.toggle('is-disabled', !fits); }
+      }
+    });
+  }
+
+  // ---- arena ---------------------------------------------------------
+  function renderArena() {
+    var n = bots + 1;                               // fleets on the field
+    var radius = 1800 + 24 * budget;                // Ruling C
+    var sep = Math.round(radius * 2 / 3);           // target separation
+    var ring = Math.round(sep / (2 * Math.sin(Math.PI / n)));
+
+    document.getElementById('radiusVal').textContent = fmt(radius);
+    document.getElementById('sepVal').textContent = fmt(sep);
+    document.getElementById('ringVal').textContent = fmt(ring);
+
+    var boundaryPx = 88;                            // 176px circle / 2
+    var ringPx = Math.max(14, (ring / radius) * boundaryPx);
+    var re = document.getElementById('ringEl');
+    re.style.width = (ringPx * 2) + 'px';
+    re.style.height = (ringPx * 2) + 'px';
+
+    var out = '';
+    for (var i = 0; i < n; i++) {
+      var a = (-90 + i * 360 / n) * Math.PI / 180;
+      var x = Math.cos(a) * ringPx, y = Math.sin(a) * ringPx;
+      out += '<div class="start-mk" style="color:' + COLORS[i] +
+             ';left:calc(50% + ' + x.toFixed(1) + 'px);top:calc(50% + ' + y.toFixed(1) + 'px)">' +
+             '<div class="mk-glyph">' + GLYPHS[i] + '</div>' +
+             '<div class="cap">' + NAMES[i] + '</div></div>';
+    }
+    document.getElementById('marks').innerHTML = out;
+  }
+
+  // ---- opponents -----------------------------------------------------
+  // Bot fleets on screen were drafted at 100. If the budget moves, the shown
+  // arithmetic would be a lie — so the card is marked stale until rerolled.
+  var BOT_DRAFT_BUDGET = 100;
+  function renderBotStale() {
+    document.querySelectorAll('[data-bot]').forEach(function (card) {
+      var stale = budget !== BOT_DRAFT_BUDGET;
+      var note = card.querySelector('.stale-note');
+      if (!note) {
+        note = document.createElement('div');
+        note.className = 'banner stale-note';
+        note.style.margin = 'var(--s2) var(--s3)';
+        card.querySelector('.panel-hd').insertAdjacentElement('afterend', note);
+      }
+      note.style.display = stale ? '' : 'none';
+      note.innerHTML = '<span class="c-amber" style="font-size:13px">⚠</span>' +
+        '<span class="mono-xs">BUDGET CHANGED TO ' + budget + ' — THIS FLEET WAS DRAFTED AT ' +
+        BOT_DRAFT_BUDGET + '. REROLL TO REDRAFT.</span>';
+      card.querySelectorAll('.row, .panel-ft').forEach(function (el) {
+        el.style.opacity = stale ? '.38' : '';
+      });
+      var btn = card.querySelector('.panel-ft .btn');
+      if (btn) { btn.classList.toggle('btn-warn', stale); btn.style.opacity = '1'; }
+    });
+  }
+  function renderBots() {
+    for (var i = 1; i <= 4; i++) {
+      var card = document.querySelector('[data-bot="' + i + '"]');
+      card.style.display = i <= bots ? '' : 'none';
+    }
+    var total = bots + 1;
+    document.getElementById('fleetCountChip').textContent = total + ' FLEETS / 5';
+    var ffa = total >= 3;
+    document.getElementById('ffaBanner').style.display = ffa ? '' : 'none';
+    document.getElementById('duelBanner').style.display = ffa ? 'none' : '';
+    if (ffa) {
+      document.querySelector('#ffaBanner .mono-xs').textContent =
+        'No alliances in v1. ' + total + ' fleets on the field. Last fleet standing wins.';
+    }
+  }
+
+  document.getElementById('budgetSeg').addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    budget = parseInt(b.dataset.b, 10);
+    setSeg(this, b); renderBudget(); renderBotStale(); renderArena();
+  });
+
+  document.getElementById('botSeg').addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    bots = parseInt(b.dataset.n, 10);
+    setSeg(this, b); renderBots(); renderArena();
+  });
+
+  document.querySelectorAll('.bot-diff').forEach(function (seg) {
+    seg.addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (!b) return;
+      setSeg(seg, b);
+      seg.closest('.panel').querySelector('.diff-note').textContent = TIERS[b.dataset.d];
+    });
+  });
+
+  // Sort control is presentational in this mock.
+  document.querySelectorAll('.seg').forEach(function (seg) {
+    if (seg.id || seg.classList.contains('bot-diff')) return;
+    seg.addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (b) setSeg(seg, b);
+    });
+  });
+
+  renderBudget(); renderBots(); renderBotStale(); renderArena();
+})();
+</script>
+
+<!-- Prototype flow runner (mock-only; not for src/) -->
+<script src="prototype.js"></script>
+</body>
+</html>

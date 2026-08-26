@@ -1,0 +1,68 @@
+{
+  "$comment": "Ruling I - one damage number, no resistance matrix. Ruling G - range-limited and omnidirectional, no firing arcs, so there is no arc field. 'accuracy' is the BASE term only; the full hit-chance formula (range, target velocity, target evasion - Ruling H) lives in sim/rules and is never duplicated in data or UI.",
+  "schemaVersion": 1,
+  "kind": "component",
+  "slotType": "weapon",
+  "entries": [
+    {
+      "id": "wpn-pulse-array",
+      "ordinal": 13,
+      "name": "Pulse Array",
+      "slotType": "weapon",
+      "pointCost": 2,
+      "mass": 2,
+      "addedInCatalogVersion": 1,
+      "stats": { "range": 900, "damage": 6, "shotsPerTurn": 3, "accuracy": 0.70 }
+    },
+    {
+      "id": "wpn-scatter-gun",
+      "ordinal": 14,
+      "name": "Scatter Gun",
+      "slotType": "weapon",
+      "pointCost": 3,
+      "mass": 3,
+      "addedInCatalogVersion": 1,
+      "stats": { "range": 600, "damage": 5, "shotsPerTurn": 5, "accuracy": 0.55 }
+    },
+    {
+      "id": "wpn-mote-repeater",
+      "ordinal": 15,
+      "name": "Mote Repeater",
+      "slotType": "weapon",
+      "pointCost": 5,
+      "mass": 4,
+      "addedInCatalogVersion": 1,
+      "stats": { "range": 1100, "damage": 9, "shotsPerTurn": 4, "accuracy": 0.66 }
+    },
+    {
+      "id": "wpn-rail-driver",
+      "ordinal": 16,
+      "name": "Rail Driver",
+      "slotType": "weapon",
+      "pointCost": 4,
+      "mass": 5,
+      "addedInCatalogVersion": 1,
+      "stats": { "range": 2200, "damage": 22, "shotsPerTurn": 1, "accuracy": 0.62 }
+    },
+    {
+      "id": "wpn-fusion-lance",
+      "ordinal": 17,
+      "name": "Fusion Lance",
+      "slotType": "weapon",
+      "pointCost": 7,
+      "mass": 7,
+      "addedInCatalogVersion": 1,
+      "stats": { "range": 1600, "damage": 40, "shotsPerTurn": 1, "accuracy": 0.78 }
+    },
+    {
+      "id": "wpn-siege-cannon",
+      "ordinal": 18,
+      "name": "Siege Cannon",
+      "slotType": "weapon",
+      "pointCost": 9,
+      "mass": 11,
+      "addedInCatalogVersion": 1,
+      "stats": { "range": 3000, "damage": 65, "shotsPerTurn": 1, "accuracy": 0.48 }
+    }
+  ]
+}

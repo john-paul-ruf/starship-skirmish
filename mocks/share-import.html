@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Import Shared Build — Starship Skirmish</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="console.css">
+<style>
+  /* Page-local composition only. No token redefinition. */
+  .wrap { max-width: 760px; margin: 0 auto; padding: var(--s5) var(--s4) var(--s8); }
+  .wrap-wide { max-width: 1180px; margin: 0 auto; padding: 0 var(--s4) var(--s8); }
+
+  /* fill/stroke are inherited, so they cross the <use> shadow boundary. */
+  .hull { display: block; width: 100%; height: 84px;
+          fill: none; stroke: var(--amber); stroke-width: 1.15;
+          stroke-linejoin: round; stroke-linecap: round;
+          filter: drop-shadow(0 0 8px rgba(255,176,32,.45)); }
+
+  .token { font-family: var(--mono); font-size: 11px; line-height: 1.6;
+           color: var(--ink-hi); background: var(--panel-in);
+           border: 1px solid var(--line); border-radius: var(--r);
+           padding: var(--s2) var(--s3); word-break: break-all; }
+  .token .tok-base { color: var(--cyan); }
+  .token .tok-ver  { color: var(--amber); }
+  .token .tok-cut  { color: var(--ink-ghost); }
+
+  .radio-row { display: flex; gap: var(--s3); align-items: flex-start;
+               padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r);
+               background: var(--panel-in); cursor: pointer; }
+  .radio-row:hover { border-color: var(--line-hot); background: var(--panel-hi); }
+  .radio-row.is-on { border-color: var(--cyan); box-shadow: var(--glow-1);
+                     background: rgba(34,227,255,.07); }
+  .radio-row.is-danger.is-on { border-color: var(--red);
+                     box-shadow: 0 0 0 1px rgba(255,46,99,.35); background: rgba(255,46,99,.07); }
+  .rad { appearance: none; width: 14px; height: 14px; margin-top: 3px; flex: none;
+         border: 1px solid var(--line-hot); border-radius: 50%;
+         background: var(--panel-in); cursor: pointer; position: relative; }
+  .rad:checked { border-color: var(--cyan); }
+  .rad:checked::after { content: ""; position: absolute; inset: 3px; border-radius: 50%;
+         background: var(--cyan); box-shadow: 0 0 6px var(--cyan); }
+
+  .dropzone { border: 1px dashed var(--line-hot); background: var(--panel-in);
+              border-radius: var(--r); padding: var(--s6) var(--s4); text-align: center;
+              cursor: pointer; }
+  .dropzone:hover { border-color: var(--cyan); background: rgba(34,227,255,.05); }
+
+  .states { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s3); align-items: start; }
+  .bay-num { color: var(--ink-ghost); font-size: 10px; letter-spacing: .14em; }
+  .empty-bay td { color: var(--ink-ghost); font-style: italic; }
+</style>
+</head>
+<body>
+
+<!-- Hull silhouette symbol library ------------------------------------------ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="h-mega" viewBox="0 0 160 64">
+    <path d="M12 9 L110 9 L136 15 L158 32 L136 49 L110 55 L12 55 L4 43 L4 21 Z"/>
+    <path d="M12 9 L12 55 M40 9 L40 55 M74 9 L74 55 M110 9 L110 55 M136 15 L136 49"/>
+    <path d="M50 9 L50 2 L66 2 L66 9 M50 55 L50 62 L66 62 L66 55"/>
+    <path d="M84 14 L128 20 M84 50 L128 44 M84 24 L128 27 M84 40 L128 37"/>
+    <path d="M136 25 L152 32 L136 39"/>
+    <path d="M4 27 L12 27 M4 37 L12 37 M20 15 L34 15 M20 49 L34 49"/>
+  </symbol>
+</svg>
+
+<!-- Mobile gate -------------------------------------------------------------- -->
+<div class="mobile-gate">
+  <div class="panel ticks" style="max-width:460px;padding:var(--s5)">
+    <div class="t-h1" style="margin-bottom:var(--s2)">DESKTOP REQUIRED</div>
+    <p class="t-prose" style="margin:0">Starship Skirmish needs a viewport of at least 1280&times;720.
+      The link is safe — nothing expires. Open it on a desktop browser and the import preview will
+      be waiting.</p>
+  </div>
+</div>
+
+<div class="desktop-only">
+
+<!-- Topbar ------------------------------------------------------------------- -->
+<header class="topbar">
+  <div class="brand"><span class="brand-mark" aria-hidden="true"></span>STARSHIP SKIRMISH</div>
+  <nav class="nav" aria-label="Primary">
+    <a href="shipyard.html">SHIPYARD</a>
+    <a href="encyclopedia.html" class="is-active" aria-current="page">ENCYCLOPEDIA</a>
+    <a href="skirmish-setup.html">SKIRMISH</a>
+    <a href="index.html">INDEX</a>
+  </nav>
+  <div class="grow"></div>
+  <div style="display:flex;align-items:center;gap:var(--s2)">
+    <span class="mono-xs">LOCAL STORAGE 1.2&nbsp;MB / ~5&nbsp;MB</span>
+    <span class="meter meter-sm" style="width:84px" role="img" aria-label="Local storage 24 percent used">
+      <span class="meter-fill f-shield" style="width:24%"></span>
+    </span>
+  </div>
+  <span class="chip chip-cyan">CATALOG v7</span>
+  <button class="btn btn-sm btn-ghost" id="rmToggle" aria-pressed="false">◐ REDUCED MOTION</button>
+</header>
+
+<main class="layer">
+<div class="wrap stack-lg">
+
+  <!-- Header --------------------------------------------------------------- -->
+  <div style="display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap">
+    <h1 class="t-h1" style="margin:0">IMPORT SHARED BUILD</h1>
+    <span class="chip chip-cyan">PREVIEW ONLY</span>
+    <div class="grow"></div>
+    <a class="btn btn-sm btn-ghost" href="encyclopedia.html">← BACK TO ENCYCLOPEDIA</a>
+  </div>
+
+  <!-- The incoming link ----------------------------------------------------- -->
+  <section class="panel ticks">
+    <div class="panel-hd">
+      <span class="t-label">INCOMING LINK</span>
+      <div class="grow"></div>
+      <span class="chip">FROM CLIPBOARD</span>
+    </div>
+    <div class="panel-bd stack">
+      <div class="token">
+        <span class="tok-base">https://jpruf.github.io/starship-skirmish/#/i?b=</span><span class="tok-ver">v3.c7.</span>T0JFTElTSw9BUkdVTUVOVA.w5.Zl84XzhfOF82XzQ.s3.OF82XzI.m3.OV9fXw.e1.MQ.x3.NF9fXw.n.VEhFIEFSR1VNRU5U.q7YtM2xVbnE9PWJvcmVhbGlzZmxhZ3NoaXBidWlsZDIwMjZ0aGVhcmd1bWVudGZ1bGxmaXQ.k9Fq2LmPd0aVc3sT1bnQ8yKzR4wGmJ7pXsN2vHrT6dLbE5uYw1oQz<span class="tok-cut">…[+742 CHARS]</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:var(--s3)">
+        <span class="mono-xs" style="white-space:nowrap">1,204 / 1900 CHARS</span>
+        <span class="meter grow" role="img" aria-label="Token uses 1204 of the 1900 character budget, 63 percent">
+          <span class="meter-fill f-shield" style="width:63%"></span>
+          <span class="meter-notch" style="left:100%"></span>
+        </span>
+        <span class="chip chip-green">✓ WITHIN BUDGET</span>
+      </div>
+      <div class="mono-xs">
+        ENCODED AGAINST CATALOG v7 — IDS AND INDICES, NEVER RAW JSON.
+        THE TOKEN IS THE WHOLE SHIP: CHASSIS ID, ONE INDEX PER BAY, THE NAME, AND A CHECKSUM.
+        NOTHING IS FETCHED; THERE IS NO SERVER TO FETCH FROM.
+      </div>
+    </div>
+    <div class="panel-ft" style="display:flex;align-items:center;gap:var(--s2)">
+      <span class="chip">schemaVersion 3</span>
+      <span class="chip">catalogVersion 7</span>
+      <span class="chip chip-green">✓ CHECKSUM OK</span>
+      <div class="grow"></div>
+      <span class="mono-xs">DECODED LOCALLY IN 4 ms</span>
+    </div>
+  </section>
+
+  <!-- Import preview -------------------------------------------------------- -->
+  <section class="panel">
+    <div class="panel-hd">
+      <span class="t-label">IMPORT PREVIEW</span>
+      <div class="grow"></div>
+      <span class="mono-xs">NOT YET IN YOUR ENCYCLOPEDIA</span>
+    </div>
+
+    <div class="panel-bd stack-lg">
+
+      <!-- identity -->
+      <div style="display:flex;align-items:flex-start;gap:var(--s4)">
+        <div style="width:260px;flex:none">
+          <svg class="hull" viewBox="0 0 160 64" role="img"
+               aria-label="Mega destroyer hull silhouette, massive slab"><use href="#h-mega"/></svg>
+          <div class="mono-xs" style="text-align:center;margin-top:4px">OBELISK — 5W / 3S / 3M / 1E / 3X</div>
+        </div>
+        <div class="grow">
+          <div style="font-size:20px;font-weight:700;letter-spacing:.12em;color:var(--ink-hi)">THE ARGUMENT</div>
+          <div class="mono-xs" style="margin-bottom:var(--s2)">OBELISK · MEGA DESTROYER</div>
+          <div style="display:flex;gap:5px;flex-wrap:wrap">
+            <span class="chip">schemaVersion 3</span>
+            <span class="chip">catalogVersion 7</span>
+            <span class="chip chip-amber">⚠ NEEDS REFIT</span>
+            <span class="chip">meta</span>
+          </div>
+        </div>
+        <div style="text-align:right;line-height:1;flex:none">
+          <div class="t-num-xl c-amber">152</div>
+          <div class="t-label">PTS</div>
+          <div class="mono-xs" style="margin-top:6px">WAS 148</div>
+        </div>
+      </div>
+
+      <!-- migration notice -->
+      <div class="banner" style="align-items:flex-start">
+        <span class="c-amber" style="font-size:16px" aria-hidden="true">⚠</span>
+        <div class="grow">
+          <div style="font-weight:700;letter-spacing:.08em;color:var(--ink-hi)">
+            This build was written against catalog v5 and migrated to v7. Recalculated 148 → 152 PTS.
+          </div>
+          <div class="t-meta">FLUXWEAVE regen 16 → 18 (+1 pt) · FUSION LANCE 7 → 8 pts (×3 fitted).
+            The fit itself is unchanged — no component was substituted or dropped, because the catalog
+            is additive-only.</div>
+        </div>
+        <span class="chip chip-amber" style="flex:none">⚠ NEEDS REFIT</span>
+      </div>
+
+      <!-- the fit -->
+      <div class="panel-in">
+        <div style="display:flex;align-items:center;gap:var(--s2);padding:var(--s2) var(--s3);border-bottom:1px solid var(--line)">
+          <span class="t-label">FULL FIT — 15 BAYS</span>
+          <div class="grow"></div>
+          <span class="mono-xs">11 FILLED · 4 EMPTY · EMPTY BAYS ARE LEGAL</span>
+        </div>
+        <table class="tbl">
+          <thead>
+            <tr><th style="width:64px">BAY</th><th>COMPONENT</th><th>KEY STATS</th>
+                <th style="text-align:right;width:64px">PTS</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="bay-num">HULL</span></td>
+              <td class="c-hi">OBELISK <span class="mono-xs">(CHASSIS)</span></td>
+              <td class="mono-xs">HULL 340 · MASS 200 · BASE EV .04</td>
+              <td style="text-align:right" class="t-num">88</td></tr>
+
+            <tr><td><i class="tag-slot tag-weapon">W</i> <span class="bay-num">1</span></td>
+              <td class="c-hi">FUSION LANCE</td>
+              <td class="mono-xs">R320 · D22 · ×1 · ACC .61</td>
+              <td style="text-align:right" class="t-num">8</td></tr>
+            <tr><td><i class="tag-slot tag-weapon">W</i> <span class="bay-num">2</span></td>
+              <td class="c-hi">FUSION LANCE</td>
+              <td class="mono-xs">R320 · D22 · ×1 · ACC .61</td>
+              <td style="text-align:right" class="t-num">8</td></tr>
+            <tr><td><i class="tag-slot tag-weapon">W</i> <span class="bay-num">3</span></td>
+              <td class="c-hi">FUSION LANCE</td>
+              <td class="mono-xs">R320 · D22 · ×1 · ACC .61</td>
+              <td style="text-align:right" class="t-num">8</td></tr>
+            <tr><td><i class="tag-slot tag-weapon">W</i> <span class="bay-num">4</span></td>
+              <td class="c-hi">MASS RAIL</td>
+              <td class="mono-xs">R420 · D15 · ×1 · ACC .55</td>
+              <td style="text-align:right" class="t-num">6</td></tr>
+            <tr><td><i class="tag-slot tag-weapon">W</i> <span class="bay-num">5</span></td>
+              <td class="c-hi">FLAK BATTERY</td>
+              <td class="mono-xs">R120 · D4 · ×4 · ACC .80</td>
+              <td style="text-align:right" class="t-num">4</td></tr>
+
+            <tr><td><i class="tag-slot tag-shield">S</i> <span class="bay-num">1</span></td>
+              <td class="c-hi">FLUXWEAVE <span class="chip chip-amber">⚠ RETUNED</span></td>
+              <td class="mono-xs">CAP 38 · REGEN <s class="c-dim">16</s> <span class="c-amber">18</span>/TURN</td>
+              <td style="text-align:right" class="t-num">8</td></tr>
+            <tr><td><i class="tag-slot tag-shield">S</i> <span class="bay-num">2</span></td>
+              <td class="c-hi">NULLSHEET</td>
+              <td class="mono-xs">CAP 55 · REGEN 11/TURN</td>
+              <td style="text-align:right" class="t-num">6</td></tr>
+            <tr><td><i class="tag-slot tag-shield">S</i> <span class="bay-num">3</span></td>
+              <td class="c-hi">FILM BARRIER</td>
+              <td class="mono-xs">CAP 20 · REGEN 6/TURN</td>
+              <td style="text-align:right" class="t-num">2</td></tr>
+
+            <tr><td><i class="tag-slot tag-missile">M</i> <span class="bay-num">1</span></td>
+              <td class="c-hi">HAMMERHEAD</td>
+              <td class="mono-xs">AMMO 2 · D40 · AOE 60 · BOOST 60</td>
+              <td style="text-align:right" class="t-num">9</td></tr>
+            <tr class="empty-bay"><td><i class="tag-slot tag-missile">M</i> <span class="bay-num">2</span></td>
+              <td>— EMPTY BAY</td><td class="mono-xs">NO COMPONENT FITTED</td>
+              <td style="text-align:right">0</td></tr>
+            <tr class="empty-bay"><td><i class="tag-slot tag-missile">M</i> <span class="bay-num">3</span></td>
+              <td>— EMPTY BAY</td><td class="mono-xs">NO COMPONENT FITTED</td>
+              <td style="text-align:right">0</td></tr>
+
+            <tr><td><i class="tag-slot tag-engine">E</i> <span class="bay-num">1</span></td>
+              <td class="c-hi">COMMUTER DRIVE</td>
+              <td class="mono-xs">ΔV 40 / TURN</td>
+              <td style="text-align:right" class="t-num">1</td></tr>
+
+            <tr><td><i class="tag-slot tag-special">X</i> <span class="bay-num">1</span></td>
+              <td class="c-hi">DECOY LAUNCHER</td>
+              <td class="mono-xs">DRAWS ONE TRACKING MISSILE PER TURN</td>
+              <td style="text-align:right" class="t-num">4</td></tr>
+            <tr class="empty-bay"><td><i class="tag-slot tag-special">X</i> <span class="bay-num">2</span></td>
+              <td>— EMPTY BAY</td><td class="mono-xs">NO COMPONENT FITTED</td>
+              <td style="text-align:right">0</td></tr>
+            <tr class="empty-bay"><td><i class="tag-slot tag-special">X</i> <span class="bay-num">3</span></td>
+              <td>— EMPTY BAY</td><td class="mono-xs">NO COMPONENT FITTED</td>
+              <td style="text-align:right">0</td></tr>
+          </tbody>
+          <tfoot>
+            <tr><td colspan="2" class="t-label" style="padding:var(--s2) var(--s3)">TOTAL — CHASSIS + FITTED COMPONENTS</td>
+              <td class="mono-xs">88 HULL + 64 FITTED · LEFTOVER POINTS ARE WASTED</td>
+              <td style="text-align:right;padding-right:var(--s3)"><span class="t-num c-amber">152</span></td></tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <!-- derived stats -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--s4)">
+        <div class="panel-in" style="padding:var(--s3)">
+          <div class="t-label" style="margin-bottom:var(--s2)">DERIVED STATS</div>
+          <div class="stat"><span class="stat-k">HULL</span><span class="stat-v">340</span></div>
+          <div class="stat"><span class="stat-k">SHIELD CAPACITY</span><span class="stat-v">113</span></div>
+          <div class="stat"><span class="stat-k">SHIELD REGEN</span>
+            <span class="stat-v">35 <span class="delta delta-up">▲ +2</span></span></div>
+          <div class="stat"><span class="stat-k">DELTA-V / TURN</span><span class="stat-v">40</span></div>
+          <div class="stat"><span class="stat-k">MASS</span><span class="stat-v">200</span></div>
+          <div class="stat"><span class="stat-k">MISSILE AMMO</span><span class="stat-v">2</span></div>
+          <div class="stat"><span class="stat-k">EVASION</span><span class="stat-v">0.04</span></div>
+        </div>
+        <div class="panel-in" style="padding:var(--s3)">
+          <div class="t-label" style="margin-bottom:var(--s2)">SURVIVABILITY / THREAT</div>
+          <div class="mono-xs">HULL 340</div>
+          <div class="meter" style="margin-bottom:var(--s2)"><span class="meter-fill f-hull" style="width:85%"></span></div>
+          <div class="mono-xs">SHIELD CAP 113 · REGEN 35/TURN</div>
+          <div class="meter" style="margin-bottom:var(--s2)">
+            <span class="meter-fill f-shield" style="width:38%"></span>
+            <span class="meter-notch" style="left:12%" title="Regen floor"></span>
+          </div>
+          <div class="mono-xs">DELTA-V 40/TURN — SLOWEST TIER</div>
+          <div class="meter" style="margin-bottom:var(--s2)"><span class="meter-fill f-dv" style="width:14%"></span></div>
+          <div class="mono-xs">ALPHA STRIKE 81 DMG/TURN AT R320 (3× FUSION LANCE + MASS RAIL)</div>
+          <div class="meter"><span class="meter-fill f-hot" style="width:78%"></span></div>
+        </div>
+      </div>
+
+      <!-- name collision -->
+      <div class="stack">
+        <div class="banner banner-danger" style="align-items:flex-start">
+          <span class="c-red" style="font-size:16px" aria-hidden="true">✖</span>
+          <div class="grow">
+            <div style="font-weight:700;letter-spacing:.08em;color:var(--ink-hi)">
+              A BUILD NAMED &lsquo;THE ARGUMENT&rsquo; ALREADY EXISTS IN YOUR ENCYCLOPEDIA.
+            </div>
+            <div class="t-meta">Yours: OBELISK · MEGA DESTROYER · 152 PTS · modified 2026-08-21.
+              Incoming: same chassis, different fit (yours carries HAMMERHEAD + TALON; this one
+              carries HAMMERHEAD only). Nothing is ever silently overwritten — pick one:</div>
+          </div>
+        </div>
+
+        <label class="radio-row is-on" data-radio>
+          <input class="rad" type="radio" name="collision" checked>
+          <div class="grow">
+            <div style="font-weight:700;letter-spacing:.08em;color:var(--ink-hi)">
+              ✎ RENAME TO &lsquo;THE ARGUMENT (2)&rsquo;
+            </div>
+            <div class="t-meta" style="margin-bottom:var(--s2)">
+              Recommended. Both builds are kept. Edit the name if you want something clearer.
+            </div>
+            <label class="sr-only" for="newName">New build name</label>
+            <input id="newName" class="field" type="text" value="THE ARGUMENT (2)" style="max-width:340px">
+            <div class="mono-xs" style="margin-top:4px">
+              NAME IS STORED AS TEXT AND RENDERED AS TEXT — NEVER AS MARKUP (NFR-SECURITY).
+            </div>
+          </div>
+        </label>
+
+        <label class="radio-row is-danger" data-radio>
+          <input class="rad" type="radio" name="collision">
+          <div class="grow">
+            <div style="font-weight:700;letter-spacing:.08em;color:var(--ink-hi)">
+              ⚠ REPLACE EXISTING
+            </div>
+            <div class="t-meta">
+              <span class="c-red" style="font-weight:700">Destructive.</span>
+              Your saved THE ARGUMENT is deleted and cannot be recovered — no trash, no history,
+              no server copy. Export it first if you are not certain.
+            </div>
+            <div style="margin-top:var(--s2)">
+              <span class="chip chip-red">✖ IRREVERSIBLE</span>
+              <button class="btn btn-sm btn-warn" type="button">⭱ EXPORT MY VERSION FIRST</button>
+            </div>
+          </div>
+        </label>
+
+        <label class="radio-row" data-radio>
+          <input class="rad" type="radio" name="collision">
+          <div class="grow">
+            <div style="font-weight:700;letter-spacing:.08em;color:var(--ink-hi)">
+              ✕ CANCEL IMPORT
+            </div>
+            <div class="t-meta">Discard the incoming build. Your Encyclopedia is untouched and the
+              link stays valid — you can open it again any time.</div>
+          </div>
+        </label>
+      </div>
+
+    </div>
+
+    <div class="panel-ft" style="display:flex;align-items:center;gap:var(--s3)">
+      <span class="mono-xs">NOTHING IS WRITTEN UNTIL YOU CONFIRM.</span>
+      <div class="grow"></div>
+      <button class="btn btn-ghost">CANCEL</button>
+      <button class="btn btn-primary">⭳ ADD TO ENCYCLOPEDIA</button>
+    </div>
+  </section>
+
+</div><!-- /wrap -->
+
+<!-- ============ DESIGN DOCUMENTATION: ALTERNATE STATES ============ -->
+<div class="wrap-wide stack-lg">
+
+  <section class="panel">
+    <div class="panel-hd">
+      <span class="t-label">STATES — WHAT A BAD LINK LOOKS LIKE</span>
+      <div class="grow"></div>
+      <span class="mono-xs">DESIGN REFERENCE · ALL THREE FAIL CLOSED WITH ZERO STATE MUTATION</span>
+    </div>
+    <div class="panel-bd">
+      <div class="states">
+
+        <!-- 1 malformed -->
+        <div class="panel-in" style="padding:var(--s3)">
+          <div style="display:flex;align-items:center;gap:var(--s2);margin-bottom:var(--s2)">
+            <span class="chip chip-red">STATE 1</span>
+            <span class="t-h2" style="font-size:11px">MALFORMED TOKEN</span>
+          </div>
+          <div class="banner banner-danger" style="align-items:flex-start">
+            <span class="c-red" aria-hidden="true">✖</span>
+            <div class="grow">
+              <div style="font-weight:700;letter-spacing:.06em;color:var(--ink-hi)">
+                TOKEN FAILED VALIDATION AT CHARACTER 412.
+              </div>
+              <div class="t-meta">No changes were made to your Encyclopedia.</div>
+            </div>
+          </div>
+          <div class="token" style="margin-top:var(--s2);font-size:10px">
+            …NF82XzQ.s3.OF<span class="c-red" style="background:rgba(255,46,99,.18)">&#9660;</span>%%2f_Mg.m3.OV9f…
+          </div>
+          <p class="t-prose" style="margin:var(--s2) 0 0;font-size:12px">
+            The decoder is schema-validated and bounds-checked before a single field is used:
+            no unbounded loops, no unbounded allocations, no reflected value ever interpolated as
+            markup. It fails closed — clear error, <strong>no partial write</strong>.
+          </p>
+          <div style="display:flex;gap:4px;margin-top:var(--s2)">
+            <button class="btn btn-sm">⧉ COPY ERROR DETAIL</button>
+            <a class="btn btn-sm btn-ghost" href="encyclopedia.html">BACK</a>
+          </div>
+        </div>
+
+        <!-- 2 truncated -->
+        <div class="panel-in" style="padding:var(--s3)">
+          <div style="display:flex;align-items:center;gap:var(--s2);margin-bottom:var(--s2)">
+            <span class="chip chip-amber">STATE 2</span>
+            <span class="t-h2" style="font-size:11px">TRUNCATED LINK</span>
+          </div>
+          <div class="banner" style="align-items:flex-start">
+            <span class="c-amber" aria-hidden="true">⚠</span>
+            <div class="grow">
+              <div style="font-weight:700;letter-spacing:.06em;color:var(--ink-hi)">
+                LINK APPEARS CUT OFF.
+              </div>
+              <div class="t-meta">Chat clients sometimes break long URLs — ask for it again as a file.</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:var(--s3);margin-top:var(--s2)">
+            <span class="mono-xs" style="white-space:nowrap">861 / 1204 EXPECTED</span>
+            <span class="meter grow" role="img" aria-label="Only 861 of 1204 expected characters received">
+              <span class="meter-fill f-dv" style="width:72%"></span>
+            </span>
+          </div>
+          <p class="t-prose" style="margin:var(--s2) 0 0;font-size:12px">
+            The checksum tail is missing, so the token cannot be verified. This is the single most
+            common real-world failure. The fix is a JSON export — a file survives what a URL does not.
+          </p>
+          <div style="display:flex;gap:4px;margin-top:var(--s2)">
+            <button class="btn btn-sm">⧉ PASTE FULL LINK</button>
+            <button class="btn btn-sm btn-ghost">⭳ IMPORT A .JSON INSTEAD</button>
+          </div>
+        </div>
+
+        <!-- 3 unknown id -->
+        <div class="panel-in" style="padding:var(--s3)">
+          <div style="display:flex;align-items:center;gap:var(--s2);margin-bottom:var(--s2)">
+            <span class="chip chip-red">STATE 3</span>
+            <span class="t-h2" style="font-size:11px">UNKNOWN COMPONENT ID</span>
+          </div>
+          <div class="banner banner-danger" style="align-items:flex-start">
+            <span class="c-red" aria-hidden="true">✖</span>
+            <div class="grow">
+              <div style="font-weight:700;letter-spacing:.06em;color:var(--ink-hi)">
+                COMPONENT <code>w_prototype_x</code> IS NOT IN CATALOG v7.
+              </div>
+              <div class="t-meta">This should be impossible — the catalog is additive-only and never
+                deletes IDs. Report this.</div>
+            </div>
+          </div>
+          <div class="mono-xs" style="margin-top:var(--s2);line-height:1.7">
+            EXPECTED SLOT&nbsp;&nbsp;WEAPON<br>
+            FOUND ID&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;w_prototype_x<br>
+            CATALOG&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v7 — 6 WEAPON IDS, NONE MATCH<br>
+            TOKEN CLAIMS&nbsp;&nbsp;catalogVersion 7
+          </div>
+          <p class="t-prose" style="margin:var(--s2) 0 0;font-size:12px">
+            Either the token was hand-edited or it came from an unreleased build. The import is
+            rejected whole. Your Encyclopedia is untouched.
+          </p>
+          <div style="display:flex;gap:4px;margin-top:var(--s2)">
+            <button class="btn btn-sm">⧉ COPY DIAGNOSTIC</button>
+            <a class="btn btn-sm btn-ghost" href="encyclopedia.html">BACK</a>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <div class="panel-ft mono-xs">
+      SHARE TOKENS AND IMPORTED JSON ARE UNTRUSTED INPUT. A HOSTILE ARTIFACT FAILS CLOSED:
+      CLEAR ERROR, NO STATE MUTATION, NO PARTIAL WRITE. IMPORT CANNOT EXHAUST LOCALSTORAGE
+      OR LOCK THE UI. (NFR-SECURITY)
+    </div>
+  </section>
+
+  <!-- JSON fleet import (FR-9) --------------------------------------------- -->
+  <section class="panel">
+    <div class="panel-hd">
+      <span class="t-label">JSON FLEET IMPORT</span>
+      <div class="grow"></div>
+      <span class="chip">FR-9</span>
+      <span class="mono-xs">FOR WHOLE FLEETS AND FOR RESTORING A BACKUP</span>
+    </div>
+    <div class="panel-bd stack-lg">
+
+      <div class="dropzone">
+        <div style="font-size:22px;line-height:1" aria-hidden="true">⭳</div>
+        <div class="t-h2" style="margin-top:var(--s2)">DROP A FLEET .JSON FILE</div>
+        <div class="mono-xs" style="margin-top:4px">
+          OR <u>BROWSE</u> — ANY EXPORT FROM ANY PAST VERSION IS ACCEPTED AND MIGRATED ON LOAD (FR-2)
+        </div>
+        <div style="display:flex;gap:5px;justify-content:center;margin-top:var(--s3)">
+          <span class="chip">schemaVersion 1–3</span>
+          <span class="chip">catalogVersion 1–7</span>
+          <span class="chip">MAX 5 MB</span>
+        </div>
+      </div>
+
+      <!-- results -->
+      <div class="panel-in">
+        <div style="display:flex;align-items:center;gap:var(--s2);padding:var(--s2) var(--s3);border-bottom:1px solid var(--line);flex-wrap:wrap">
+          <span class="t-label">LAST IMPORT — fleet-november.json</span>
+          <div class="grow"></div>
+          <span class="chip">12 IN FILE</span>
+          <span class="chip chip-green">✓ 5 IMPORTED</span>
+          <span class="chip chip-cyan">✎ 2 RENAMED</span>
+          <span class="chip">⊘ 2 SKIPPED</span>
+          <span class="chip chip-red">✖ 3 FAILED</span>
+        </div>
+        <table class="tbl">
+          <thead>
+            <tr><th style="width:30%">BUILD</th><th style="width:22%">RESULT</th><th>DETAIL</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="c-hi">BLACKJACK</td>
+              <td><span class="chip chip-green">✓ IMPORTED</span></td>
+              <td class="mono-xs">MERIDIAN · CRUISER · 58 PTS · schema 3 / catalog 7</td></tr>
+
+            <tr><td class="c-hi">PIN CUSHION</td>
+              <td><span class="chip chip-green">✓ IMPORTED</span></td>
+              <td class="mono-xs">HARRIER · FRIGATE · 33 PTS · schema 3 / catalog 7</td></tr>
+
+            <tr><td class="c-hi">TIN CAN <span class="mono-xs">→ TIN CAN (2)</span></td>
+              <td><span class="chip chip-cyan">✎ RENAMED</span></td>
+              <td class="mono-xs">NAME COLLISION WITH AN EXISTING BUILD — BOTH KEPT, NOTHING OVERWRITTEN</td></tr>
+
+            <tr><td class="c-hi">SLOW BOAT</td>
+              <td><span class="chip chip-green">✓ IMPORTED</span> <span class="chip chip-amber">⚠ NEEDS REFIT</span></td>
+              <td class="mono-xs">MIGRATED catalog v4 → v7 · RECALCULATED 44 → 46 PTS</td></tr>
+
+            <tr><td class="c-hi">THE WIDOWMAKER</td>
+              <td><span class="chip">⊘ SKIPPED (DUPLICATE)</span></td>
+              <td class="mono-xs">BYTE-IDENTICAL TO AN EXISTING BUILD AFTER MIGRATION — NO CHANGE MADE</td></tr>
+
+            <tr><td class="c-hi">HORNET</td>
+              <td><span class="chip chip-green">✓ IMPORTED</span></td>
+              <td class="mono-xs">WASP · FIGHTER · 11 PTS · schema 3 / catalog 7</td></tr>
+
+            <tr><td class="c-hi">KETTLE <span class="mono-xs">→ KETTLE (2)</span></td>
+              <td><span class="chip chip-cyan">✎ RENAMED</span></td>
+              <td class="mono-xs">NAME COLLISION WITH AN EXISTING BUILD — BOTH KEPT</td></tr>
+
+            <tr><td class="c-hi">NIGHT WATCH</td>
+              <td><span class="chip chip-green">✓ IMPORTED</span></td>
+              <td class="mono-xs">PICKET · FRIGATE · 26 PTS · schema 3 / catalog 7</td></tr>
+
+            <tr><td class="c-hi">THE ARGUMENT</td>
+              <td><span class="chip">⊘ SKIPPED (DUPLICATE)</span></td>
+              <td class="mono-xs">IDENTICAL FIT AND NAME ALREADY PRESENT — NO CHANGE MADE</td></tr>
+
+            <tr><td class="c-dim"><em>(entry 10, unnamed)</em></td>
+              <td><span class="chip chip-red">✖ FAILED</span></td>
+              <td class="mono-xs c-red">MISSING REQUIRED FIELD <code>chassisId</code></td></tr>
+
+            <tr><td class="c-hi">GUTTER BALL</td>
+              <td><span class="chip chip-red">✖ FAILED</span></td>
+              <td class="mono-xs c-red">UNKNOWN COMPONENT ID <code>w_prototype_x</code> — NOT IN CATALOG v7</td></tr>
+
+            <tr><td class="c-hi">FAT TUESDAY</td>
+              <td><span class="chip chip-red">✖ FAILED</span></td>
+              <td class="mono-xs c-red">7 WEAPON ENTRIES ON A 5-WEAPON HULL (TYRANT) — SLOT LAYOUT VIOLATION</td></tr>
+          </tbody>
+        </table>
+        <div class="panel-ft" style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap">
+          <span class="mono-xs">
+            IMPORT IS ADDITIVE — IT NEVER DELETES AN EXISTING BUILD. PARTIALLY INVALID FILES IMPORT
+            WHAT IS VALID AND REPORT THE REST.
+          </span>
+          <div class="grow"></div>
+          <button class="btn btn-sm">⧉ COPY FAILURE REPORT</button>
+          <a class="btn btn-sm btn-primary" href="encyclopedia.html">GO TO ENCYCLOPEDIA (31 BUILDS)</a>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <footer class="mono-xs" style="text-align:center;padding-top:var(--s4)">
+    THE LINK IS THE SHIP. NO ACCOUNT, NO SERVER, NO UPLOAD — DECODING HAPPENS ENTIRELY IN THIS TAB.
+    SCHEMA v3 · CATALOG v7.
+  </footer>
+
+</div><!-- /wrap-wide -->
+</main>
+
+</div><!-- /desktop-only -->
+
+<script>
+(function () {
+  'use strict';
+
+  /* Reduced motion ------------------------------------------------------- */
+  var rm = document.getElementById('rmToggle');
+  rm.addEventListener('click', function () {
+    var on = document.body.classList.toggle('rm');
+    rm.setAttribute('aria-pressed', String(on));
+    rm.textContent = on ? '◉ REDUCED MOTION ON' : '◐ REDUCED MOTION';
+  });
+
+  /* Collision radio rows ------------------------------------------------- */
+  var rows = Array.prototype.slice.call(document.querySelectorAll('[data-radio]'));
+  function sync() {
+    rows.forEach(function (r) {
+      r.classList.toggle('is-on', r.querySelector('.rad').checked);
+    });
+  }
+  rows.forEach(function (r) { r.addEventListener('change', sync); });
+  sync();
+})();
+</script>
+
+<!-- Prototype flow runner (mock-only; not for src/) -->
+<script src="prototype.js"></script>
+</body>
+</html>

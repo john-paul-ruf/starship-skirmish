@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tactical View · Movement Plan — Starship Skirmish</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="console.css">
+<style>
+  /* Page-local extensions only. Uses console.css tokens — no new design language,
+     no token redefinition. Everything here is layout glue or a small component
+     that the shared sheet does not yet carry. */
+
+  html, body { height: 100%; overflow: hidden; }
+
+  .shell      { display: flex; flex-direction: column; height: 100vh; }
+  .shell-main { display: flex; flex: 1 1 auto; min-height: 0; }
+  .side       { width: 280px; flex: none; display: flex; flex-direction: column;
+                background: var(--panel); border-right: 1px solid var(--line); min-height: 0; }
+  .side-r     { width: 320px; border-right: 0; border-left: 1px solid var(--line); }
+  .side-scroll{ overflow-y: auto; overflow-x: hidden; flex: 1 1 auto; min-height: 0; }
+  .stage      { flex: 1 1 auto; min-width: 0; position: relative; display: flex; }
+  .stage .viewport { flex: 1 1 auto; border-top: 0; border-bottom: 0; }
+
+  /* --- in-match topbar (thin strip, not the site nav) --- */
+  .topbar-match { height: 52px; gap: var(--s4); }
+  .seg > a {
+    display: inline-flex; align-items: center; gap: 5px;
+    height: 30px; padding: 0 9px; border-right: 1px solid var(--line);
+    text-decoration: none; color: var(--ink-dim); white-space: nowrap;
+    font-family: var(--mono); font-size: 10px; font-weight: 700;
+    letter-spacing: .08em; text-transform: uppercase;
+  }
+  .turn-title { font-size: 12px; letter-spacing: .10em; }
+  label > .stat-k { display: block; margin-bottom: 3px; }
+  /* console.css .sweeper translates by its own 2px height; give the scan line
+     a viewport-sized travel path. Still killed by body.rm / prefers-reduced-motion. */
+  @keyframes sweep-vp { from { top: -2px } to { top: 100% } }
+  .sweeper-vp { animation: sweep-vp 7s linear infinite; }
+  .seg > a:last-child { border-right: 0; }
+  .seg > a:hover { background: var(--panel-hi); color: var(--ink-hi); }
+  .seg > a.is-active { background: rgba(34,227,255,.14); color: var(--cyan); box-shadow: inset 0 -2px 0 var(--cyan); }
+  .seg > a.is-done { color: var(--ink); }
+  .beat-pip { width: 6px; height: 6px; flex: none; border: 1px solid currentColor; transform: rotate(45deg); }
+  .seg > a.is-active .beat-pip { background: currentColor; box-shadow: 0 0 8px -1px currentColor; }
+  .seg > a.is-done .beat-pip { background: var(--ink-ghost); border-color: var(--ink-ghost); }
+
+  /* --- roster --- */
+  .side-hd { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line);
+             display: flex; align-items: center; gap: var(--s2);
+             background: linear-gradient(180deg, rgba(34,227,255,.05), transparent); }
+  .fleet-hd { display: flex; align-items: center; gap: var(--s2);
+              padding: var(--s2) var(--s3) 5px; background: var(--panel-in);
+              border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  button.row-ship, div.row-ship {
+              align-items: stretch; padding-top: 7px; padding-bottom: 7px;
+              width: 100%; text-align: left; font: inherit; color: inherit;
+              border: 0; border-bottom: 1px solid rgba(30,44,60,.6);
+              background: transparent; -webkit-appearance: none; appearance: none; }
+  button.row-ship:hover { background: var(--panel-hi); }
+  button.row-ship.is-selected { background: rgba(34,227,255,.10); box-shadow: inset 2px 0 0 var(--cyan); }
+  .row-name { font-size: 12px; font-weight: 700; color: var(--ink-hi); letter-spacing: .06em; }
+  .bars { display: grid; grid-template-columns: 14px 1fr 62px; gap: 5px; align-items: center; }
+  .bars .k { font-size: 9px; color: var(--ink-dim); letter-spacing: .1em; }
+  .bars .v { font-size: 9px; color: var(--ink); text-align: right; letter-spacing: .04em; }
+
+  /* component-damage pips — 5 slots per ship */
+  .pips { display: flex; gap: 3px; align-items: center; }
+  .pip  { width: 9px; height: 9px; flex: none; border: 1px solid var(--line-hot);
+          background: rgba(34,227,255,.10); border-radius: var(--r-sm); position: relative; }
+  .pip.is-ok  { border-color: rgba(34,227,255,.55); }
+  .pip.is-hit { border-color: var(--amber); background: rgba(255,176,32,.20); }
+  .pip.is-out { border-color: var(--red); background: rgba(255,46,99,.18); }
+  .pip.is-out::after { content: ""; position: absolute; left: -1px; right: -1px; top: 3px;
+                       height: 1px; background: var(--red); }
+  .pip.is-void { border-color: var(--ink-ghost); background: transparent; }
+  .pip-key { font-size: 8px; letter-spacing: .12em; color: var(--ink-dim); }
+
+  /* --- markers --- */
+  .mk-sil { width: 100%; height: 100%; display: block; overflow: visible; }
+  .mk-lbl-l { left: auto; right: calc(100% + 6px); }
+  .mk-lbl-b { left: 50%; top: auto; bottom: -14px; transform: translateX(-50%); }
+  .mk-sub   { font-size: 8px; letter-spacing: .14em; opacity: .75; }
+  .mk-wreck { color: #7B93A6; }
+  .mk-wreck .mk-glyph { filter: none; }
+  .trails { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
+  .trails .path, .trails .path-hostile { fill: none; vector-effect: non-scaling-stroke; }
+  .ghost-ring { position: absolute; transform: translate(-50%,-50%); width: 30px; height: 30px;
+                border: 1px dashed var(--cyan); border-radius: 50%; opacity: .8; pointer-events: none; }
+  .ghost-ring::after { content: ""; position: absolute; inset: 11px; background: var(--cyan);
+                       border-radius: 50%; box-shadow: 0 0 10px -1px var(--cyan); }
+
+  .exit-x { position: absolute; transform: translate(-50%,-50%); z-index: 4;
+            display: grid; place-items: center; width: 26px; height: 26px;
+            color: var(--red); font-size: 14px; font-weight: 700;
+            border: 1px solid var(--red); background: rgba(20,2,8,.85);
+            box-shadow: var(--glow-red); }
+  .exit-x span { position: absolute; left: 30px; top: 50%; transform: translateY(-50%);
+                 font-size: 9px; letter-spacing: .2em; white-space: nowrap; }
+  .callout { position: absolute; z-index: 5; max-width: 250px; padding: var(--s2) var(--s3);
+             background: rgba(24,3,11,.94); border: 1px solid var(--red);
+             border-left: 3px solid var(--red); border-radius: var(--r);
+             box-shadow: var(--glow-red), 0 20px 50px -20px #000; }
+  .callout::after { content: ""; position: absolute; left: 22px; bottom: -7px;
+                    width: 12px; height: 12px; border-right: 1px solid var(--red);
+                    border-bottom: 1px solid var(--red); background: rgba(24,3,11,.94);
+                    transform: rotate(45deg); }
+
+  .field-note { position: absolute; z-index: 3; pointer-events: none;
+                font-size: 9px; letter-spacing: .16em; text-transform: uppercase;
+                background: rgba(5,7,10,.78); padding: 1px 5px; border: 1px solid var(--line); }
+
+  /* --- right panel controls --- */
+  .rng { -webkit-appearance: none; appearance: none; width: 100%; height: 20px;
+         background: transparent; cursor: pointer; }
+  .rng::-webkit-slider-runnable-track { height: 6px; background: var(--panel-in);
+         border: 1px solid var(--line); border-radius: var(--r-sm); }
+  .rng::-webkit-slider-thumb { -webkit-appearance: none; width: 10px; height: 18px; margin-top: -7px;
+         background: var(--cyan); border: 0; border-radius: var(--r-sm); box-shadow: var(--glow-2); }
+  .rng::-moz-range-track { height: 6px; background: var(--panel-in); border: 1px solid var(--line); }
+  .rng::-moz-range-thumb { width: 10px; height: 18px; background: var(--cyan); border: 0; border-radius: var(--r-sm); }
+  .rng:focus-visible::-webkit-slider-thumb { box-shadow: var(--glow-3); }
+
+  .kv { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--s1); }
+  .kv > div { background: var(--panel-in); border: 1px solid var(--line); padding: 4px 6px; }
+  .kv .k { font-size: 9px; letter-spacing: .16em; color: var(--ink-dim); }
+  .kv .v { font-size: 12px; font-weight: 700; color: var(--ink-hi); }
+
+  .chkline { display: flex; align-items: center; gap: var(--s2); padding: 5px var(--s2);
+             border: 1px solid var(--line); background: var(--panel-in); border-left: 2px solid var(--green); }
+  .chkline.is-coast   { border-left-color: var(--cyan); }
+  .chkline.is-open    { border-left-color: var(--amber); background: rgba(255,176,32,.07); }
+  .chkline.is-hostile { border-left-color: var(--red); background: rgba(255,46,99,.07); }
+
+  .footer-links { display: flex; gap: var(--s1); padding: var(--s2) var(--s3);
+                  border-top: 1px solid var(--line); background: var(--panel-in); }
+  .footer-links a { font-size: 9px; letter-spacing: .16em; text-transform: uppercase;
+                    color: var(--ink-dim); text-decoration: none; padding: 2px 5px; border: 1px solid var(--line); }
+  .footer-links a:hover { color: var(--cyan); border-color: var(--cyan); }
+
+  .lock-note { position: absolute; inset: 0; z-index: 6; display: none;
+               place-items: center; text-align: center; padding: var(--s4);
+               background: rgba(7,11,17,.93); border: 1px dashed var(--line-hot); }
+  .plan-body.is-locked .lock-note { display: grid; }
+</style>
+</head>
+<body>
+
+<!-- ============ DESKTOP GATE (NFR-Platform) ============ -->
+<div class="mobile-gate">
+  <div class="panel ticks" style="max-width:420px;padding:32px">
+    <div class="brand" style="justify-content:center;margin-bottom:12px"><span class="brand-mark"></span> Starship Skirmish</div>
+    <div class="t-h2 c-amber" style="margin-bottom:8px">Desktop Required</div>
+    <p class="t-prose">DESKTOP REQUIRED — needs a viewport of at least 1280&times;720. The tactical console is a
+      dense, keyboard-driven display and has no touch layout in v1.</p>
+  </div>
+</div>
+
+<!-- ============ REAL CONTENT ============ -->
+<div class="desktop-only layer">
+<div class="shell">
+
+  <!-- ---------- TOPBAR: in-match strip ---------- -->
+  <header class="topbar topbar-match">
+    <div style="flex:none;min-width:230px">
+      <div class="mono-xs c-hi" style="letter-spacing:.16em">MATCH · BUDGET 150 · FREE-FOR-ALL</div>
+      <div class="mono-xs">SEED SK-7F3A-9C21-D4E8</div>
+    </div>
+
+    <div class="grow" style="display:flex;align-items:center;justify-content:center;gap:var(--s3)">
+      <div class="t-h2 turn-title anim-flick" style="white-space:nowrap">TURN 04 · BEAT 1/2 · MOVEMENT PLAN</div>
+      <nav class="seg" aria-label="Turn beat tracker">
+        <a href="tactical-move.html" class="is-active" aria-current="step"><span class="beat-pip"></span>Move Plan</a>
+        <a href="tactical-move.html#resolve"><span class="beat-pip"></span>Move Resolve</a>
+        <a href="tactical-attack.html"><span class="beat-pip"></span>Attack Plan</a>
+        <a href="tactical-attack.html#resolve"><span class="beat-pip"></span>Attack Resolve</a>
+      </nav>
+      <span class="chip" title="Decision 7 — there is deliberately no clock anywhere in the turn loop">
+        <span class="dot" style="color:var(--ink-ghost)"></span>NO TIMER
+      </span>
+    </div>
+
+    <div style="flex:none;display:flex;align-items:center;gap:var(--s2)">
+      <button id="rmToggle" class="btn btn-sm" aria-pressed="false">◐ Reduced Motion</button>
+      <a href="post-match.html" class="btn btn-sm btn-danger">Concede</a>
+    </div>
+  </header>
+
+  <div class="shell-main">
+
+    <!-- ================= LEFT: ROSTER (FR-15) ================= -->
+    <aside class="side" aria-label="Fleet roster">
+      <div class="side-hd">
+        <span class="t-label">Roster</span>
+        <span class="grow"></span>
+        <span class="mono-xs">9 LIVE · 3 LOST</span>
+      </div>
+      <div class="panel-in" style="border:0;border-bottom:1px solid var(--line);padding:5px var(--s3)">
+        <div class="mono-xs">FULL INFORMATION — NO FOG OF WAR</div>
+      </div>
+
+      <div class="side-scroll" id="roster">
+
+        <!-- ---- FLEET 0 : YOU ---- -->
+        <div class="fleet-hd">
+          <span class="glyph fl-0">▲</span>
+          <span class="t-label" style="color:var(--fleet-0)">YOU</span>
+          <span class="grow"></span>
+          <span class="mono-xs">SHIPS <span class="c-hi">3</span>/5</span>
+        </div>
+        <div class="mono-xs" style="padding:0 var(--s3) 6px;background:var(--panel-in);border-bottom:1px solid var(--line)">
+          ▲ DRAFT <span class="c-hi">142 / 150</span> PTS · 8 PTS WASTED
+        </div>
+
+        <button class="row row-ship is-selected" data-ship="widowmaker" data-own="1">
+          <span class="glyph fl-0" style="margin-top:2px">▲</span>
+          <span class="grow" style="display:flex;flex-direction:column;gap:4px">
+            <span style="display:flex;align-items:baseline;gap:6px">
+              <span class="row-name">WIDOWMAKER</span>
+              <span class="mono-xs truncate">MERIDIAN · CRUISER</span>
+            </span>
+            <span class="bars"><span class="k">S</span>
+              <span class="meter meter-sm"><span class="meter-fill f-shield" style="width:27%"></span></span>
+              <span class="v">12/45</span></span>
+            <span class="bars"><span class="k">H</span>
+              <span class="meter meter-sm"><span class="meter-fill f-hull" style="width:69%"></span></span>
+              <span class="v">96/140</span></span>
+            <span class="pips" aria-label="Components: W1 online, W2 online, S1 destroyed, M1 damaged, ENG online">
+              <span class="pip is-ok"  title="W1 · Rail Battery — ONLINE"></span>
+              <span class="pip is-ok"  title="W2 · Rail Battery — ONLINE"></span>
+              <span class="pip is-out" title="S1 · Shield Projector — DESTROYED"></span>
+              <span class="pip is-hit" title="M1 · Missile Rack — DAMAGED"></span>
+              <span class="pip is-ok"  title="ENG · Drive — ONLINE"></span>
+              <span class="pip-key" style="margin-left:4px">W1 W2 S1 M1 ENG</span>
+            </span>
+          </span>
+        </button>
+
+        <button class="row row-ship" data-ship="harrier2" data-own="1">
+          <span class="glyph fl-0" style="margin-top:2px">▲</span>
+          <span class="grow" style="display:flex;flex-direction:column;gap:4px">
+            <span style="display:flex;align-items:baseline;gap:6px">
+              <span class="row-name">HARRIER-2</span>
+              <span class="mono-xs truncate">HARRIER · FRIGATE</span>
+              <span class="grow"></span>
+              <span class="chip chip-red" style="height:16px;padding:0 5px">● UNPLANNED · ✕ EXIT</span>
+            </span>
+            <span class="bars"><span class="k">S</span>
+              <span class="meter meter-sm"><span class="meter-fill f-shield" style="width:0%"></span></span>
+              <span class="v">0/28</span></span>
+            <span class="bars"><span class="k">H</span>
+              <span class="meter meter-sm"><span class="meter-fill f-hot" style="width:31%"></span></span>
+              <span class="v">21/68</span></span>
+            <span class="pips" aria-label="Components: W1 online, S1 destroyed, S2 destroyed, M1 online, ENG damaged">
+              <span class="pip is-ok"  title="W1 · Autocannon — ONLINE"></span>
+              <span class="pip is-out" title="S1 · Shield Projector — DESTROYED"></span>
+              <span class="pip is-out" title="S2 · Shield Projector — DESTROYED"></span>
+              <span class="pip is-ok"  title="M1 · Missile Rack — ONLINE"></span>
+              <span class="pip is-hit" title="ENG · Drive — DAMAGED, delta-V reduced"></span>
+              <span class="pip-key" style="margin-left:4px">W1 S1 S2 M1 ENG</span>
+            </span>
+          </span>
+        </button>
+
+        <button class="row row-ship" data-ship="tincan3" data-own="1">
+          <span class="glyph fl-0" style="margin-top:2px">▲</span>
+          <span class="grow" style="display:flex;flex-direction:column;gap:4px">
+            <span style="display:flex;align-items:baseline;gap:6px">
+              <span class="row-name">TIN CAN 3</span>
+              <span class="mono-xs truncate">NEEDLE · FIGHTER</span>
+              <span class="grow"></span>
+              <span class="chip chip-cyan" style="height:16px;padding:0 5px">◦ COAST</span>
+            </span>
+            <span class="bars"><span class="k">S</span>
+              <span class="meter meter-sm"><span class="meter-fill f-shield" style="width:56%"></span></span>
+              <span class="v">9/16</span></span>
+            <span class="bars"><span class="k">H</span>
+              <span class="meter meter-sm"><span class="meter-fill f-hull" style="width:83%"></span></span>
+              <span class="v">30/36</span></span>
+            <span class="pips" aria-label="Components: W1 online, M1 online, ENG online, two slots empty">
+              <span class="pip is-ok"   title="W1 · Autocannon — ONLINE"></span>
+              <span class="pip is-ok"   title="M1 · Micro Rack — ONLINE"></span>
+              <span class="pip is-ok"   title="ENG · Drive — ONLINE"></span>
+              <span class="pip is-void" title="X1 · empty slot"></span>
+              <span class="pip is-void" title="X2 · empty slot"></span>
+              <span class="pip-key" style="margin-left:4px">W1 M1 ENG X1 X2</span>
+            </span>
+          </span>
+        </button>
+
+        <div class="row row-ship is-dead" data-ship="tincan1">
+          <span class="glyph fl-0" style="margin-top:2px">▲</span>
+          <span class="grow" style="display:flex;flex-direction:column;gap:3px">
+            <span style="display:flex;align-items:baseline;gap:6px">
+              <span class="row-name">TIN CAN 1</span>
+              <span class="mono-xs truncate">NEEDLE · FIGHTER</span>
+            </span>
+            <span class="mono-xs c-red" style="letter-spacing:.2em">✕ DESTROYED · TURN 02 · DEBRIS</span>
+            <span class="pips">
+              <span class="pip is-out"></span><span class="pip is-out"></span><span class="pip is-out"></span>
+              <span class="pip is-void"></span><span class="pip is-void"></span>
+              <span class="pip-key" style="margin-left:4px">W1 M1 ENG X1 X2</span>
+            </span>
+          </span>
+        </div>
+
+        <div class="row row-ship is-dead" data-ship="picket">
+          <span class="glyph fl-0" style="margin-top:2px">▲</span>
+          <span class="grow" style="display:flex;flex-direction:column;gap:3px">
+            <span style="display:flex;align-items:baseline;gap:6px">
+              <span class="row-name">PICKET FENCE</span>
+              <span class="mono-xs truncate">PICKET · FRIGATE</span>
+            </span>
+            <span class="mono-xs c-red" style="letter-spacing:.2em">✕ DESTROYED · TURN 03 · HULL 0</span>
+            <span class="pips">
+              <span class="pip is-out"></span><span class="pip is-out"></span><span class="pip is-out"></span>
+              <span class="pip is-out"></span><span class="pip is-out"></span>
+              <span class="pip-key" style="margin-left:4px">W1 W2 S1 M1 ENG</span>
+            </span>
+          </span>
+        </div>
+
+        <!-- ---- FLEET 1 : BOT-01 ---- -->
+        <div class="fleet-hd">
+          <span class="glyph fl-1">●</span>
+          <span class="t-label" style="color:var(--fleet-1)">BOT-01 · VETERAN</span>
+          <span class="grow"></span>
+          <span class="mono-xs">SHIPS <span class="c-hi">3</span>/4</span>
+        </div>
+        <div class="mono-xs" style="padding:0 var(--s3) 6px;background:var(--panel-in);border-bottom:1px solid var(--line)">
+          ● DRAFT <span class="c-hi">126 / 150</span> PTS · 24 PTS WASTED
+        </div>
+
+        <button class="row row-ship" data-ship="ironverdict">
+          <span class="glyph fl-1" style="margin-top:2px">●</span>
+          <span class="grow" style="display:flex;flex-direction:column;gap:4px">
+            <span style="display:flex;align-items:baseline;gap:6px">
+              <span class="row-name">IRON VERDICT</span>
+              <span class="mono-xs truncate">OBELISK · MEGA DESTROYER</span>
+            </span>
+            <span class="bars"><span class="k">S</span>
+              <span class="meter meter-sm"><span class="meter-fill f-shield" style="width:64%"></span></span>
+              <span class="v">128/200</span></span>
+            <span class="bars"><span class="k">H</span>
+              <span class="meter meter-sm"><span class="meter-fill f-hull" style="width:91%"></span></span>
+              <span class="v">386/424</span></span>
+            <span class="pips" aria-label="Components: W1 W2 online, W3 damaged, S1 online, ENG online">
+              <span class="pip is-ok"  title="W1 · Siege Battery — ONLINE"></span>
+              <span class="pip is-ok"  title="W2 · Siege Battery — ONLINE"></span>
+              <span class="pip is-hit" title="W3 · Siege Battery — DAMAGED"></span>
+              <span class="pip is-ok"  title="S1 · Heavy Projector — ONLINE"></span>
+              <span class="pip is-ok"  title="ENG · Drive — ONLINE"></span>
+              <span class="pip-key" style="margin-left:4px">W1 W2 W3 S1 ENG</span>
+            </span>
+          </span>
+        </button>
+
+        <button class="row row-ship" data-ship="spur">
+          <span class="glyph fl-1" style="margin-top:2px">●</span>
+          <span class="grow" style="display:flex;flex-direction:column;gap:4px">
+            <span style="display:flex;align-items:baseline;gap:6px">
+              <span class="row-name">SPUR</span>
+              <span class="mono-xs truncate">LANCER · FRIGATE</span>
+            </span>
+            <span class="bars"><span class="k">S</span>
+              <span class="meter meter-sm"><span class="meter-fill f-shield" style="width:41%"></span></span>
+              <span class="v">13/32</span></span>
+            <span class="bars"><span class="k">H</span>
+              <span class="meter meter-sm"><span class="meter-fill f-hull" style="width:62%"></span></span>
+              <span class="v">45/72</span></span>
+            <span class="pips" aria-label="Components: W1 online, W2 destroyed, S1 online, M1 online, ENG online">
+              <span class="pip is-ok"  title="W1 · Lance — ONLINE"></span>
+              <span class="pip is-out" title="W2 · Lance — DESTROYED"></span>
+              <span class="pip is-ok"  title="S1 · Shield Projector — ONLINE"></span>
+              <span class="pip is-ok"  title="M1 · Missile Rack — ONLINE"></span>
+              <span class="pip is-ok"  title="ENG · Drive — ONLINE"></span>
+              <span class="pip-key" style="margin-left:4px">W1 W2 S1 M1 ENG</span>
+            </span>
+          </span>
+        </button>
+
+        <button class="row row-ship" data-ship="waspa">
+          <span class="glyph fl-1" style="margin-top:2px">●</span>
+          <span class="grow" style="display:flex;flex-direction:column;gap:4px">
+            <span style="display:flex;align-items:baseline;gap:6px">
+              <span class="row-name">WASP-A</span>
+              <span class="mono-xs truncate">WASP · FIGHTER</span>
+            </span>
+            <span class="bars"><span class="k">S</span>
+              <span class="meter meter-sm"><span class="meter-fill f-shield" style="width:100%"></span></span>
+              <span class="v">20/20</span></span>
+            <span class="bars"><span class="k">H</span>
+              <span class="meter meter-sm"><span class="meter-fill f-hull" style="width:82%"></span></span>
+              <span class="v">18/22</span></span>
+            <span class="pips" aria-label="Components: all five online">
+              <span class="pip is-ok" title="W1 · Scatter Gun — ONLINE"></span>
+              <span class="pip is-ok" title="M1 · Missile Rack — ONLINE"></span>
+              <span class="pip is-ok" title="ENG · Drive — ONLINE"></span>
+              <span class="pip is-ok" title="X1 · Decoy Launcher — ONLINE"></span>
+              <span class="pip is-ok" title="X2 · Thrust Booster — ONLINE"></span>
+              <span class="pip-key" style="margin-left:4px">W1 M1 ENG X1 X2</span>
+            </span>
+          </span>
+        </button>
+
+        <div class="row row-ship is-dead" data-ship="spur2">
+          <span class="glyph fl-1" style="margin-top:2px">●</span>
+          <span class="grow" style="display:flex;flex-direction:column;gap:3px">
+            <span style="display:flex;align-items:baseline;gap:6px">
+              <span class="row-name">SPUR II</span>
+              <span class="mono-xs truncate">LANCER · FRIGATE</span>
+            </span>
+            <span class="mono-xs c-red" style="letter-spacing:.2em">✕ DESTROYED · TURN 03 · BOUNDARY</span>
+            <span class="mono-xs c-dim">SHOVED OUT BY WIDOWMAKER COLLISION</span>
+            <span class="pips">
+              <span class="pip is-out"></span><span class="pip is-out"></span><span class="pip is-out"></span>
+              <span class="pip is-void"></span><span class="pip is-void"></span>
+              <span class="pip-key" style="margin-left:4px">W1 W2 S1 M1 ENG</span>
+            </span>
+          </span>
+        </div>
+
+        <!-- ---- FLEET 2 : BOT-02 ---- -->
+        <div class="fleet-hd">
+          <span class="glyph fl-2">■</span>
+          <span class="t-label" style="color:var(--fleet-2)">BOT-02 · ROOKIE</span>
+          <span class="grow"></span>
+          <span class="mono-xs">SHIPS <span class="c-hi">3</span>/3</span>
+        </div>
+        <div class="mono-xs" style="padding:0 var(--s3) 6px;background:var(--panel-in);border-bottom:1px solid var(--line)">
+          ■ ROOKIE DRAFTER · <span class="c-amber">80 / 150</span> · 70 PTS WASTED<br>
+          LEFTOVER POINTS ARE WASTED — NEVER CONVERTED.
+        </div>
+
+        <button class="row row-ship" data-ship="dulledge">
+          <span class="glyph fl-2" style="margin-top:2px">■</span>
+          <span class="grow" style="display:flex;flex-direction:column;gap:4px">
+            <span style="display:flex;align-items:baseline;gap:6px">
+              <span class="row-name">DULL EDGE</span>
+              <span class="mono-xs truncate">BULWARK · CRUISER</span>
+            </span>
+            <span class="bars"><span class="k">S</span>
+              <span class="meter meter-sm"><span class="meter-fill f-shield" style="width:75%"></span></span>
+              <span class="v">60/80</span></span>
+            <span class="bars"><span class="k">H</span>
+              <span class="meter meter-sm"><span class="meter-fill f-hull" style="width:86%"></span></span>
+              <span class="v">146/170</span></span>
+            <span class="pips" aria-label="Components: W1 online, W2 damaged, S1 S2 online, ENG online">
+              <span class="pip is-ok"  title="W1 · Rail Battery — ONLINE"></span>
+              <span class="pip is-hit" title="W2 · Rail Battery — DAMAGED"></span>
+              <span class="pip is-ok"  title="S1 · Shield Projector — ONLINE"></span>
+              <span class="pip is-ok"  title="S2 · Shield Projector — ONLINE"></span>
+              <span class="pip is-ok"  title="ENG · Drive — ONLINE"></span>
+              <span class="pip-key" style="margin-left:4px">W1 W2 S1 S2 ENG</span>
+            </span>
+          </span>
+        </button>
+
+        <button class="row row-ship" data-ship="mote">
+          <span class="glyph fl-2" style="margin-top:2px">■</span>
+          <span class="grow" style="display:flex;flex-direction:column;gap:4px">
+            <span style="display:flex;align-items:baseline;gap:6px">
+              <span class="row-name">MOTE</span>
+              <span class="mono-xs truncate">WASP · FIGHTER</span>
+            </span>
+            <span class="bars"><span class="k">S</span>
+              <span class="meter meter-sm"><span class="meter-fill f-shield" style="width:22%"></span></span>
+              <span class="v">4/18</span></span>
+            <span class="bars"><span class="k">H</span>
+              <span class="meter meter-sm"><span class="meter-fill f-hull" style="width:48%"></span></span>
+              <span class="v">19/40</span></span>
+            <span class="pips" aria-label="Components: W1 online, M1 destroyed, ENG online, two slots empty">
+              <span class="pip is-ok"   title="W1 · Autocannon — ONLINE"></span>
+              <span class="pip is-out"  title="M1 · Micro Rack — DESTROYED"></span>
+              <span class="pip is-ok"   title="ENG · Drive — ONLINE"></span>
+              <span class="pip is-void" title="X1 · empty slot"></span>
+              <span class="pip is-void" title="X2 · empty slot"></span>
+              <span class="pip-key" style="margin-left:4px">W1 M1 ENG X1 X2</span>
+            </span>
+          </span>
+        </button>
+
+        <button class="row row-ship" data-ship="mote2">
+          <span class="glyph fl-2" style="margin-top:2px">■</span>
+          <span class="grow" style="display:flex;flex-direction:column;gap:4px">
+            <span style="display:flex;align-items:baseline;gap:6px">
+              <span class="row-name">MOTE II</span>
+              <span class="mono-xs truncate">WASP · FIGHTER</span>
+            </span>
+            <span class="bars"><span class="k">S</span>
+              <span class="meter meter-sm"><span class="meter-fill f-shield" style="width:100%"></span></span>
+              <span class="v">18/18</span></span>
+            <span class="bars"><span class="k">H</span>
+              <span class="meter meter-sm"><span class="meter-fill f-hull" style="width:100%"></span></span>
+              <span class="v">40/40</span></span>
+            <span class="pips" aria-label="Components: W1 online, M1 online, ENG online, two slots empty">
+              <span class="pip is-ok"   title="W1 · Autocannon — ONLINE"></span>
+              <span class="pip is-ok"   title="M1 · Micro Rack — ONLINE"></span>
+              <span class="pip is-ok"   title="ENG · Drive — ONLINE"></span>
+              <span class="pip is-void" title="X1 · empty slot"></span>
+              <span class="pip is-void" title="X2 · empty slot"></span>
+              <span class="pip-key" style="margin-left:4px">W1 M1 ENG X1 X2</span>
+            </span>
+          </span>
+        </button>
+
+        <div style="padding:var(--s3);border-top:1px solid var(--line)">
+          <div class="mono-xs" style="line-height:1.7">CLICK ANY SHIP — CAMERA SNAPS AND SELECTS.<br>
+            BOT SHIPS SHOW THE SAME DETAIL AS YOURS.</div>
+        </div>
+      </div>
+
+      <div class="footer-links">
+        <a href="index.html">◄ Lobby</a>
+        <a href="tactical-attack.html">Attack Beat</a>
+        <a href="post-match.html">Post-Match</a>
+      </div>
+    </aside>
+
+    <!-- ================= CENTER: TACTICAL VIEWPORT ================= -->
+    <main class="stage">
+      <div class="viewport" id="viewport" aria-label="Tactical display, turn 4 movement plan">
+
+        <!-- depth reference grid (FR-14) -->
+        <div class="viewport-grid"></div>
+        <div class="sweeper sweeper-vp"></div>
+
+        <!-- kill boundary (FR-16 / Ruling F) — always visible, never toggles -->
+        <div class="boundary" style="inset:6%">
+          <span class="boundary-label" style="left:50%;top:-9px;transform:translateX(-50%)">◄ Kill Boundary ►</span>
+          <span class="boundary-label" style="left:50%;bottom:-9px;transform:translateX(-50%)">◄ Kill Boundary ►</span>
+          <span class="boundary-label" style="left:6px;top:50%;transform:translateY(-50%)">Arena R 5400</span>
+          <span class="boundary-label" style="right:6px;top:50%;transform:translateY(-50%)">Arena R 5400</span>
+        </div>
+
+        <!-- ---- vector trails + plotted arcs (coordinate space 1200 x 700) ---- -->
+        <svg class="trails" viewBox="0 0 1200 700" preserveAspectRatio="none" aria-hidden="true">
+          <!-- WIDOWMAKER: solid current-momentum vector -->
+          <path class="path" d="M520 430 L596 382" style="stroke:var(--cyan);stroke-width:1.5"/>
+          <path class="path" d="M596 382 l-11 -1 l4 7 z" style="fill:var(--cyan);stroke:none"/>
+          <!-- WIDOWMAKER: plotted thrust arc → destination ghost -->
+          <path class="path" d="M596 382 Q700 270 900 135" style="stroke:var(--cyan);stroke-width:1.5;stroke-dasharray:7 6"/>
+
+          <!-- HARRIER-2: momentum vector, then HOSTILE arc that leaves the arena -->
+          <path class="path" d="M255 205 L216 181" style="stroke:var(--cyan);stroke-width:1.5"/>
+          <path class="path path-hostile" d="M216 181 Q150 175 75 95" style="stroke:var(--red);stroke-width:2.5"/>
+          <path class="path path-hostile" d="M75 95 l15 5 l-4 -11 z" style="fill:var(--red);stroke:none"/>
+
+          <!-- TIN CAN 3: set to COAST — momentum only, no thrust spend -->
+          <path class="path path-ghost" d="M600 520 L648 496" style="stroke:var(--cyan);stroke-width:1.5;stroke-dasharray:3 5"/>
+
+          <!-- last-turn OBSERVED vectors for bot fleets (history, never their plans) -->
+          <path class="path path-ghost" d="M900 215 L846 246" style="stroke:var(--fleet-1);stroke-width:1.5;stroke-dasharray:2 6"/>
+          <path class="path path-ghost" d="M790 320 L742 340" style="stroke:var(--fleet-1);stroke-width:1.5;stroke-dasharray:2 6"/>
+          <path class="path path-ghost" d="M855 375 L812 396" style="stroke:var(--fleet-1);stroke-width:1.5;stroke-dasharray:2 6"/>
+          <path class="path path-ghost" d="M860 520 L818 494" style="stroke:var(--fleet-2);stroke-width:1.5;stroke-dasharray:2 6"/>
+          <path class="path path-ghost" d="M960 440 L916 430" style="stroke:var(--fleet-2);stroke-width:1.5;stroke-dasharray:2 6"/>
+          <path class="path path-ghost" d="M890 575 L852 548" style="stroke:var(--fleet-2);stroke-width:1.5;stroke-dasharray:2 6"/>
+
+          <!-- tracking missile lock lines -->
+          <path class="path" d="M700 430 L640 468" style="stroke:var(--missile);stroke-width:1;stroke-dasharray:2 5;opacity:.7"/>
+          <path class="path" d="M330 430 L378 480" style="stroke:var(--missile);stroke-width:1;stroke-dasharray:2 5;opacity:.7"/>
+        </svg>
+
+        <!-- silhouette library: class is readable by shape at fleet zoom (FR-13) -->
+        <svg width="0" height="0" aria-hidden="true" style="position:absolute">
+          <defs>
+            <g id="sil-mega" fill="none" stroke="currentColor" stroke-width="1.2">
+              <path d="M12 1 L17.5 6 L19 14 L15 22.5 L9 22.5 L5 14 L6.5 6 Z"/>
+              <path d="M12 4.5 L12 20"/><path d="M6.5 9 L17.5 9"/><path d="M5.6 15 L18.4 15"/>
+              <path d="M5 11 L1.5 9.5 L1.5 15 L5.6 15"/><path d="M19 11 L22.5 9.5 L22.5 15 L18.4 15"/>
+            </g>
+            <g id="sil-cruiser" fill="none" stroke="currentColor" stroke-width="1.3">
+              <path d="M12 2 L18 9.5 L16 20.5 L8 20.5 L6 9.5 Z"/>
+              <path d="M12 5 L12 18"/><path d="M7 12 L17 12"/>
+            </g>
+            <g id="sil-frigate" fill="none" stroke="currentColor" stroke-width="1.4">
+              <path d="M12 2.5 L16.5 12 L12 21 L7.5 12 Z"/>
+              <path d="M12 7 L12 17"/>
+            </g>
+            <g id="sil-fighter" fill="none" stroke="currentColor" stroke-width="1.6">
+              <path d="M12 3 L18.5 19 L12 14.5 L5.5 19 Z"/>
+            </g>
+            <g id="sil-wreck" fill="none" stroke="currentColor" stroke-width="1.3">
+              <path d="M5 5 L19 19"/><path d="M19 5 L5 19"/>
+              <path d="M12 3 L15 9 L12 12 L9 9 Z" stroke-dasharray="2 2"/>
+            </g>
+          </defs>
+        </svg>
+
+        <!-- ================= SHIP MARKERS ================= -->
+
+        <!-- ---- FLEET 0 · YOU (▲ cyan) ---- -->
+        <div class="mk fl-0 is-selected" id="mk-widowmaker" style="left:43.33%;top:61.43%;z-index:5">
+          <div class="mk-glyph" style="width:28px;height:28px"><svg class="mk-sil" viewBox="0 0 24 24"><use href="#sil-cruiser"/></svg></div>
+          <div class="mk-stalk" style="height:40px"></div>
+          <div class="mk-lbl" style="left:30px">▲ WIDOWMAKER<br><span class="mk-sub">MERIDIAN · CRUISER · Z −40</span></div>
+        </div>
+
+        <div class="mk fl-0" id="mk-harrier2" style="left:21.25%;top:29.29%;z-index:6">
+          <div class="mk-glyph" style="width:22px;height:22px"><svg class="mk-sil" viewBox="0 0 24 24"><use href="#sil-frigate"/></svg></div>
+          <div class="mk-stalk" style="height:26px"></div>
+          <div class="mk-lbl" style="left:24px">▲ HARRIER-2<br><span class="mk-sub c-red">HARRIER · FRIGATE · ARC EXITS</span></div>
+        </div>
+
+        <div class="mk fl-0" id="mk-tincan3" style="left:50%;top:74.29%;z-index:5">
+          <div class="mk-glyph" style="width:17px;height:17px"><svg class="mk-sil" viewBox="0 0 24 24"><use href="#sil-fighter"/></svg></div>
+          <div class="mk-stalk" style="height:32px"></div>
+          <div class="mk-lbl" style="left:20px">▲ TIN CAN 3<br><span class="mk-sub c-cyan">NEEDLE · FIGHTER · COAST</span></div>
+        </div>
+
+        <!-- ---- FLEET 1 · BOT-01 (● magenta) ---- -->
+        <div class="mk fl-1" id="mk-ironverdict" style="left:75%;top:30.71%;z-index:5">
+          <div class="mk-glyph" style="width:42px;height:42px"><svg class="mk-sil" viewBox="0 0 24 24"><use href="#sil-mega"/></svg></div>
+          <div class="mk-stalk" style="height:46px"></div>
+          <div class="mk-lbl mk-lbl-l" style="text-align:right">IRON VERDICT ●<br><span class="mk-sub">OBELISK · MEGA DESTROYER · Z +46</span></div>
+        </div>
+
+        <div class="mk fl-1" id="mk-spur" style="left:65.83%;top:45.71%;z-index:5">
+          <div class="mk-glyph" style="width:22px;height:22px"><svg class="mk-sil" viewBox="0 0 24 24"><use href="#sil-frigate"/></svg></div>
+          <div class="mk-stalk" style="height:20px"></div>
+          <div class="mk-lbl" style="left:24px">● SPUR<br><span class="mk-sub">LANCER · FRIGATE</span></div>
+        </div>
+
+        <div class="mk fl-1" id="mk-waspa" style="left:71.25%;top:53.57%;z-index:5">
+          <div class="mk-glyph" style="width:17px;height:17px"><svg class="mk-sil" viewBox="0 0 24 24"><use href="#sil-fighter"/></svg></div>
+          <div class="mk-stalk" style="height:34px"></div>
+          <div class="mk-lbl" style="left:24px">● WASP-A<br><span class="mk-sub">WASP · FIGHTER</span></div>
+        </div>
+
+        <!-- ---- FLEET 2 · BOT-02 (■ amber) ---- -->
+        <div class="mk fl-2" id="mk-dulledge" style="left:71.67%;top:74.29%;z-index:5">
+          <div class="mk-glyph" style="width:28px;height:28px"><svg class="mk-sil" viewBox="0 0 24 24"><use href="#sil-cruiser"/></svg></div>
+          <div class="mk-stalk" style="height:16px"></div>
+          <div class="mk-lbl mk-lbl-l" style="text-align:right">DULL EDGE ■<br><span class="mk-sub">BULWARK · CRUISER</span></div>
+        </div>
+
+        <div class="mk fl-2" id="mk-mote" style="left:80%;top:62.86%;z-index:5">
+          <div class="mk-glyph" style="width:17px;height:17px"><svg class="mk-sil" viewBox="0 0 24 24"><use href="#sil-fighter"/></svg></div>
+          <div class="mk-stalk" style="height:24px"></div>
+          <div class="mk-lbl mk-lbl-l" style="text-align:right">MOTE ■<br><span class="mk-sub">WASP · FIGHTER</span></div>
+        </div>
+
+        <div class="mk fl-2" id="mk-mote2" style="left:74.17%;top:82.14%;z-index:5">
+          <div class="mk-glyph" style="width:17px;height:17px"><svg class="mk-sil" viewBox="0 0 24 24"><use href="#sil-fighter"/></svg></div>
+          <div class="mk-stalk" style="height:12px"></div>
+          <div class="mk-lbl mk-lbl-l" style="text-align:right">MOTE II ■<br><span class="mk-sub">WASP · FIGHTER</span></div>
+        </div>
+
+        <!-- ---- WRECKS: destroyed ships stay on the field and in the roster ---- -->
+        <div class="mk mk-wreck" style="left:39.17%;top:87.86%;z-index:3">
+          <div class="mk-glyph" style="width:16px;height:16px"><svg class="mk-sil" viewBox="0 0 24 24"><use href="#sil-wreck"/></svg></div>
+          <div class="mk-lbl" style="left:18px">✕ TIN CAN 1 · WRECK</div>
+        </div>
+        <div class="mk mk-wreck" style="left:27.92%;top:45.71%;z-index:3">
+          <div class="mk-glyph" style="width:16px;height:16px"><svg class="mk-sil" viewBox="0 0 24 24"><use href="#sil-wreck"/></svg></div>
+          <div class="mk-lbl" style="left:18px">✕ PICKET FENCE · WRECK</div>
+        </div>
+        <!-- SPUR II leaves no wreck: it was shoved across the boundary on T3 and
+             detonated OUTSIDE the arena, so no AoE and no debris entered the
+             battlespace (FR-26). Its roster row stays, marked destroyed. -->
+
+        <!-- ================= HAZARD BODIES (FR-13) ================= -->
+        <!-- debris ✳ -->
+        <div class="mk" style="left:51.67%;top:35.71%;color:var(--hazard);z-index:4">
+          <div class="mk-glyph">✳</div><div class="mk-stalk" style="height:18px"></div>
+          <div class="mk-lbl">DEBRIS · 3 FRAG</div>
+        </div>
+        <div class="mk" style="left:37.92%;top:22.14%;color:var(--hazard);z-index:4">
+          <div class="mk-glyph">✳</div><div class="mk-stalk" style="height:30px"></div>
+          <div class="mk-lbl">DEBRIS · 1 FRAG</div>
+        </div>
+        <div class="mk" style="left:84.17%;top:45.71%;color:var(--hazard);z-index:4">
+          <div class="mk-glyph">✳</div><div class="mk-stalk" style="height:22px"></div>
+          <div class="mk-lbl mk-lbl-l" style="text-align:right">DEBRIS · 5 FRAG</div>
+        </div>
+
+        <!-- tracking missiles ➤ -->
+        <div class="mk" style="left:58.33%;top:61.43%;color:var(--missile);z-index:6">
+          <div class="mk-glyph" style="transform:rotate(-140deg)">➤</div>
+          <div class="mk-stalk" style="height:16px"></div>
+          <div class="mk-lbl" style="left:20px">MISSILE · TRACKING
+            <span class="chip chip-red" style="height:14px;padding:0 4px;margin-left:3px">T2</span></div>
+        </div>
+        <div class="mk" style="left:27.5%;top:61.43%;color:var(--missile);z-index:6">
+          <div class="mk-glyph" style="transform:rotate(40deg)">➤</div>
+          <div class="mk-stalk" style="height:28px"></div>
+          <div class="mk-lbl" style="left:20px">MISSILE · TRACKING
+            <span class="chip chip-red" style="height:14px;padding:0 4px;margin-left:3px">T1</span></div>
+        </div>
+
+        <!-- spent / armed missiles ◇ -->
+        <div class="mk" style="left:46.67%;top:45.71%;color:var(--spent);z-index:4">
+          <div class="mk-glyph">◇</div><div class="mk-stalk" style="height:20px"></div>
+          <div class="mk-lbl" style="color:#B08E6E">MISSILE ◇ SPENT · ARMED</div>
+        </div>
+        <div class="mk" style="left:66.25%;top:71.43%;color:var(--spent);z-index:4">
+          <div class="mk-glyph">◇</div><div class="mk-stalk" style="height:36px"></div>
+          <div class="mk-lbl" style="color:#B08E6E">MISSILE ◇ SPENT · ARMED</div>
+        </div>
+
+        <!-- ================= THE MONEY MOMENT ================= -->
+        <div class="exit-x anim-flick" style="left:12.33%;top:22.29%">✕<span>EXIT</span></div>
+
+        <div class="callout" style="left:15%;top:4%">
+          <div class="t-label" style="color:var(--red);letter-spacing:.2em">⚠ Boundary Breach Predicted</div>
+          <div style="font-size:12px;font-weight:700;color:#FFD7E1;letter-spacing:.06em;margin-top:3px">
+            PREDICTED EXIT — TURN 5 · SHIP DESTROYED</div>
+          <div class="mono-xs" style="color:#FF8FAB;margin-top:4px;letter-spacing:.1em">
+            HARRIER-2 · CROSSES R 5400 AT +0.53 TURN<br>NOT BLOCKED — REQUIRES SECOND CONFIRM</div>
+        </div>
+
+        <!-- delta-V spend annotation, sitting in the bend of the plotted arc -->
+        <div class="field-note c-cyan" style="left:52%;top:26%;border-color:rgba(34,227,255,.4);line-height:1.55">
+          <span style="color:var(--ink-dim)">MOMENTUM 312 CARRIED</span><br>
+          THRUST SPEND 22 Δv · BRG 041 / +18°
+        </div>
+        <div class="field-note c-red anim-flick" style="left:6%;top:33%;border-color:rgba(255,46,99,.45)">
+          HARRIER-2 · Δ 0 TO BOUNDARY
+        </div>
+
+        <!-- destination ghost for WIDOWMAKER -->
+        <div class="ghost-ring" style="left:75%;top:19.29%"></div>
+        <div class="field-note c-cyan" style="left:56%;top:12%;border-color:rgba(34,227,255,.4)">
+          PREDICTED END · T05
+        </div>
+
+        <!-- ================= HUD: LEGEND (bottom-left) ================= -->
+        <div class="hud" style="left:12px;bottom:12px;padding:8px 10px;min-width:212px">
+          <div class="t-label" style="margin-bottom:6px">Body Legend</div>
+          <div style="display:grid;grid-template-columns:auto 1fr;gap:3px 8px;align-items:center;font-size:10px;letter-spacing:.08em">
+            <svg viewBox="0 0 24 24" style="width:15px;height:15px;color:var(--ink-hi)"><use href="#sil-cruiser"/></svg>
+            <span class="c-hi">SHIP · silhouette = class</span>
+            <span style="color:var(--hazard);text-align:center">✳</span>
+            <span style="color:#FF9A4D">DEBRIS — inert, lethal on contact</span>
+            <span style="color:var(--missile);text-align:center">➤</span>
+            <span style="color:#FF6B90">MISSILE · TRACKING — Tn turns left</span>
+            <span style="color:var(--spent);text-align:center">◇</span>
+            <span style="color:#B08E6E">MISSILE · SPENT-ARMED — still kills</span>
+            <span style="color:#7B93A6;text-align:center">✕</span>
+            <span style="color:var(--ink-dim)">WRECK — destroyed hull</span>
+          </div>
+          <hr class="hr-dash" style="margin:7px 0">
+          <div class="t-label" style="margin-bottom:5px">Fleets</div>
+          <div style="display:flex;flex-direction:column;gap:3px;font-size:10px;letter-spacing:.08em">
+            <span style="display:flex;align-items:center;gap:6px"><span class="glyph fl-0" style="width:15px;height:15px;font-size:9px">▲</span><span style="color:var(--fleet-0)">YOU</span></span>
+            <span style="display:flex;align-items:center;gap:6px"><span class="glyph fl-1" style="width:15px;height:15px;font-size:9px">●</span><span style="color:var(--fleet-1)">BOT-01 · VETERAN</span></span>
+            <span style="display:flex;align-items:center;gap:6px"><span class="glyph fl-2" style="width:15px;height:15px;font-size:9px">■</span><span style="color:var(--fleet-2)">BOT-02 · ROOKIE</span></span>
+          </div>
+          <hr class="hr-dash" style="margin:7px 0">
+          <div class="mono-xs" style="line-height:1.6">GLYPH + SHAPE CARRY EVERY STATE.<br>COLOR IS NEVER THE ONLY CUE.</div>
+        </div>
+
+        <!-- ================= HUD: CAMERA (bottom-right) ================= -->
+        <div class="hud" style="right:12px;bottom:12px;padding:8px 10px;width:236px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+            <span class="t-label">Camera</span><span class="grow"></span>
+            <span class="mono-xs">ORBIT 214° / ELEV 38°</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:9px;letter-spacing:.12em;color:var(--ink-dim)">
+            <span>FLEET SCALE</span>
+            <span class="grow" style="position:relative;height:10px;display:flex;align-items:center">
+              <span style="position:absolute;left:0;right:0;height:1px;background:var(--line-hot)"></span>
+              <span style="position:absolute;left:0;color:var(--ink-ghost)">◄</span>
+              <span style="position:absolute;right:0;color:var(--ink-ghost)">►</span>
+              <span style="position:absolute;left:44%;width:7px;height:7px;border-radius:50%;background:var(--cyan);box-shadow:var(--glow-2)"></span>
+            </span>
+            <span>HULL SCALE</span>
+          </div>
+          <div class="mono-xs" style="margin-top:5px">ZOOM 0.42× · 1 GRID = 400 UNITS</div>
+          <hr class="hr-dash" style="margin:7px 0">
+          <div style="display:flex;flex-direction:column;gap:3px;font-size:10px;letter-spacing:.08em;color:var(--ink)">
+            <span><span class="c-cyan">[R]</span> RESET TO FLEET VIEW</span>
+            <span><span class="c-cyan">[DRAG]</span> ORBIT &nbsp; <span class="c-cyan">[MMB]</span> PAN &nbsp; <span class="c-cyan">[WHEEL]</span> ZOOM</span>
+            <span><span class="c-cyan">[F]</span> FOCUS SELECTED SHIP</span>
+          </div>
+          <div class="mono-xs" style="margin-top:6px;color:var(--cyan);opacity:.8">CAM PERSISTS ACROSS BEATS</div>
+        </div>
+
+        <!-- ================= HUD: field status (top-right) ================= -->
+        <div class="hud" style="right:12px;top:12px;padding:6px 10px">
+          <div style="display:flex;gap:14px;align-items:center">
+            <span><span class="t-label">Bodies</span> <span class="t-num">18</span></span>
+            <span><span class="t-label">Hazards</span> <span class="t-num c-amber">7</span></span>
+            <span><span class="t-label">Live Msl</span> <span class="t-num c-red">2</span></span>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- ================= RIGHT: MOVEMENT PLAN (FR-18) ================= -->
+    <aside class="side side-r" aria-label="Movement plan">
+      <div class="side-hd">
+        <span class="glyph fl-0">▲</span>
+        <span class="grow">
+          <span class="t-h2" id="planName" style="display:block">WIDOWMAKER</span>
+          <span class="mono-xs" id="planClass">MERIDIAN · CRUISER</span>
+        </span>
+        <span class="chip chip-green">Planned</span>
+      </div>
+
+      <div class="side-scroll">
+        <div class="plan-body" id="planBody" style="position:relative">
+          <div class="lock-note">
+            <div>
+              <div class="t-h2 c-amber">Opponent Ship</div>
+              <p class="t-prose" style="max-width:230px;margin:8px auto 0">
+                Full hull, shield, and component state is visible — but this fleet's plan for this beat
+                is not. Blind commit is the game.</p>
+              <button class="btn btn-sm" style="margin-top:12px" data-reselect>▲ Back to WIDOWMAKER</button>
+            </div>
+          </div>
+
+          <!-- ---- DELTA-V BUDGET ---- -->
+          <div class="panel-bd" style="border-bottom:1px solid var(--line)">
+            <div style="display:flex;align-items:baseline;justify-content:space-between">
+              <span class="t-label">Delta-V Budget</span>
+              <span class="mono-xs">DRIVE · MERIDIAN MK-III</span>
+            </div>
+            <div style="display:flex;align-items:baseline;gap:8px;margin:4px 0 6px">
+              <span class="t-num-xl c-amber" id="dvLeft">48</span>
+              <span class="t-num c-dim">/ 70</span>
+              <span class="grow"></span>
+              <span class="mono-xs">SPENT <span class="c-hi">22</span></span>
+            </div>
+            <div class="meter" style="height:8px">
+              <span class="meter-fill f-dv" style="width:68.6%"></span>
+              <span class="meter-notch" style="left:68.6%"></span>
+            </div>
+            <p class="t-prose" style="font-size:11px;color:var(--ink-dim);margin:6px 0 0">
+              <span class="c-amber">NO FREE STOP</span> — deceleration spends delta-V like any other
+              maneuver. Remaining budget cannot be exceeded.
+            </p>
+          </div>
+
+          <!-- ---- CURRENT VELOCITY ---- -->
+          <div class="panel-bd" style="border-bottom:1px solid var(--line)">
+            <div class="t-label" style="margin-bottom:6px">Current Velocity Vector</div>
+            <div class="t-num anim-flick" style="letter-spacing:.06em;margin-bottom:6px">
+              VEL <span class="c-cyan">312</span> m/s · BEARING <span class="c-cyan">041</span> / <span class="c-cyan">+18°</span>
+            </div>
+            <div class="kv">
+              <div><div class="k">VX</div><div class="v">+229</div></div>
+              <div><div class="k">VY</div><div class="v">+198</div></div>
+              <div><div class="k">VZ</div><div class="v">+096</div></div>
+            </div>
+            <p class="t-prose" style="font-size:11px;color:var(--ink-dim);margin:6px 0 0">
+              Newtonian — velocity persists between turns. Thrust modifies it.
+            </p>
+          </div>
+
+          <!-- ---- ARC PLOTTING ---- -->
+          <div class="panel-bd" style="border-bottom:1px solid var(--line)">
+            <div class="t-label" style="margin-bottom:8px">Plot Thrust Arc</div>
+
+            <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:2px">
+              <span class="stat-k">Thrust Magnitude</span>
+              <span class="stat-v c-amber">22 Δv</span>
+            </div>
+            <input class="rng" type="range" min="0" max="70" value="22" aria-label="Thrust magnitude in delta-V">
+            <div class="mono-xs" style="display:flex;justify-content:space-between;margin-top:-2px">
+              <span>0 · COAST</span><span>48 · MAX THIS TURN</span><span class="c-red">70 · OVERBURN</span>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--s2);margin-top:10px">
+              <label><span class="stat-k">Bearing</span>
+                <input class="field" type="text" value="041°" aria-label="Bearing degrees"></label>
+              <label><span class="stat-k">Pitch</span>
+                <input class="field" type="text" value="+18°" aria-label="Pitch degrees"></label>
+            </div>
+
+            <div class="t-label" style="margin:12px 0 5px">Presets</div>
+            <div class="seg" style="width:100%">
+              <button type="button" style="flex:1">Coast</button>
+              <button type="button" class="is-active" aria-pressed="true" style="flex:1">Burn</button>
+              <button type="button" style="flex:1">Overburn</button>
+              <button type="button" style="flex:1">Match Vel</button>
+            </div>
+            <div class="mono-xs" style="margin-top:6px;color:var(--amber);line-height:1.6">
+              ⚠ OVERBURN — Momentum debt: 3 turns to reverse.
+            </div>
+          </div>
+
+          <!-- ---- PREDICTED END STATE ---- -->
+          <div class="panel-bd" style="border-bottom:1px solid var(--line)">
+            <div class="t-label" style="margin-bottom:6px">Predicted End State · Turn 05</div>
+            <div class="stat"><span class="stat-k">Position</span><span class="stat-v">+1840 · −0620 · +0210</span></div>
+            <div class="stat"><span class="stat-k">Resulting Vel</span><span class="stat-v">334 m/s</span></div>
+            <div class="stat"><span class="stat-k">Resulting Brg</span><span class="stat-v">052 / +21°</span></div>
+            <div class="stat"><span class="stat-k">Dist to Boundary</span>
+              <span class="stat-v c-amber">640 <span class="delta delta-down">▼ −380</span></span></div>
+            <div class="stat"><span class="stat-k">Nearest Hazard</span>
+              <span class="stat-v" style="color:var(--hazard)">✳ 410</span></div>
+            <p class="t-prose" style="font-size:11px;color:var(--ink-dim);margin:6px 0 0">
+              Ghost path updates continuously as the arc is edited. Plan is editable until commit.
+            </p>
+          </div>
+
+          <!-- ---- FLEET COMMIT CHECKLIST ---- -->
+          <div class="panel-bd">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:7px">
+              <span class="t-label">Fleet Commit Checklist</span>
+              <span class="mono-xs"><span class="c-hi" id="planCount">2</span>/3</span>
+            </div>
+            <div class="stack">
+              <div class="chkline">
+                <span class="glyph fl-0" style="width:15px;height:15px;font-size:9px">▲</span>
+                <span class="grow" style="font-size:11px;color:var(--ink-hi)">WIDOWMAKER</span>
+                <span class="mono-xs c-green" style="letter-spacing:.14em">PLANNED ✓</span>
+              </div>
+              <div class="chkline is-coast">
+                <span class="glyph fl-0" style="width:15px;height:15px;font-size:9px">▲</span>
+                <span class="grow" style="font-size:11px;color:var(--ink-hi)">TIN CAN 3</span>
+                <span class="mono-xs c-cyan" style="letter-spacing:.14em">COAST ✓</span>
+              </div>
+              <div class="chkline is-hostile" id="chkHarrier">
+                <span class="glyph fl-0" style="width:15px;height:15px;font-size:9px">▲</span>
+                <span class="grow" style="font-size:11px;color:var(--ink-hi)">HARRIER-2</span>
+                <span class="mono-xs c-red" id="harrierState" style="letter-spacing:.14em">● UNPLANNED · ✕ EXIT</span>
+              </div>
+              <!-- Resolution actions for the unplanned ship (FR-18 commit gate) -->
+              <div id="harrierFix" style="display:flex;gap:6px;padding:2px 0 0 22px">
+                <button class="btn btn-sm" data-resolve="coast" title="Spend no delta-V; keep the current vector">↔ Set to Coast</button>
+                <button class="btn btn-sm btn-danger" data-resolve="exit" title="Keep the plotted arc that leaves the arena">✕ Keep Exit Arc</button>
+              </div>
+            </div>
+            <p class="t-prose" style="font-size:11px;color:var(--ink-dim);margin:8px 0 0">
+              <span class="c-amber">ALL SHIPS MUST BE PLANNED OR SET TO COAST.</span>
+              A destroyed engine means zero delta-V — that ship coasts automatically.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---- COMMIT DOCK ---- -->
+      <div class="panel-ft" style="background:var(--panel);border-top:1px solid var(--line-hot)">
+        <div class="banner banner-danger" id="commitBanner" style="margin-bottom:10px;align-items:flex-start">
+          <span class="c-red" style="font-size:14px;line-height:1.2">⚠</span>
+          <span style="font-size:11px;line-height:1.55;color:#FFC2D2" id="commitBannerText">
+            <strong style="color:#FF6B90">HARRIER-2 IS UNPLANNED — ITS PLOTTED ARC EXITS THE ARENA.</strong>
+            Confirming that arc requires a second confirmation.
+          </span>
+        </div>
+
+        <button class="btn btn-commit is-disabled" id="commitBtn" disabled aria-disabled="true">
+          Commit Movement · 2/3 Planned
+        </button>
+
+        <div class="mono-xs" style="margin-top:7px;text-align:center;line-height:1.7">
+          COMMIT IS FINAL FOR THIS BEAT.<br>
+          <span style="opacity:.72">OPPONENT PLANS ARE NOT OBSERVABLE UNTIL RESOLUTION.</span>
+        </div>
+      </div>
+    </aside>
+
+  </div>
+</div>
+
+<!-- ===== BOUNDARY-EXIT SECOND CONFIRMATION (FR-16 §4.1) =====
+     Never blocks. Flying out is a legal choice — it just may never
+     be an accident. Three channels: color, marker, and words. -->
+<div id="exitConfirm" hidden>
+  <div class="scrim" data-exit-close></div>
+  <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="exitTitle" aria-describedby="exitDesc"
+       style="border-color:var(--red);box-shadow:var(--glow-red),0 40px 90px -30px #000;width:min(560px,calc(100vw - 64px))">
+    <div class="panel-hd" style="background:linear-gradient(180deg,rgba(255,46,99,.12),transparent);border-bottom-color:rgba(255,46,99,.4)">
+      <span class="c-red" style="font-size:14px">⚠</span>
+      <span class="t-h2 c-red" id="exitTitle">Confirm Boundary Exit</span>
+    </div>
+    <div class="panel-bd">
+      <p class="t-prose" id="exitDesc" style="margin:0 0 12px">
+        <strong class="c-hi">HARRIER-2</strong> crosses the arena boundary at
+        <strong class="c-red">R 5400 · +0.53 turn</strong>. A ship whose position leaves the bounded
+        volume is <strong class="c-red">destroyed immediately</strong> — no grace period, no warning
+        turn, no wrap, no bounce.
+      </p>
+      <div class="panel-in" style="padding:10px 12px;margin-bottom:12px">
+        <div class="stat"><span class="stat-k">Predicted exit</span><span class="stat-v c-red">TURN 5</span></div>
+        <div class="stat"><span class="stat-k">Outcome</span><span class="stat-v c-red">SHIP DESTROYED</span></div>
+        <div class="stat"><span class="stat-k">Debris generated</span><span class="stat-v">NONE — detonation point is outside the arena</span></div>
+      </div>
+      <p class="t-prose" style="margin:0;font-size:11px;color:var(--ink-dim)">
+        This is <span class="c-hi">not blocked</span>. Deliberately leaving the arena is a legal
+        move — sometimes it is the better of two bad outcomes.
+      </p>
+    </div>
+    <div class="panel-ft" style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" data-exit-close>Cancel — Re-plot</button>
+      <button class="btn btn-danger" id="exitAccept">✕ Confirm Exit &amp; Commit</button>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+(function () {
+  /* ---- reduced-motion toggle (NFR-Accessibility) ---- */
+  var rm = document.getElementById('rmToggle');
+  rm.addEventListener('click', function () {
+    var on = document.body.classList.toggle('rm');
+    rm.setAttribute('aria-pressed', String(on));
+    rm.textContent = on ? '◉ Reduced Motion · On' : '◐ Reduced Motion';
+  });
+
+  /* ---- roster selection: selects the ship + snaps the marker ---- */
+  var SHIPS = {
+    widowmaker : { name: 'WIDOWMAKER',   cls: 'MERIDIAN · CRUISER',       own: true  },
+    harrier2   : { name: 'HARRIER-2',    cls: 'HARRIER · FRIGATE',        own: true  },
+    tincan3    : { name: 'TIN CAN 3',    cls: 'NEEDLE · FIGHTER',         own: true  },
+    ironverdict: { name: 'IRON VERDICT', cls: 'OBELISK · MEGA DESTROYER', own: false },
+    spur       : { name: 'SPUR',         cls: 'LANCER · FRIGATE',         own: false },
+    waspa      : { name: 'WASP-A',       cls: 'WASP · FIGHTER',           own: false },
+    dulledge   : { name: 'DULL EDGE',    cls: 'BULWARK · CRUISER',        own: false },
+    mote       : { name: 'MOTE',         cls: 'WASP · FIGHTER',           own: false },
+    mote2      : { name: 'MOTE II',      cls: 'WASP · FIGHTER',           own: false }
+  };
+  var rows     = document.querySelectorAll('.row-ship[data-ship]');
+  var planBody = document.getElementById('planBody');
+  var planName = document.getElementById('planName');
+  var planCls  = document.getElementById('planClass');
+
+  function select(id) {
+    var data = SHIPS[id];
+    if (!data) return;
+    rows.forEach(function (r) { r.classList.toggle('is-selected', r.dataset.ship === id); });
+    document.querySelectorAll('.mk').forEach(function (m) { m.classList.remove('is-selected'); });
+    var mk = document.getElementById('mk-' + id);
+    if (mk) mk.classList.add('is-selected');
+    planName.textContent = data.name;
+    planCls.textContent  = data.cls;
+    planBody.classList.toggle('is-locked', !data.own);
+  }
+
+  rows.forEach(function (r) {
+    if (r.classList.contains('is-dead')) return;
+    r.addEventListener('click', function () { select(r.dataset.ship); });
+  });
+
+  document.querySelectorAll('.mk[id^="mk-"]').forEach(function (m) {
+    m.addEventListener('click', function () { select(m.id.slice(3)); });
+  });
+
+  document.querySelectorAll('[data-reselect]').forEach(function (b) {
+    b.addEventListener('click', function () { select('widowmaker'); });
+  });
+
+  /* ---- preset segmented control ---- */
+  document.querySelectorAll('.seg > button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var sibs = b.parentNode.querySelectorAll('button');
+      sibs.forEach(function (s) { s.classList.remove('is-active'); s.setAttribute('aria-pressed', 'false'); });
+      b.classList.add('is-active'); b.setAttribute('aria-pressed', 'true');
+    });
+  });
+
+  /* ============================================================
+     FLEET COMMIT GATE (FR-18 / design.md §4.3) + BOUNDARY EXIT
+     SECOND CONFIRMATION (FR-16 / §4.1).
+
+     HARRIER-2 starts UNPLANNED with an arc that exits the arena.
+     The fleet cannot commit until every ship is planned or coasting.
+     Resolving it to COAST clears the hazard; keeping the EXIT arc
+     leaves the commit legal but HOSTILE — red, and gated behind an
+     explicit second confirmation. It is never blocked.
+     ============================================================ */
+  var commitBtn   = document.getElementById('commitBtn');
+  var banner      = document.getElementById('commitBanner');
+  var bannerText  = document.getElementById('commitBannerText');
+  var harrierState= document.getElementById('harrierState');
+  var chkHarrier  = document.getElementById('chkHarrier');
+  var harrierFix  = document.getElementById('harrierFix');
+  var exitModal   = document.getElementById('exitConfirm');
+  var counter     = document.getElementById('planCount');
+
+  /* 'unplanned' | 'coast' | 'exit' */
+  var harrier = 'unplanned';
+
+  function nextBeat() {
+    /* Preserve any active prototype-flow context across the hop. */
+    var q = new URLSearchParams(location.search);
+    var f = q.get('flow'), s = parseInt(q.get('step'), 10);
+    if (f && !isNaN(s)) location.href = 'tactical-attack.html?flow=' + f + '&step=' + (s + 1);
+    else location.href = 'tactical-attack.html';
+  }
+
+  function renderGate() {
+    var planned = harrier === 'unplanned' ? 2 : 3;
+    if (counter) counter.textContent = planned;
+
+    chkHarrier.classList.toggle('is-hostile', harrier === 'exit');
+    chkHarrier.classList.toggle('is-coast',   harrier === 'coast');
+    harrierFix.style.display = harrier === 'unplanned' ? 'flex' : 'none';
+
+    if (harrier === 'unplanned') {
+      harrierState.className = 'mono-xs c-red';
+      harrierState.textContent = '● UNPLANNED · ✕ EXIT';
+      banner.className = 'banner banner-danger';
+      banner.style.display = '';
+      bannerText.innerHTML = '<strong style="color:#FF6B90">HARRIER-2 IS UNPLANNED — ITS PLOTTED ARC EXITS THE ARENA.</strong> ' +
+        'Set it to coast, or keep the exit arc and confirm twice.';
+      commitBtn.className = 'btn btn-commit is-disabled';
+      commitBtn.disabled = true;
+      commitBtn.setAttribute('aria-disabled', 'true');
+      commitBtn.textContent = 'Commit Movement · 2/3 Planned';
+    } else if (harrier === 'coast') {
+      harrierState.className = 'mono-xs c-cyan';
+      harrierState.textContent = 'COAST ✓';
+      banner.style.display = 'none';
+      commitBtn.className = 'btn btn-commit';
+      commitBtn.disabled = false;
+      commitBtn.removeAttribute('aria-disabled');
+      commitBtn.textContent = 'Commit Movement · 3/3 Planned';
+    } else { /* exit */
+      harrierState.className = 'mono-xs c-red';
+      harrierState.textContent = '✕ EXIT ARC ✓';
+      banner.className = 'banner banner-danger';
+      banner.style.display = '';
+      bannerText.innerHTML = '<strong style="color:#FF6B90">HARRIER-2 WILL LEAVE THE ARENA ON TURN 5 AND BE DESTROYED.</strong> ' +
+        'This is legal and will not be blocked. Commit requires a second confirmation.';
+      commitBtn.className = 'btn btn-commit is-hostile';
+      commitBtn.disabled = false;
+      commitBtn.removeAttribute('aria-disabled');
+      commitBtn.textContent = '✕ Commit Movement · Boundary Exit';
+    }
+  }
+
+  harrierFix.querySelectorAll('[data-resolve]').forEach(function (b) {
+    b.addEventListener('click', function () { harrier = b.dataset.resolve; renderGate(); });
+  });
+
+  commitBtn.addEventListener('click', function () {
+    if (commitBtn.disabled) return;
+    if (harrier === 'exit') { exitModal.hidden = false; return; }  /* second confirmation */
+    nextBeat();
+  });
+
+  exitModal.querySelectorAll('[data-exit-close]').forEach(function (el) {
+    el.addEventListener('click', function () { exitModal.hidden = true; });
+  });
+  document.getElementById('exitAccept').addEventListener('click', nextBeat);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !exitModal.hidden) exitModal.hidden = true;
+  });
+
+  renderGate();
+})();
+</script>
+
+<!-- Prototype flow runner (mock-only; not for src/) -->
+<script src="prototype.js"></script>
+</body>
+</html>

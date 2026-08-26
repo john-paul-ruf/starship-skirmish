@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "kind": "chassis",
+  "classId": "frigate",
+  "entries": [
+    {
+      "id": "frg-lancet",
+      "ordinal": 4,
+      "name": "Lancet",
+      "classId": "frigate",
+      "pointCost": 12,
+      "hullPoints": 70,
+      "mass": 26,
+      "hullRadius": 16,
+      "baseEvasion": 0.24,
+      "addedInCatalogVersion": 1
+    },
+    {
+      "id": "frg-bastion",
+      "ordinal": 5,
+      "name": "Bastion",
+      "classId": "frigate",
+      "pointCost": 16,
+      "hullPoints": 96,
+      "mass": 34,
+      "hullRadius": 19,
+      "baseEvasion": 0.19,
+      "addedInCatalogVersion": 1
+    },
+    {
+      "id": "frg-harrier",
+      "ordinal": 6,
+      "name": "Harrier",
+      "classId": "frigate",
+      "pointCost": 20,
+      "hullPoints": 84,
+      "mass": 28,
+      "hullRadius": 17,
+      "baseEvasion": 0.27,
+      "addedInCatalogVersion": 1
+    }
+  ]
+}

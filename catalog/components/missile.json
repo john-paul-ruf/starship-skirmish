@@ -1,0 +1,98 @@
+{
+  "$comment": "Ruling B - limited ammo per slot, no replenishment within a skirmish. Decision 12/15 - a launched missile is a physical body that re-aims for exactly tuning.missiles.trackingBeats beats, then fuels out and stays armed. NOTE: 'mass' is the RACK's mass carried by the ship; 'bodyMass'/'bodyRadius' describe one missile in flight as a collidable body.",
+  "schemaVersion": 1,
+  "kind": "component",
+  "slotType": "missile",
+  "entries": [
+    {
+      "id": "mis-tack-launcher",
+      "ordinal": 24,
+      "name": "Tack Launcher",
+      "slotType": "missile",
+      "pointCost": 2,
+      "mass": 2,
+      "addedInCatalogVersion": 1,
+      "stats": {
+        "ammo": 4,
+        "damage": 14,
+        "aoeRadius": 30,
+        "boostVelocity": 240,
+        "trackingTurnRate": 0.34,
+        "bodyMass": 1,
+        "bodyRadius": 4
+      }
+    },
+    {
+      "id": "mis-hornet-rack",
+      "ordinal": 25,
+      "name": "Hornet Rack",
+      "slotType": "missile",
+      "pointCost": 3,
+      "mass": 3,
+      "addedInCatalogVersion": 1,
+      "stats": {
+        "ammo": 6,
+        "damage": 18,
+        "aoeRadius": 60,
+        "boostVelocity": 220,
+        "trackingTurnRate": 0.30,
+        "bodyMass": 1,
+        "bodyRadius": 5
+      }
+    },
+    {
+      "id": "mis-swarm-cell",
+      "ordinal": 26,
+      "name": "Swarm Cell",
+      "slotType": "missile",
+      "pointCost": 4,
+      "mass": 4,
+      "addedInCatalogVersion": 1,
+      "stats": {
+        "ammo": 10,
+        "damage": 9,
+        "aoeRadius": 90,
+        "boostVelocity": 180,
+        "trackingTurnRate": 0.38,
+        "bodyMass": 1,
+        "bodyRadius": 4
+      }
+    },
+    {
+      "id": "mis-lance-pod",
+      "ordinal": 27,
+      "name": "Lance Pod",
+      "slotType": "missile",
+      "pointCost": 5,
+      "mass": 4,
+      "addedInCatalogVersion": 1,
+      "stats": {
+        "ammo": 3,
+        "damage": 55,
+        "aoeRadius": 40,
+        "boostVelocity": 300,
+        "trackingTurnRate": 0.22,
+        "bodyMass": 2,
+        "bodyRadius": 6
+      }
+    },
+    {
+      "id": "mis-breaker-tube",
+      "ordinal": 28,
+      "name": "Breaker Tube",
+      "slotType": "missile",
+      "pointCost": 7,
+      "mass": 8,
+      "addedInCatalogVersion": 1,
+      "stats": {
+        "ammo": 2,
+        "damage": 110,
+        "aoeRadius": 130,
+        "boostVelocity": 260,
+        "trackingTurnRate": 0.18,
+        "bodyMass": 4,
+        "bodyRadius": 9
+      }
+    }
+  ]
+}

@@ -1,0 +1,473 @@
+/* =============================================================
+   STARSHIP SKIRMISH — console.css
+   Shared design system for all mocks. No build step. Load after
+   the Tailwind CDN so these tokens/classes win on conflict.
+
+   Usage:
+     <script src="https://cdn.tailwindcss.com"></script>
+     <link rel="stylesheet" href="console.css">
+   ============================================================= */
+
+/* ---------- 1. TOKENS ---------------------------------------- */
+:root {
+  /* Surfaces — near-black, cool-shifted. Never pure #000 except the tac view. */
+  --void:      #05070A;   /* page background */
+  --deep:      #000205;   /* tactical viewport only */
+  --panel:     #0A0F16;   /* primary panel */
+  --panel-hi:  #101822;   /* raised / hover panel */
+  --panel-in:  #070B11;   /* inset well, list rows */
+  --grid:      #16212E;   /* grid lines, dividers */
+  --line:      #1E2C3C;   /* borders */
+  --line-hot:  #2C4155;   /* border hover/focus base */
+
+  /* Ink */
+  --ink:       #C7D6E5;   /* body text */
+  --ink-hi:    #E8F4FF;   /* headings, key numbers */
+  --ink-dim:   #6B8299;   /* labels, meta */
+  --ink-ghost: #33475A;   /* disabled, empty-slot placeholder */
+
+  /* Signal colors */
+  --cyan:      #22E3FF;   /* PRIMARY. Player fleet, primary action, focus */
+  --cyan-deep: #0B8FA8;
+  --amber:     #FFB020;   /* caution, needs-refit, delta-V spend, unsaved */
+  --red:       #FF2E63;   /* lethal, boundary breach, destroy, hostile-primary */
+  --green:     #3DFF9E;   /* valid, in-budget, hit, committed */
+  --violet:    #A45BFF;
+  --lime:      #7CFF4F;
+
+  /* Fleet identity — color + glyph + hatch. NEVER color alone. */
+  --fleet-0:   #22E3FF;   /* YOU      glyph ▲ */
+  --fleet-1:   #FF3D7F;   /* BOT-01   glyph ● */
+  --fleet-2:   #FFB020;   /* BOT-02   glyph ■ */
+  --fleet-3:   #A45BFF;   /* BOT-03   glyph ◆ */
+  --fleet-4:   #7CFF4F;   /* BOT-04   glyph ✚ */
+
+  /* Body classes — each also has a distinct glyph, see .glyph-* */
+  --hazard:    #FF7A1A;   /* debris          glyph ✳ */
+  --missile:   #FF2E63;   /* tracking missile glyph ➤ */
+  --spent:     #8A6A4F;   /* fuel-out missile glyph ◇ */
+
+  /* Geometry — sharp. This is a CRT, not a phone. */
+  --r-sm: 1px;
+  --r:    2px;
+  --r-lg: 3px;
+
+  /* Spacing scale (4px base) */
+  --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px;
+  --s5: 24px; --s6: 32px; --s7: 48px; --s8: 64px;
+
+  /* Glow system — glow replaces drop-shadow. Four levels. */
+  --glow-0: none;
+  --glow-1: 0 0 0 1px rgba(34,227,255,.18);
+  --glow-2: 0 0 0 1px rgba(34,227,255,.40), 0 0 18px -8px rgba(34,227,255,.55);
+  --glow-3: 0 0 0 1px rgba(34,227,255,.70), 0 0 28px -6px rgba(34,227,255,.75);
+  --glow-red: 0 0 0 1px rgba(255,46,99,.65), 0 0 28px -6px rgba(255,46,99,.70);
+  --glow-amber: 0 0 0 1px rgba(255,176,32,.60), 0 0 24px -8px rgba(255,176,32,.60);
+
+  /* Type */
+  --mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* ---------- 2. RESET / BASE ---------------------------------- */
+* { box-sizing: border-box; }
+html { color-scheme: dark; }
+body {
+  margin: 0;
+  background: var(--void);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+/* Ambient grid + vignette. Purely decorative; sits behind everything. */
+body::before {
+  content: "";
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    linear-gradient(rgba(34,227,255,.030) 1px, transparent 1px) 0 0 / 100% 32px,
+    linear-gradient(90deg, rgba(34,227,255,.030) 1px, transparent 1px) 0 0 / 32px 100%,
+    radial-gradient(ellipse at 50% 0%, rgba(34,227,255,.055), transparent 60%);
+}
+/* Scanlines. Killed by reduced-motion + .rm mode. */
+body::after {
+  content: "";
+  position: fixed; inset: 0; z-index: 9999; pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,.22) 2px 3px);
+  mix-blend-mode: multiply;
+  opacity: .5;
+}
+#app, .layer { position: relative; z-index: 1; }
+
+::selection { background: rgba(34,227,255,.28); color: var(--ink-hi); }
+
+/* Scrollbars */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: var(--panel-in); }
+*::-webkit-scrollbar-thumb { background: var(--line); border: 2px solid var(--panel-in); }
+*::-webkit-scrollbar-thumb:hover { background: var(--line-hot); }
+
+/* ---------- 3. TYPOGRAPHY ------------------------------------ */
+.t-display { font-size: 28px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-hi); }
+.t-h1      { font-size: 18px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-hi); }
+.t-h2      { font-size: 13px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-hi); }
+.t-label   { font-size: 10px; font-weight: 500; letter-spacing: .22em; text-transform: uppercase; color: var(--ink-dim); }
+.t-meta    { font-size: 11px; color: var(--ink-dim); }
+.t-num     { font-size: 15px; font-weight: 700; color: var(--ink-hi); font-variant-numeric: tabular-nums; }
+.t-num-xl  { font-size: 34px; font-weight: 700; color: var(--ink-hi); letter-spacing: -.01em; line-height: 1; }
+.t-prose   { font-family: var(--sans); font-size: 13px; line-height: 1.65; color: var(--ink); }
+
+.c-cyan { color: var(--cyan); }  .c-amber { color: var(--amber); }
+.c-red  { color: var(--red); }   .c-green { color: var(--green); }
+.c-dim  { color: var(--ink-dim); } .c-hi { color: var(--ink-hi); }
+
+/* ---------- 4. PANELS ---------------------------------------- */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  position: relative;
+}
+.panel-in { background: var(--panel-in); border: 1px solid var(--line); border-radius: var(--r); }
+.panel-hd {
+  display: flex; align-items: center; gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(34,227,255,.05), transparent);
+}
+.panel-bd { padding: var(--s3); }
+.panel-ft { padding: var(--s2) var(--s3); border-top: 1px solid var(--line); background: var(--panel-in); }
+
+/* Corner ticks — the signature console frame. Add .ticks to any .panel */
+.ticks::before, .ticks::after {
+  content: ""; position: absolute; width: 10px; height: 10px; pointer-events: none;
+  border-color: var(--cyan); opacity: .55;
+}
+.ticks::before { top: -1px; left: -1px; border-top: 1px solid; border-left: 1px solid; }
+.ticks::after  { bottom: -1px; right: -1px; border-bottom: 1px solid; border-right: 1px solid; }
+
+.hr { height: 1px; background: var(--line); border: 0; margin: var(--s3) 0; }
+.hr-dash { height: 1px; border: 0; margin: var(--s3) 0;
+  background: repeating-linear-gradient(90deg, var(--line) 0 4px, transparent 4px 8px); }
+
+/* ---------- 5. BUTTONS --------------------------------------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--s2);
+  height: 30px; padding: 0 var(--s3);
+  font-family: var(--mono); font-size: 11px; font-weight: 700;
+  letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink); background: var(--panel-hi);
+  border: 1px solid var(--line); border-radius: var(--r);
+  cursor: pointer; text-decoration: none; white-space: nowrap;
+  transition: background .12s, border-color .12s, color .12s, box-shadow .12s;
+}
+.btn:hover { background: #16202C; border-color: var(--line-hot); color: var(--ink-hi); }
+.btn:focus-visible { outline: none; box-shadow: var(--glow-3); border-color: var(--cyan); }
+
+.btn-primary { color: #04141A; background: var(--cyan); border-color: var(--cyan); box-shadow: var(--glow-2); }
+.btn-primary:hover { background: #5CEEFF; border-color: #5CEEFF; color: #04141A; box-shadow: var(--glow-3); }
+
+.btn-danger { color: var(--red); border-color: rgba(255,46,99,.45); background: rgba(255,46,99,.08); }
+.btn-danger:hover { background: rgba(255,46,99,.16); border-color: var(--red); color: #FF6B90; }
+
+.btn-warn { color: var(--amber); border-color: rgba(255,176,32,.45); background: rgba(255,176,32,.08); }
+.btn-warn:hover { background: rgba(255,176,32,.16); border-color: var(--amber); }
+
+.btn-ghost { background: transparent; border-color: transparent; color: var(--ink-dim); }
+.btn-ghost:hover { background: var(--panel-hi); color: var(--ink-hi); border-color: var(--line); }
+
+.btn-lg { height: 40px; padding: 0 var(--s5); font-size: 12px; letter-spacing: .18em; }
+.btn-sm { height: 24px; padding: 0 var(--s2); font-size: 10px; }
+.btn[disabled], .btn.is-disabled {
+  opacity: .38; cursor: not-allowed; pointer-events: none;
+  background: var(--panel-in); color: var(--ink-ghost); border-color: var(--line); box-shadow: none;
+}
+
+/* Commit button — the deliberate action. Requires visual weight. */
+.btn-commit {
+  height: 46px; width: 100%; font-size: 13px; letter-spacing: .22em;
+  color: #04141A; background: var(--cyan); border: 1px solid var(--cyan);
+  box-shadow: var(--glow-3);
+}
+.btn-commit:hover { background: #6CF0FF; }
+.btn-commit.is-hostile { background: var(--red); border-color: var(--red); color: #1A0007; box-shadow: var(--glow-red); }
+
+/* ---------- 6. FORM CONTROLS --------------------------------- */
+.field {
+  width: 100%; height: 30px; padding: 0 var(--s2);
+  font-family: var(--mono); font-size: 12px; color: var(--ink-hi);
+  background: var(--panel-in); border: 1px solid var(--line); border-radius: var(--r);
+}
+.field::placeholder { color: var(--ink-ghost); }
+.field:focus { outline: none; border-color: var(--cyan); box-shadow: var(--glow-2); }
+textarea.field { height: auto; padding: var(--s2); line-height: 1.5; resize: vertical; }
+select.field { appearance: none; padding-right: var(--s5);
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink-dim) 50%),
+                    linear-gradient(135deg, var(--ink-dim) 50%, transparent 50%);
+  background-position: calc(100% - 14px) 13px, calc(100% - 9px) 13px;
+  background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
+
+/* Segmented control — budget picker, difficulty, tabs */
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--panel-in); }
+.seg > button {
+  height: 30px; padding: 0 var(--s3); border: 0; border-right: 1px solid var(--line);
+  background: transparent; color: var(--ink-dim); cursor: pointer;
+  font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+}
+.seg > button:last-child { border-right: 0; }
+.seg > button:hover { background: var(--panel-hi); color: var(--ink-hi); }
+.seg > button[aria-pressed="true"], .seg > button.is-active {
+  background: rgba(34,227,255,.14); color: var(--cyan); box-shadow: inset 0 -2px 0 var(--cyan);
+}
+
+/* Tabs */
+.tabs { display: flex; gap: 0; border-bottom: 1px solid var(--line); }
+.tab {
+  padding: var(--s2) var(--s3); background: none; border: 0; border-bottom: 2px solid transparent;
+  color: var(--ink-dim); cursor: pointer;
+  font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase;
+}
+.tab:hover { color: var(--ink-hi); }
+.tab.is-active { color: var(--cyan); border-bottom-color: var(--cyan); }
+
+/* Checkbox / radio */
+.chk { appearance: none; width: 14px; height: 14px; border: 1px solid var(--line-hot);
+  background: var(--panel-in); border-radius: var(--r-sm); cursor: pointer; position: relative; flex: none; }
+.chk:checked { border-color: var(--cyan); background: rgba(34,227,255,.18); }
+.chk:checked::after { content: "✕"; position: absolute; inset: 0; display: grid; place-items: center;
+  font-size: 10px; color: var(--cyan); }
+
+/* ---------- 7. STAT READOUTS --------------------------------- */
+.stat { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2);
+  padding: var(--s1) 0; border-bottom: 1px dotted rgba(30,44,60,.8); }
+.stat:last-child { border-bottom: 0; }
+.stat-k { font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-dim); }
+.stat-v { font-size: 13px; font-weight: 700; color: var(--ink-hi); }
+
+/* Delta indicator — FR-6. Always sign + arrow, never color alone. */
+.delta { font-size: 11px; font-weight: 700; padding: 0 4px; border-radius: var(--r-sm); }
+.delta-up   { color: var(--green); background: rgba(61,255,158,.10); }
+.delta-down { color: var(--red);   background: rgba(255,46,99,.10); }
+.delta-none { color: var(--ink-ghost); }
+
+/* Meters — hull / shield / delta-V / budget */
+.meter { height: 6px; background: var(--panel-in); border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; position: relative; }
+.meter-fill { height: 100%; display: block; }
+.meter-sm { height: 4px; }
+.f-shield { background: linear-gradient(90deg, var(--cyan-deep), var(--cyan)); }
+.f-hull   { background: linear-gradient(90deg, #7A8C9C, var(--ink-hi)); }
+.f-dv     { background: linear-gradient(90deg, #A8760F, var(--amber)); }
+.f-ok     { background: linear-gradient(90deg, #1C9B5E, var(--green)); }
+.f-hot    { background: linear-gradient(90deg, #A81640, var(--red)); }
+/* Notch overlay for meters that carry a threshold (e.g. regen floor) */
+.meter-notch { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--ink-hi); opacity: .6; }
+
+/* ---------- 8. CHIPS / BADGES / GLYPHS ----------------------- */
+.chip {
+  display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 var(--s2);
+  font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  border: 1px solid var(--line); border-radius: 10px; color: var(--ink-dim); background: var(--panel-in);
+}
+.chip-cyan  { color: var(--cyan);  border-color: rgba(34,227,255,.42); background: rgba(34,227,255,.09); }
+.chip-amber { color: var(--amber); border-color: rgba(255,176,32,.42); background: rgba(255,176,32,.09); }
+.chip-red   { color: var(--red);   border-color: rgba(255,46,99,.42);  background: rgba(255,46,99,.09); }
+.chip-green { color: var(--green); border-color: rgba(61,255,158,.42); background: rgba(61,255,158,.09); }
+
+/* Slot-type tags — each type gets a letter, so type is never color-only */
+.tag-slot { display: inline-grid; place-items: center; width: 16px; height: 16px; flex: none;
+  font-size: 9px; font-weight: 700; border: 1px solid currentColor; border-radius: var(--r-sm); }
+.tag-weapon  { color: #FF6B4A; } .tag-shield { color: var(--cyan); }
+.tag-missile { color: var(--red); } .tag-engine { color: var(--amber); }
+.tag-special { color: var(--violet); }
+
+/* Fleet glyph badge — NEVER color alone (NFR-Accessibility) */
+.glyph { display: inline-grid; place-items: center; width: 18px; height: 18px; flex: none;
+  font-size: 10px; font-weight: 700; border: 1px solid currentColor; border-radius: var(--r-sm);
+  background: color-mix(in srgb, currentColor 12%, transparent); }
+.fl-0 { color: var(--fleet-0); } .fl-1 { color: var(--fleet-1); } .fl-2 { color: var(--fleet-2); }
+.fl-3 { color: var(--fleet-3); } .fl-4 { color: var(--fleet-4); }
+
+/* Status dot + label pairs */
+.dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none;
+  box-shadow: 0 0 8px -1px currentColor; }
+
+/* ---------- 9. LISTS & TABLES -------------------------------- */
+.row {
+  display: flex; align-items: center; gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  border-bottom: 1px solid rgba(30,44,60,.6);
+  background: transparent; cursor: pointer;
+  transition: background .1s, box-shadow .1s;
+}
+.row:hover { background: var(--panel-hi); }
+.row.is-selected { background: rgba(34,227,255,.10); box-shadow: inset 2px 0 0 var(--cyan); }
+.row.is-dead { opacity: .42; }
+.row.is-dead .row-name { text-decoration: line-through; }
+
+.tbl { width: 100%; border-collapse: collapse; }
+.tbl th { text-align: left; padding: var(--s2) var(--s3); font-size: 10px; letter-spacing: .18em;
+  text-transform: uppercase; color: var(--ink-dim); border-bottom: 1px solid var(--line); font-weight: 500; }
+.tbl td { padding: var(--s2) var(--s3); border-bottom: 1px solid rgba(30,44,60,.55); }
+.tbl tbody tr:hover { background: var(--panel-hi); }
+
+/* ---------- 10. SLOT BAYS (Shipyard) -------------------------- */
+.bay {
+  display: flex; align-items: center; gap: var(--s3);
+  padding: var(--s2) var(--s3);
+  background: var(--panel-in);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--line-hot);
+  border-radius: var(--r);
+  cursor: pointer;
+  transition: border-color .12s, background .12s, box-shadow .12s;
+}
+.bay:hover { background: var(--panel-hi); border-color: var(--line-hot); }
+.bay.is-filled { border-left-color: var(--cyan); }
+.bay.is-empty  { border-left-color: var(--line); border-style: dashed; }
+.bay.is-empty .bay-name { color: var(--ink-ghost); font-style: italic; }
+.bay.is-selected { box-shadow: var(--glow-2); border-color: var(--cyan); }
+.bay-name { flex: 1; font-size: 12px; color: var(--ink-hi); }
+.bay-cost { font-size: 12px; font-weight: 700; color: var(--amber); }
+
+/* ---------- 11. TACTICAL VIEWPORT ---------------------------- */
+.viewport {
+  position: relative; overflow: hidden;
+  background:
+    radial-gradient(ellipse at 50% 45%, rgba(34,227,255,.06), transparent 62%),
+    var(--deep);
+  border: 1px solid var(--line);
+}
+/* Perspective reference grid — FR-14 depth legibility */
+.viewport-grid {
+  position: absolute; inset: -20% -20% -10% -20%; pointer-events: none;
+  background:
+    linear-gradient(rgba(34,227,255,.10) 1px, transparent 1px) 0 0 / 100% 48px,
+    linear-gradient(90deg, rgba(34,227,255,.10) 1px, transparent 1px) 0 0 / 48px 100%;
+  transform: perspective(600px) rotateX(64deg);
+  transform-origin: 50% 100%;
+  mask-image: radial-gradient(ellipse at 50% 60%, #000 20%, transparent 72%);
+  -webkit-mask-image: radial-gradient(ellipse at 50% 60%, #000 20%, transparent 72%);
+}
+/* Boundary — always visible, never fades (FR-16 / Ruling F) */
+.boundary {
+  position: absolute; border-radius: 50%; pointer-events: none;
+  border: 1px dashed rgba(255,46,99,.55);
+  box-shadow: inset 0 0 90px -30px rgba(255,46,99,.55), 0 0 60px -40px rgba(255,46,99,.6);
+}
+.boundary-label {
+  position: absolute; font-size: 9px; letter-spacing: .24em; text-transform: uppercase;
+  color: var(--red); opacity: .85; background: rgba(5,7,10,.7); padding: 1px 5px; border: 1px solid rgba(255,46,99,.35);
+}
+
+/* HUD overlay panels float above the viewport */
+.hud {
+  position: absolute; background: rgba(10,15,22,.86); backdrop-filter: blur(2px);
+  border: 1px solid var(--line); border-radius: var(--r);
+}
+
+/* Ship marker */
+.mk { position: absolute; transform: translate(-50%,-50%); cursor: pointer; }
+.mk-glyph { display: grid; place-items: center; width: 22px; height: 22px;
+  font-size: 12px; font-weight: 700; color: currentColor;
+  filter: drop-shadow(0 0 6px currentColor); }
+.mk-lbl { position: absolute; left: 26px; top: 50%; transform: translateY(-50%);
+  font-size: 9px; letter-spacing: .12em; white-space: nowrap; color: currentColor; opacity: .9; }
+.mk.is-selected .mk-glyph { box-shadow: 0 0 0 1px currentColor, 0 0 16px -2px currentColor; border-radius: var(--r-sm); }
+/* Vertical offset stalk — depth cue for every tracked body */
+.mk-stalk { position: absolute; left: 50%; top: 100%; width: 1px; background: currentColor; opacity: .34; }
+
+/* Vector trail / predicted path */
+.path { position: absolute; height: 0; border-top: 1px dashed var(--cyan); opacity: .8;
+  transform-origin: 0 0; pointer-events: none; }
+.path-hostile { border-top-color: var(--red); border-top-style: solid; opacity: 1;
+  filter: drop-shadow(0 0 6px rgba(255,46,99,.8)); }
+.path-ghost { border-top-style: dotted; opacity: .45; }
+
+/* ---------- 12. COMBAT LOG ----------------------------------- */
+.log { font-size: 11px; line-height: 1.7; }
+.log-line { display: flex; gap: var(--s2); padding: 2px var(--s3); border-bottom: 1px solid rgba(30,44,60,.35); }
+.log-t { color: var(--ink-ghost); flex: none; }
+.log-line.is-kill { background: rgba(255,46,99,.07); }
+.log-line.is-crit { background: rgba(255,176,32,.06); }
+
+/* ---------- 13. MODAL / TOAST -------------------------------- */
+.scrim { position: fixed; inset: 0; z-index: 100; background: rgba(2,4,7,.78); backdrop-filter: blur(3px); }
+.modal { position: fixed; z-index: 101; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  width: min(680px, calc(100vw - 64px)); background: var(--panel);
+  border: 1px solid var(--line-hot); border-radius: var(--r-lg); box-shadow: var(--glow-2), 0 40px 90px -30px #000; }
+.toast { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3);
+  background: var(--panel); border: 1px solid var(--line); border-left: 2px solid var(--cyan); border-radius: var(--r); }
+.toast-warn { border-left-color: var(--amber); }
+.toast-danger { border-left-color: var(--red); }
+
+/* Banner — needs-refit notice, backup nudge, desktop-required */
+.banner { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s3);
+  border: 1px solid var(--line); border-left: 3px solid var(--amber);
+  background: rgba(255,176,32,.07); border-radius: var(--r); }
+.banner-danger { border-left-color: var(--red); background: rgba(255,46,99,.07); }
+.banner-info { border-left-color: var(--cyan); background: rgba(34,227,255,.06); }
+
+/* ---------- 14. MOTION (all opt-out) ------------------------- */
+@keyframes flick { 0%,97%,100% { opacity:1 } 98% { opacity:.55 } 99% { opacity:.85 } }
+@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:.42 } }
+/* Sweep animates `top`, not transform: a 2px-tall bar translated by its own
+   height only travels 2px. Percentage `top` resolves against the container. */
+@keyframes sweep { from { top: -2px } to { top: 100% } }
+@keyframes glitch-x { 0%,92%,100% { transform: translateX(0) } 94% { transform: translateX(-2px) } 96% { transform: translateX(2px) } }
+
+.anim-flick { animation: flick 6s infinite steps(1); }
+.anim-pulse { animation: pulse 1.6s ease-in-out infinite; }
+.anim-glitch { animation: glitch-x 7s infinite; }
+/* Requires a positioned ancestor. Crosses the full height of that ancestor. */
+.sweeper { position: absolute; left: 0; right: 0; top: -2px; height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(34,227,255,.5), transparent);
+  animation: sweep 7s linear infinite; pointer-events: none; }
+
+/* Reduced motion — kill glitch/flicker/shake, keep ALL information (NFR-A11y) */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  body::after { display: none; }
+}
+/* Manual toggle: <body class="rm"> */
+body.rm *, body.rm *::before, body.rm *::after { animation: none !important; transition: none !important; }
+body.rm::after { display: none; }
+
+/* ---------- 15. FOCUS / A11Y --------------------------------- */
+:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+/* ---------- 16. APP CHROME ----------------------------------- */
+.topbar {
+  display: flex; align-items: center; gap: var(--s4);
+  height: 44px; padding: 0 var(--s4);
+  background: var(--panel); border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; align-items: center; gap: var(--s2);
+  font-size: 12px; font-weight: 700; letter-spacing: .26em; text-transform: uppercase; color: var(--ink-hi); }
+.brand-mark { width: 16px; height: 16px; border: 1px solid var(--cyan); transform: rotate(45deg);
+  box-shadow: var(--glow-2); }
+.nav { display: flex; gap: var(--s1); }
+.nav a {
+  padding: var(--s1) var(--s3); text-decoration: none; border-radius: var(--r);
+  font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-dim);
+}
+.nav a:hover { color: var(--ink-hi); background: var(--panel-hi); }
+.nav a.is-active { color: var(--cyan); background: rgba(34,227,255,.10); box-shadow: inset 0 -2px 0 var(--cyan); }
+
+/* ---------- 17. DESKTOP-ONLY GATE (NFR-Platform) -------------- */
+.mobile-gate { display: none; }
+@media (max-width: 1023px) {
+  .desktop-only { display: none !important; }
+  .mobile-gate { display: grid; place-items: center; min-height: 100vh; padding: var(--s6); text-align: center; }
+}
+
+/* ---------- 18. UTILITIES ------------------------------------ */
+.stack > * + * { margin-top: var(--s2); }
+.stack-lg > * + * { margin-top: var(--s4); }
+.grow { flex: 1 1 auto; min-width: 0; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mono-xs { font-size: 10px; letter-spacing: .08em; color: var(--ink-dim); }

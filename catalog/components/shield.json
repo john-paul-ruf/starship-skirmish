@@ -1,0 +1,58 @@
+{
+  "$comment": "Decision 16 - capacity and regen are INDEPENDENT axes, so the two-axis trade is real. Single pool, no facing arcs, so there is no facing field. Ruling E - regen ticks every turn regardless of damage taken. Destroying the generator removes the pool permanently and does not restore depleted shields (FR-25); that is rules behaviour, not a data field.",
+  "schemaVersion": 1,
+  "kind": "component",
+  "slotType": "shield",
+  "entries": [
+    {
+      "id": "shd-skim",
+      "ordinal": 19,
+      "name": "Skim Field",
+      "slotType": "shield",
+      "pointCost": 1,
+      "mass": 1,
+      "addedInCatalogVersion": 1,
+      "stats": { "capacity": 22, "regenPerTurn": 4 }
+    },
+    {
+      "id": "shd-fluxweave",
+      "ordinal": 20,
+      "name": "Fluxweave",
+      "slotType": "shield",
+      "pointCost": 3,
+      "mass": 3,
+      "addedInCatalogVersion": 1,
+      "stats": { "capacity": 40, "regenPerTurn": 12 }
+    },
+    {
+      "id": "shd-cyclic",
+      "ordinal": 21,
+      "name": "Cyclic Barrier",
+      "slotType": "shield",
+      "pointCost": 4,
+      "mass": 4,
+      "addedInCatalogVersion": 1,
+      "stats": { "capacity": 70, "regenPerTurn": 10 }
+    },
+    {
+      "id": "shd-bulwark",
+      "ordinal": 22,
+      "name": "Bulwark",
+      "slotType": "shield",
+      "pointCost": 5,
+      "mass": 6,
+      "addedInCatalogVersion": 1,
+      "stats": { "capacity": 120, "regenPerTurn": 6 }
+    },
+    {
+      "id": "shd-aegis-lattice",
+      "ordinal": 23,
+      "name": "Aegis Lattice",
+      "slotType": "shield",
+      "pointCost": 8,
+      "mass": 9,
+      "addedInCatalogVersion": 1,
+      "stats": { "capacity": 190, "regenPerTurn": 14 }
+    }
+  ]
+}

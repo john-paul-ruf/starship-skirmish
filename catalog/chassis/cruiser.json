@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "kind": "chassis",
+  "classId": "cruiser",
+  "entries": [
+    {
+      "id": "cru-hammerhead",
+      "ordinal": 7,
+      "name": "Hammerhead",
+      "classId": "cruiser",
+      "pointCost": 30,
+      "hullPoints": 190,
+      "mass": 78,
+      "hullRadius": 32,
+      "baseEvasion": 0.14,
+      "addedInCatalogVersion": 1
+    },
+    {
+      "id": "cru-meridian",
+      "ordinal": 8,
+      "name": "Meridian",
+      "classId": "cruiser",
+      "pointCost": 38,
+      "hullPoints": 220,
+      "mass": 88,
+      "hullRadius": 35,
+      "baseEvasion": 0.12,
+      "addedInCatalogVersion": 1
+    },
+    {
+      "id": "cru-basilisk",
+      "ordinal": 9,
+      "name": "Basilisk",
+      "classId": "cruiser",
+      "pointCost": 45,
+      "hullPoints": 260,
+      "mass": 96,
+      "hullRadius": 37,
+      "baseEvasion": 0.10,
+      "addedInCatalogVersion": 1
+    }
+  ]
+}

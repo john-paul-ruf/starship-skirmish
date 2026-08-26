@@ -1,0 +1,45 @@
+{
+  "$comment": "STRUCTURAL. Slot layouts are published per class (FR-3), never per chassis. A layout is FROZEN: it may never be reordered, shortened, or retyped, because share tokens encode slot contents POSITIONALLY (architecture 8.1). A layout may only grow at the tail; decode pads missing trailing slots with empty.",
+  "schemaVersion": 1,
+  "catalogVersion": 1,
+  "slotTypes": ["weapon", "shield", "missile", "engine", "special"],
+  "slotOrder": ["weapon", "shield", "missile", "engine", "special"],
+  "classes": [
+    {
+      "id": "fighter",
+      "name": "Fighter",
+      "slots": ["weapon", "engine", "special"],
+      "addedInCatalogVersion": 1
+    },
+    {
+      "id": "frigate",
+      "name": "Frigate",
+      "slots": ["weapon", "weapon", "shield", "missile", "engine", "special"],
+      "addedInCatalogVersion": 1
+    },
+    {
+      "id": "cruiser",
+      "name": "Cruiser",
+      "slots": [
+        "weapon", "weapon", "weapon",
+        "shield", "shield",
+        "missile", "missile",
+        "engine",
+        "special"
+      ],
+      "addedInCatalogVersion": 1
+    },
+    {
+      "id": "mega-destroyer",
+      "name": "Mega Destroyer",
+      "slots": [
+        "weapon", "weapon", "weapon", "weapon",
+        "shield", "shield",
+        "missile", "missile", "missile",
+        "engine",
+        "special", "special"
+      ],
+      "addedInCatalogVersion": 1
+    }
+  ]
+}

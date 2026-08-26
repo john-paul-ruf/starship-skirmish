@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STARSHIP SKIRMISH — ATTACK PLAN · TURN 4</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="console.css">
+<style>
+  /* Local layout + attack-overlay classes only. No token redefinition. */
+  html, body { height: 100%; }
+  @media (min-width: 1024px) { html, body { overflow: hidden; } }
+
+  .shell { display: flex; flex-direction: column; height: 100vh; }
+  .work  { display: flex; flex: 1 1 auto; min-height: 0; }
+  .col-l { width: 288px; flex: none; border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+  .col-c { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+  .col-r { width: 344px; flex: none; border-left: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+  .scrolly { overflow-y: auto; overflow-x: hidden; min-height: 0; flex: 1 1 auto; }
+
+  /* Topbar beat tracker */
+  .beats { display: flex; align-items: center; gap: 2px; }
+  .beat { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px;
+    font-size: 10px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--ink-ghost); border: 1px solid var(--line); background: var(--panel-in);
+    border-radius: var(--r); text-decoration: none; white-space: nowrap; }
+  .beat:hover { color: var(--ink-hi); border-color: var(--line-hot); }
+  .beat.is-done { color: var(--green); border-color: rgba(61,255,158,.32); background: rgba(61,255,158,.07); }
+  .beat.is-active { color: var(--cyan); border-color: var(--cyan); background: rgba(34,227,255,.12); box-shadow: var(--glow-2); }
+  .beat-arrow { color: var(--ink-ghost); font-size: 10px; }
+
+  /* Roster */
+  .grp-hd { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3);
+    background: var(--panel-in); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 3; }
+  .col-l .row { align-items: stretch; flex-direction: column; gap: 5px; }
+  .row-top { display: flex; align-items: center; gap: var(--s2); width: 100%; }
+  .row-name { font-size: 12px; font-weight: 700; color: var(--ink-hi); letter-spacing: .04em; }
+  .bars { display: grid; grid-template-columns: 26px 1fr 62px; gap: 6px; align-items: center; width: 100%; }
+  .bars .k { font-size: 9px; letter-spacing: .12em; color: var(--ink-dim); }
+  .bars .v { font-size: 9px; letter-spacing: .06em; color: var(--ink); text-align: right; }
+  .pips { display: flex; flex-wrap: wrap; gap: 3px; width: 100%; }
+  .pip { font-size: 8px; line-height: 12px; letter-spacing: .06em; padding: 0 3px; height: 14px;
+    border: 1px solid var(--line); border-radius: var(--r-sm); color: var(--ink); background: var(--panel-in); }
+  .pip.is-x { color: var(--red); border-color: rgba(255,46,99,.5); background: rgba(255,46,99,.10); text-decoration: line-through; }
+  .pip.is-tgt { color: var(--amber); border-color: rgba(255,176,32,.6); background: rgba(255,176,32,.12); }
+
+  /* Viewport overlays */
+  .rings { position: absolute; width: 0; height: 0; pointer-events: none; }
+  .ring { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); border-radius: 50%;
+    border: 1px dashed rgba(34,227,255,.26); }
+  .ring-lbl { position: absolute; left: 50%; transform: translateX(-50%);
+    font-size: 8px; letter-spacing: .18em; color: rgba(34,227,255,.72); white-space: nowrap;
+    background: rgba(5,7,10,.82); padding: 0 4px; border: 1px solid rgba(34,227,255,.22); }
+  .aoe { position: absolute; transform: translate(-50%,-50%); border-radius: 50%;
+    border: 1px solid rgba(255,46,99,.62);
+    background: radial-gradient(circle, rgba(255,46,99,.20), rgba(255,46,99,.05) 70%, transparent);
+    pointer-events: none; }
+  .sol { stroke: var(--cyan); stroke-width: 1; opacity: .85; filter: drop-shadow(0 0 5px rgba(34,227,255,.8)); }
+  .sol-msl { stroke: var(--red); stroke-width: 1; stroke-dasharray: 6 4; opacity: .95; filter: drop-shadow(0 0 5px rgba(255,46,99,.85)); }
+  .sol-dead { stroke: #4A5866; stroke-width: 1; stroke-dasharray: 3 5; opacity: .8; }
+  .pill { position: absolute; transform: translate(-50%,-50%); font-size: 10px; font-weight: 700; letter-spacing: .1em;
+    padding: 1px 6px; border-radius: 9px; background: rgba(5,7,10,.92); color: var(--cyan);
+    border: 1px solid rgba(34,227,255,.55); box-shadow: 0 0 14px -6px var(--cyan); white-space: nowrap; }
+  .pill-msl { color: var(--red); border-color: rgba(255,46,99,.55); box-shadow: 0 0 14px -6px var(--red); }
+  .pill-dead { color: #7E8C99; border-color: #33475A; box-shadow: none; letter-spacing: .16em; }
+  .callout { position: absolute; transform: translate(-50%,-50%); font-size: 9px; font-weight: 700; letter-spacing: .14em;
+    padding: 2px 6px; background: rgba(5,7,10,.92); color: var(--amber);
+    border: 1px solid rgba(255,176,32,.6); box-shadow: var(--glow-amber); white-space: nowrap; }
+  .sil { display: block; stroke: currentColor; stroke-width: 1.4; fill: color-mix(in srgb, currentColor 16%, transparent);
+    filter: drop-shadow(0 0 6px currentColor); }
+  .mk.is-selected .sil { stroke-width: 1.8; filter: drop-shadow(0 0 10px currentColor); }
+  .mk-lbl { text-shadow: 0 0 6px rgba(0,0,0,.9); }
+  .mk-tag { position: absolute; left: 50%; top: -14px; transform: translateX(-50%); font-size: 8px; letter-spacing: .14em;
+    padding: 0 3px; border: 1px solid currentColor; background: rgba(5,7,10,.85); white-space: nowrap; }
+  .haz { color: var(--hazard); } .msl { color: var(--missile); } .spn { color: var(--spent); }
+
+  /* Right panel assignment cards */
+  .acard { border: 1px solid var(--line); border-left: 2px solid var(--line-hot); background: var(--panel-in);
+    border-radius: var(--r); padding: var(--s2) var(--s3); }
+  .acard.is-set { border-left-color: var(--cyan); }
+  .acard.is-msl { border-left-color: var(--red); }
+  .acard.is-off { opacity: .5; border-left-color: var(--line); border-style: dashed; }
+  .acard-hd { display: flex; align-items: center; gap: var(--s2); }
+  .wname { font-size: 12px; font-weight: 700; color: var(--ink-hi); letter-spacing: .06em; }
+  .hitrow { display: flex; align-items: baseline; justify-content: space-between; margin-top: 6px; }
+  .hitnum { font-size: 20px; font-weight: 700; color: var(--ink-hi); line-height: 1; }
+  .comp-btn { font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    padding: 5px 7px; text-align: left; color: var(--ink); background: var(--panel-hi);
+    border: 1px solid var(--line); border-radius: var(--r); cursor: pointer; }
+  .comp-btn:hover { border-color: var(--line-hot); color: var(--ink-hi); }
+  .comp-btn.is-on { color: var(--cyan); border-color: var(--cyan); background: rgba(34,227,255,.14); box-shadow: var(--glow-2); }
+  .comp-btn.is-x { color: var(--ink-ghost); border-style: dashed; text-decoration: line-through; cursor: not-allowed; }
+  .comp-btn[disabled] { opacity: .4; cursor: not-allowed; }
+  .locked { position: relative; opacity: .45; filter: grayscale(1); pointer-events: none; }
+
+  .logstrip { height: 168px; flex: none; border-top: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; }
+  .kbd { font-size: 9px; border: 1px solid var(--line); border-bottom-width: 2px; padding: 0 4px; color: var(--ink-dim); border-radius: var(--r-sm); }
+</style>
+</head>
+<body>
+
+<div class="mobile-gate">
+  <div class="panel ticks" style="padding:32px;max-width:460px">
+    <div class="t-h1" style="color:var(--amber)">DESKTOP REQUIRED</div>
+    <p class="t-prose" style="margin:12px 0 0">STARSHIP SKIRMISH is a desktop tactical console. It needs a viewport of at least <strong class="c-hi">1280&times;720</strong>. Open this on a laptop or desktop browser.</p>
+  </div>
+</div>
+
+<div class="desktop-only">
+<!-- class silhouettes: ship class readable at fleet zoom (FR-13) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="sil-fighter" viewBox="0 0 24 24"><polygon points="12,4 18,20 12,16 6,20"/></symbol>
+  <symbol id="sil-frigate" viewBox="0 0 24 24"><polygon points="12,2 16,11 15,22 9,22 8,11"/><line x1="12" y1="8" x2="12" y2="19"/></symbol>
+  <symbol id="sil-cruiser" viewBox="0 0 24 24"><polygon points="12,2 21,13 17,22 7,22 3,13"/><line x1="6" y1="14" x2="18" y2="14"/></symbol>
+  <symbol id="sil-mega" viewBox="0 0 24 24"><polygon points="12,1 22,7 22,17 12,23 2,17 2,7"/><polygon points="12,6 17,9 17,15 12,18 7,15 7,9"/></symbol>
+</defs></svg>
+
+<div class="shell">
+
+  <!-- ================= TOPBAR ================= -->
+  <header class="topbar" style="gap:var(--s4)">
+    <div class="brand"><span class="brand-mark"></span>SKIRMISH</div>
+    <div class="t-label" style="border-left:1px solid var(--line);padding-left:var(--s4)">MATCH &middot; BUDGET 150 &middot; FREE-FOR-ALL</div>
+    <div class="mono-xs" title="Per-match seed — every roll in this match draws from it">SEED <span class="c-cyan" style="letter-spacing:.14em">SK-7F3A-9C21-D4E8</span></div>
+
+    <div class="grow" style="display:flex;justify-content:center">
+      <div class="beats" role="navigation" aria-label="Turn beat tracker">
+        <span class="t-label" style="margin-right:var(--s2)">TURN 4</span>
+        <a class="beat is-done" href="tactical-move.html">✓ MOVE PLAN</a>
+        <span class="beat-arrow">›</span>
+        <a class="beat is-done" href="tactical-move.html#resolve">✓ MOVE RESOLVE</a>
+        <span class="beat-arrow">›</span>
+        <span class="beat is-active anim-flick" aria-current="step">◆ ATTACK PLAN</span>
+        <span class="beat-arrow">›</span>
+        <a class="beat" href="post-match.html">ATTACK RESOLVE</a>
+      </div>
+    </div>
+
+    <div class="t-label" style="color:var(--ink-ghost)" title="Decision 7 — no clock exists anywhere in the turn loop">NO TIMER</div>
+    <button class="btn btn-sm" id="rmBtn" aria-pressed="false">◐ REDUCED MOTION</button>
+    <button class="btn btn-sm btn-danger" onclick="document.getElementById('concede').hidden=false">CONCEDE</button>
+  </header>
+
+  <div class="work">
+
+    <!-- ================= LEFT — ROSTER (FR-15) ================= -->
+    <aside class="col-l" aria-label="Fleet roster">
+      <div class="panel-hd" style="background:none">
+        <span class="t-h2">ROSTER</span>
+        <span class="grow"></span>
+        <span class="chip">9 ALIVE</span>
+        <span class="chip chip-red">3 LOST</span>
+      </div>
+      <div class="mono-xs" style="padding:6px var(--s3);border-bottom:1px solid var(--line);background:var(--panel-in)">
+        FULL STATE FOR ALL FLEETS &middot; NO FOG OF WAR
+      </div>
+
+      <div class="scrolly" id="roster">
+
+        <!-- ---- YOU ---- -->
+        <div class="grp-hd">
+          <span class="glyph fl-0">▲</span>
+          <span class="t-h2" style="color:var(--fleet-0)">YOU</span>
+          <span class="grow"></span>
+          <span class="mono-xs">3 / 5 ALIVE</span>
+        </div>
+        <div class="mono-xs" style="padding:5px var(--s3);background:var(--panel-in);border-bottom:1px solid var(--line)">
+          ▲ DRAFT <span class="c-hi">142 / 150</span> PTS &middot; 8 PTS WASTED
+        </div>
+
+        <div class="row is-selected" tabindex="0" data-ship="WIDOWMAKER">
+          <div class="row-top">
+            <span class="glyph fl-0">▲</span>
+            <span class="row-name grow truncate">WIDOWMAKER</span>
+            <span class="chip chip-cyan">SHOOTER</span>
+          </div>
+          <div class="mono-xs" style="padding-left:26px">MERIDIAN &middot; CRUISER &middot; ΔV 0 / 62 SPENT</div>
+          <div class="bars"><span class="k">SHLD</span><div class="meter meter-sm"><span class="meter-fill f-shield" style="width:69%"></span></div><span class="v">31 / 45</span></div>
+          <div class="bars"><span class="k">HULL</span><div class="meter meter-sm"><span class="meter-fill f-hull" style="width:69%"></span></div><span class="v">96 / 140</span></div>
+          <div class="pips">
+            <span class="pip">W1</span><span class="pip">W2</span><span class="pip">W3</span>
+            <span class="pip">S1</span><span class="pip">M1</span><span class="pip">M2</span>
+            <span class="pip">ENG</span><span class="pip">X1</span>
+          </div>
+        </div>
+
+        <div class="row" tabindex="0" data-ship="HARRIER-2">
+          <div class="row-top">
+            <span class="glyph fl-0">▲</span>
+            <span class="row-name grow truncate">HARRIER-2</span>
+            <span class="chip chip-amber">⚠ M1 AoE</span>
+          </div>
+          <div class="mono-xs" style="padding-left:26px">HARRIER &middot; FRIGATE &middot; FIRE PLAN 2 / 2 SET</div>
+          <div class="bars"><span class="k">SHLD</span><div class="meter meter-sm"><span class="meter-fill f-shield" style="width:70%"></span></div><span class="v">14 / 20</span></div>
+          <div class="bars"><span class="k">HULL</span><div class="meter meter-sm"><span class="meter-fill f-hull" style="width:69%"></span></div><span class="v">48 / 70</span></div>
+          <div class="pips">
+            <span class="pip">W1</span><span class="pip">S1</span><span class="pip">M1</span>
+            <span class="pip">ENG</span><span class="pip is-x">X1</span>
+          </div>
+        </div>
+
+        <div class="row" tabindex="0" data-ship="TIN CAN 3">
+          <div class="row-top">
+            <span class="glyph fl-0">▲</span>
+            <span class="row-name grow truncate">TIN CAN 3</span>
+            <span class="chip chip-amber">⚠ IN AoE</span>
+          </div>
+          <div class="mono-xs" style="padding-left:26px">NEEDLE &middot; FIGHTER</div>
+          <div class="bars"><span class="k">SHLD</span><div class="meter meter-sm"><span class="meter-fill f-hot" style="width:0%"></span></div><span class="v">0 / 20</span></div>
+          <div class="bars"><span class="k">HULL</span><div class="meter meter-sm"><span class="meter-fill f-hot" style="width:53%"></span></div><span class="v">18 / 34</span></div>
+          <div class="pips">
+            <span class="pip">W1</span><span class="pip is-x">S1</span><span class="pip">ENG</span>
+          </div>
+        </div>
+
+        <div class="row is-dead" tabindex="0">
+          <div class="row-top">
+            <span class="glyph fl-0">▲</span>
+            <span class="row-name grow truncate">TIN CAN 1</span>
+            <span class="chip chip-red">DESTROYED</span>
+          </div>
+          <div class="mono-xs" style="padding-left:26px">NEEDLE &middot; FIGHTER &middot; T2 &middot; DEBRIS ✳ D-04</div>
+        </div>
+
+        <div class="row is-dead" tabindex="0">
+          <div class="row-top">
+            <span class="glyph fl-0">▲</span>
+            <span class="row-name grow truncate">PICKET FENCE</span>
+            <span class="chip chip-red">DESTROYED</span>
+          </div>
+          <div class="mono-xs" style="padding-left:26px">PICKET &middot; FRIGATE &middot; T3 &middot; IRON VERDICT · FUSION LANCE</div>
+        </div>
+
+        <!-- ---- BOT-01 ---- -->
+        <div class="grp-hd">
+          <span class="glyph fl-1">●</span>
+          <span class="t-h2" style="color:var(--fleet-1)">BOT-01</span>
+          <span class="mono-xs">VETERAN</span>
+          <span class="grow"></span>
+          <span class="mono-xs">3 / 4 ALIVE</span>
+        </div>
+        <div class="mono-xs" style="padding:5px var(--s3);background:var(--panel-in);border-bottom:1px solid var(--line)">
+          ● DRAFT <span class="c-hi">126 / 150</span> PTS &middot; 24 PTS WASTED
+        </div>
+
+        <div class="row" tabindex="0" data-ship="IRON VERDICT">
+          <div class="row-top">
+            <span class="glyph fl-1">●</span>
+            <span class="row-name grow truncate">IRON VERDICT</span>
+            <span class="chip chip-cyan">SHLD UP</span>
+          </div>
+          <div class="mono-xs" style="padding-left:26px">OBELISK &middot; MEGA DESTROYER</div>
+          <div class="bars"><span class="k">SHLD</span><div class="meter meter-sm"><span class="meter-fill f-shield" style="width:63%"></span></div><span class="v">88 / 140</span></div>
+          <div class="bars"><span class="k">HULL</span><div class="meter meter-sm"><span class="meter-fill f-hull" style="width:73%"></span></div><span class="v">305 / 420</span></div>
+          <div class="pips">
+            <span class="pip">W1</span><span class="pip">W2</span><span class="pip">W3</span>
+            <span class="pip">S1</span><span class="pip">M1</span><span class="pip">M2</span>
+            <span class="pip">ENG</span><span class="pip">X1</span><span class="pip is-x">X2</span>
+          </div>
+        </div>
+
+        <div class="row" tabindex="0" data-ship="SPUR">
+          <div class="row-top">
+            <span class="glyph fl-1">●</span>
+            <span class="row-name grow truncate">SPUR</span>
+            <span class="chip chip-amber">CALLED SHOT OPEN</span>
+          </div>
+          <div class="mono-xs" style="padding-left:26px">LANCER &middot; FRIGATE</div>
+          <div class="bars"><span class="k">SHLD</span><div class="meter meter-sm"><span class="meter-fill f-hot" style="width:0%"></span></div><span class="v">0 / 38</span></div>
+          <div class="bars"><span class="k">HULL</span><div class="meter meter-sm"><span class="meter-fill f-hull" style="width:54%"></span></div><span class="v">41 / 76</span></div>
+          <div class="pips">
+            <span class="pip">W1</span><span class="pip is-x">W2</span><span class="pip is-tgt">S1 ◎</span>
+            <span class="pip">M1</span><span class="pip">ENG</span><span class="pip">X1</span>
+          </div>
+        </div>
+
+        <div class="row" tabindex="0" data-ship="WASP-A">
+          <div class="row-top">
+            <span class="glyph fl-1">●</span>
+            <span class="row-name grow truncate">WASP-A</span>
+            <span class="chip chip-red">TARGETED ×2</span>
+          </div>
+          <div class="mono-xs" style="padding-left:26px">WASP &middot; FIGHTER</div>
+          <div class="bars"><span class="k">SHLD</span><div class="meter meter-sm"><span class="meter-fill f-shield" style="width:35%"></span></div><span class="v">7 / 20</span></div>
+          <div class="bars"><span class="k">HULL</span><div class="meter meter-sm"><span class="meter-fill f-hull" style="width:73%"></span></div><span class="v">22 / 30</span></div>
+          <div class="pips">
+            <span class="pip">W1</span><span class="pip">S1</span><span class="pip">ENG</span><span class="pip is-x">X1</span>
+          </div>
+        </div>
+
+        <div class="row is-dead" tabindex="0">
+          <div class="row-top">
+            <span class="glyph fl-1">●</span>
+            <span class="row-name grow truncate">SPUR II</span>
+            <span class="chip chip-red">DESTROYED</span>
+          </div>
+          <div class="mono-xs" style="padding-left:26px">LANCER &middot; FRIGATE &middot; T3 &middot; BOUNDARY EXIT (COLLISION)</div>
+        </div>
+
+        <!-- ---- BOT-02 ---- -->
+        <div class="grp-hd">
+          <span class="glyph fl-2">■</span>
+          <span class="t-h2" style="color:var(--fleet-2)">BOT-02</span>
+          <span class="mono-xs">ROOKIE</span>
+          <span class="grow"></span>
+          <span class="mono-xs">3 / 3 ALIVE</span>
+        </div>
+        <div class="mono-xs" style="padding:5px var(--s3);background:var(--panel-in);border-bottom:1px solid var(--line);line-height:1.7">
+          ■ ROOKIE DRAFTER &middot; <span class="c-amber">80 / 150</span> &middot; 70 PTS WASTED<br>
+          LEFTOVER POINTS ARE WASTED — NEVER CONVERTED.
+        </div>
+
+        <div class="row" tabindex="0" data-ship="DULL EDGE">
+          <div class="row-top">
+            <span class="glyph fl-2">■</span>
+            <span class="row-name grow truncate">DULL EDGE</span>
+            <span class="chip" style="color:#7E8C99">OUT OF RANGE</span>
+          </div>
+          <div class="mono-xs" style="padding-left:26px">BULWARK &middot; CRUISER</div>
+          <div class="bars"><span class="k">SHLD</span><div class="meter meter-sm"><span class="meter-fill f-shield" style="width:82%"></span></div><span class="v">74 / 90</span></div>
+          <div class="bars"><span class="k">HULL</span><div class="meter meter-sm"><span class="meter-fill f-hull" style="width:74%"></span></div><span class="v">118 / 160</span></div>
+          <div class="pips">
+            <span class="pip">W1</span><span class="pip">W2</span><span class="pip">W3</span>
+            <span class="pip">S1</span><span class="pip">M1</span><span class="pip">ENG</span><span class="pip">X1</span>
+          </div>
+        </div>
+
+        <div class="row" tabindex="0" data-ship="MOTE">
+          <div class="row-top">
+            <span class="glyph fl-2">■</span>
+            <span class="row-name grow truncate">MOTE</span>
+            <span class="chip chip-red">TARGETED</span>
+          </div>
+          <div class="mono-xs" style="padding-left:26px">WASP &middot; FIGHTER</div>
+          <div class="bars"><span class="k">SHLD</span><div class="meter meter-sm"><span class="meter-fill f-hot" style="width:0%"></span></div><span class="v">0 / 20</span></div>
+          <div class="bars"><span class="k">HULL</span><div class="meter meter-sm"><span class="meter-fill f-hull" style="width:87%"></span></div><span class="v">26 / 30</span></div>
+          <div class="pips">
+            <span class="pip">W1</span><span class="pip">S1</span><span class="pip">ENG</span>
+          </div>
+        </div>
+
+        <div class="row" tabindex="0" data-ship="MOTE II">
+          <div class="row-top">
+            <span class="glyph fl-2">■</span>
+            <span class="row-name grow truncate">MOTE II</span>
+            <span class="chip chip-red">AoE TARGET</span>
+          </div>
+          <div class="mono-xs" style="padding-left:26px">WASP &middot; FIGHTER</div>
+          <div class="bars"><span class="k">SHLD</span><div class="meter meter-sm"><span class="meter-fill f-shield" style="width:55%"></span></div><span class="v">11 / 20</span></div>
+          <div class="bars"><span class="k">HULL</span><div class="meter meter-sm"><span class="meter-fill f-hull" style="width:100%"></span></div><span class="v">30 / 30</span></div>
+          <div class="pips">
+            <span class="pip">W1</span><span class="pip">S1</span><span class="pip">M1</span><span class="pip">ENG</span>
+          </div>
+        </div>
+
+        <div style="padding:var(--s3)">
+          <div class="mono-xs" style="line-height:1.7">
+            LEGEND &middot; PIPS = COMPONENT SLOTS.<br>
+            <span class="pip">W1</span> INTACT &nbsp; <span class="pip is-x">W2</span> DESTROYED &nbsp; <span class="pip is-tgt">S1 ◎</span> CALLED
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ================= CENTER — VIEWPORT ================= -->
+    <div class="col-c">
+      <div class="viewport grow" id="vp" style="border-left:0;border-right:0;border-top:0">
+        <div class="viewport-grid"></div>
+        <div class="sweeper" style="top:0"></div>
+
+        <!-- Boundary — always visible (FR-16 / Ruling F) -->
+        <div class="boundary" style="left:50%;top:52%;width:88%;height:96%;transform:translate(-50%,-50%)"></div>
+        <div class="boundary-label" style="left:50%;top:5%;transform:translate(-50%,-50%)">KILL BOUNDARY &middot; R 5400</div>
+        <div class="boundary-label" style="left:50%;top:97%;transform:translate(-50%,-50%)">EXIT = IMMEDIATE DESTRUCTION</div>
+        <div class="boundary-label" style="left:6%;top:52%;transform:translate(-50%,-50%)">◌</div>
+        <div class="boundary-label" style="left:94%;top:52%;transform:translate(-50%,-50%)">◌</div>
+
+        <!-- Range rings around the selected shooter (omnidirectional, Ruling G) -->
+        <div class="rings" style="left:40%;top:60%">
+          <div class="ring" style="width:460px;height:460px"></div>
+          <div class="ring-lbl" style="top:-238px">PHASE BEAM 260</div>
+          <div class="ring" style="width:318px;height:318px"></div>
+          <div class="ring-lbl" style="top:-167px">PULSE ARRAY 180</div>
+          <div class="ring" style="width:212px;height:212px;border-color:rgba(34,227,255,.34)"></div>
+          <div class="ring-lbl" style="top:-114px">FLAK BATTERY 120</div>
+        </div>
+
+        <!-- Missile AoE preview — HAMMERHEAD r60, friendly inside -->
+        <div class="aoe" style="left:62%;top:37%;width:132px;height:132px"></div>
+        <div class="callout" style="left:62%;top:calc(37% - 78px)">HAMMERHEAD AoE r60 &middot; HARRIER-2 M1</div>
+
+        <!-- Firing solution lines -->
+        <svg style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none" aria-hidden="true">
+          <line class="sol" x1="40%" y1="60%" x2="55%" y2="55%"/>
+          <line class="sol" x1="40%" y1="60%" x2="52%" y2="33%"/>
+          <line class="sol" x1="40%" y1="60%" x2="48%" y2="74%"/>
+          <line class="sol-msl" x1="40%" y1="60%" x2="66%" y2="62%"/>
+          <line class="sol-dead" x1="40%" y1="60%" x2="82%" y2="30%"/>
+        </svg>
+
+        <div class="pill" style="left:47.5%;top:57.5%">68% &middot; W1</div>
+        <div class="pill" style="left:46%;top:46.5%">41% &middot; W2</div>
+        <div class="pill" style="left:44%;top:67%">77% &middot; W3</div>
+        <div class="pill pill-msl" style="left:53%;top:61%">M1 TALON ↦</div>
+        <div class="pill pill-dead" style="left:63%;top:44%">⊘ OUT OF RANGE &middot; 412 &gt; 260</div>
+
+        <!-- ---- SHIP MARKERS ---- -->
+        <!-- YOU -->
+        <div class="mk fl-0 is-selected" style="left:40%;top:60%">
+          <div class="mk-stalk" style="height:38px"></div>
+          <div class="mk-tag">SELECTED</div>
+          <svg class="sil" width="26" height="26"><use href="#sil-cruiser"/></svg>
+          <div class="mk-lbl">▲ WIDOWMAKER &middot; +38</div>
+        </div>
+        <div class="mk fl-0" style="left:33%;top:47%">
+          <div class="mk-stalk" style="height:52px"></div>
+          <svg class="sil" width="20" height="20"><use href="#sil-frigate"/></svg>
+          <div class="mk-lbl">▲ HARRIER-2</div>
+        </div>
+        <div class="mk fl-0" style="left:58%;top:41%">
+          <div class="mk-stalk" style="height:30px"></div>
+          <svg class="sil" width="16" height="16"><use href="#sil-fighter"/></svg>
+          <div class="mk-lbl" style="color:var(--amber)">▲ TIN CAN 3 ⚠</div>
+        </div>
+        <div class="callout" style="left:58%;top:calc(41% + 26px)">⚠ FRIENDLY IN AoE</div>
+
+        <!-- BOT-01 -->
+        <div class="mk fl-1" style="left:66%;top:62%">
+          <div class="mk-stalk" style="height:44px"></div>
+          <svg class="sil" width="34" height="34"><use href="#sil-mega"/></svg>
+          <div class="mk-lbl">● IRON VERDICT</div>
+        </div>
+        <div class="mk fl-1" style="left:55%;top:55%">
+          <div class="mk-stalk" style="height:18px"></div>
+          <svg class="sil" width="20" height="20"><use href="#sil-frigate"/></svg>
+          <div class="mk-lbl">● SPUR &middot; SHLD 0</div>
+        </div>
+        <div class="mk fl-1" style="left:52%;top:33%">
+          <div class="mk-stalk" style="height:60px"></div>
+          <svg class="sil" width="16" height="16"><use href="#sil-fighter"/></svg>
+          <div class="mk-lbl">● WASP-A</div>
+        </div>
+
+        <!-- BOT-02 -->
+        <div class="mk fl-2" style="left:82%;top:30%">
+          <div class="mk-stalk" style="height:56px"></div>
+          <svg class="sil" width="24" height="24"><use href="#sil-cruiser"/></svg>
+          <div class="mk-lbl">■ DULL EDGE</div>
+        </div>
+        <div class="mk fl-2" style="left:48%;top:74%">
+          <div class="mk-stalk" style="height:14px"></div>
+          <svg class="sil" width="16" height="16"><use href="#sil-fighter"/></svg>
+          <div class="mk-lbl">■ MOTE</div>
+        </div>
+        <div class="mk fl-2" style="left:62%;top:37%">
+          <div class="mk-stalk" style="height:34px"></div>
+          <svg class="sil" width="16" height="16"><use href="#sil-fighter"/></svg>
+          <div class="mk-lbl">■ MOTE II</div>
+        </div>
+
+        <!-- HAZARD BODIES -->
+        <div class="mk haz" style="left:36%;top:33%"><div class="mk-stalk" style="height:26px"></div>
+          <div class="mk-glyph anim-flick">✳</div><div class="mk-lbl">DEBRIS D-04</div></div>
+        <div class="mk haz" style="left:70%;top:50%"><div class="mk-stalk" style="height:20px"></div>
+          <div class="mk-glyph anim-flick">✳</div><div class="mk-lbl">DEBRIS D-07</div></div>
+        <div class="mk haz" style="left:45%;top:84%"><div class="mk-stalk" style="height:10px"></div>
+          <div class="mk-glyph">✳</div><div class="mk-lbl">DEBRIS D-09</div></div>
+
+        <div class="mk msl" style="left:74%;top:72%"><div class="mk-stalk" style="height:28px"></div>
+          <div class="mk-glyph anim-pulse">➤</div><div class="mk-lbl">LONGSPEAR &middot; T2 ↦ WIDOWMAKER</div></div>
+        <div class="mk msl" style="left:30%;top:55%"><div class="mk-stalk" style="height:16px"></div>
+          <div class="mk-glyph anim-pulse">➤</div><div class="mk-lbl">TALON &middot; T1 ↦ HARRIER-2</div></div>
+        <div class="mk spn" style="left:63%;top:80%"><div class="mk-stalk" style="height:12px"></div>
+          <div class="mk-glyph">◇</div><div class="mk-lbl">SWARM POD &middot; SPENT · ARMED</div></div>
+
+        <!-- LEGEND -->
+        <div class="hud" style="left:12px;bottom:12px;padding:10px 12px;min-width:216px">
+          <div class="t-label" style="margin-bottom:6px">BODY CLASSES</div>
+          <div style="display:grid;grid-template-columns:auto 1fr;gap:3px 8px;font-size:10px;letter-spacing:.08em">
+            <span class="fl-0" style="text-align:center">▲</span><span>YOU &mdash; 3 SHIPS</span>
+            <span class="fl-1" style="text-align:center">●</span><span>BOT-01 VETERAN &mdash; 3</span>
+            <span class="fl-2" style="text-align:center">■</span><span>BOT-02 ROOKIE &mdash; 3</span>
+            <span class="haz" style="text-align:center">✳</span><span>DEBRIS &mdash; INERT MASS</span>
+            <span class="msl" style="text-align:center">➤</span><span>MISSILE &mdash; TRACKING T2/T1</span>
+            <span class="spn" style="text-align:center">◇</span><span>MISSILE &mdash; SPENT · ARMED</span>
+            <span class="c-red" style="text-align:center">◌</span><span>KILL BOUNDARY</span>
+            <span class="c-cyan" style="text-align:center">◍</span><span>WEAPON RANGE RING</span>
+            <span class="c-red" style="text-align:center">◉</span><span>MISSILE AoE PREVIEW</span>
+          </div>
+          <div class="hr-dash" style="margin:8px 0"></div>
+          <div class="mono-xs">SILHOUETTE SIZE = HULL CLASS<br>STALK = VERTICAL OFFSET FROM PLANE</div>
+        </div>
+
+        <!-- CAMERA -->
+        <div class="hud" style="right:12px;bottom:12px;padding:10px 12px;width:206px">
+          <div class="t-label" style="margin-bottom:6px">CAMERA</div>
+          <div class="stat"><span class="stat-k">ORBIT</span><span class="stat-v">137° / 24°</span></div>
+          <div class="stat"><span class="stat-k">ZOOM</span><span class="stat-v">FLEET 0.62×</span></div>
+          <div class="stat"><span class="stat-k">FOCUS</span><span class="stat-v c-cyan">WIDOWMAKER</span></div>
+          <div style="display:flex;gap:4px;margin-top:8px">
+            <button class="btn btn-sm grow">⟲ RESET</button>
+            <button class="btn btn-sm" title="Zoom out">−</button>
+            <button class="btn btn-sm" title="Zoom in">+</button>
+          </div>
+          <div class="mono-xs" style="margin-top:6px">DRAG ORBIT &middot; <span class="kbd">SHIFT</span> PAN &middot; <span class="kbd">F</span> FLEET VIEW</div>
+        </div>
+
+        <!-- TOP-LEFT STATUS -->
+        <div class="hud" style="left:12px;top:12px;padding:8px 12px">
+          <div class="t-label">BEAT 3 / 4 &mdash; ATTACK PLAN</div>
+          <div class="mono-xs" style="margin-top:2px">POSITIONS ARE POST-MOVEMENT &middot; TURN 4</div>
+        </div>
+      </div>
+
+      <!-- ================= BOTTOM — COMBAT LOG (FR-21) ================= -->
+      <section class="logstrip" aria-label="Combat log">
+        <div class="panel-hd" style="background:none;border-bottom:1px solid var(--line)">
+          <span class="t-h2">COMBAT LOG</span>
+          <span class="chip">TURN 3 &middot; ATTACK RESOLVE</span>
+          <span class="grow"></span>
+          <span class="mono-xs">EVERY SHOT RECORDED: SHOOTER &middot; TARGET &middot; ROLL &middot; RESULT &middot; DAMAGE</span>
+          <button class="btn btn-sm btn-ghost">↧ EXPORT</button>
+        </div>
+        <div class="log scrolly">
+          <div class="log-line"><span class="log-t">T3.2</span><span>MOVE RESOLVE &middot; <span class="c-cyan">WIDOWMAKER</span> RAMS <span style="color:var(--fleet-1)">SPUR II</span> &middot; 41 DMG TO SPUR II / 17 SELF &middot; VECTOR TRANSFER 96 u/t</span></div>
+          <div class="log-line is-kill"><span class="log-t">T3.2</span><span><span style="color:var(--fleet-1)">SPUR II</span> SHOVED ACROSS BOUNDARY BY <span class="c-cyan">WIDOWMAKER</span> COLLISION &mdash; <strong class="c-red">DESTROYED</strong> &middot; DETONATION OUTSIDE ARENA &middot; NO DEBRIS</span></div>
+          <div class="log-line"><span class="log-t">T3.3</span><span>DEBRIS ✳ D-07 CONTACT <span class="c-cyan">HARRIER-2</span> &middot; 9 DMG (SHIELD 9 / HULL 0)</span></div>
+          <div class="log-line"><span class="log-t">T3.4</span><span><span class="c-cyan">WIDOWMAKER</span> W1 PHASE BEAM → <span style="color:var(--fleet-1)">SPUR</span> &middot; ROLL 0.31 / 0.68 <span class="c-green">HIT ×2</span> &middot; 36 DMG (28 SHIELD / 8 HULL) &mdash; SHIELDS DOWN</span></div>
+          <div class="log-line is-crit"><span class="log-t">T3.4</span><span><span style="color:var(--fleet-1)">IRON VERDICT</span> W1 FUSION LANCE → <span class="c-cyan">PICKET FENCE</span> &middot; ROLL 0.04 / 0.61 <span class="c-amber">CRIT ×1.5</span> &middot; 33 DMG</span></div>
+          <div class="log-line is-kill"><span class="log-t">T3.4</span><span><span class="c-cyan">PICKET FENCE</span> HULL 0 &mdash; <strong class="c-red">DESTROYED</strong> BY <span style="color:var(--fleet-1)">IRON VERDICT · FUSION LANCE</span> &middot; AoE 22 &middot; DEBRIS ✳ D-09 SPAWNED</span></div>
+          <div class="log-line"><span class="log-t">T3.4</span><span><span style="color:var(--fleet-1)">WASP-A</span> W1 SCATTER GUN → <span class="c-cyan">TIN CAN 3</span> &middot; ROLL 0.91 / 0.84 <span class="c-dim">MISS</span></span></div>
+          <div class="log-line"><span class="log-t">T3.4</span><span><span style="color:var(--fleet-2)">MOTE II</span> W1 SCATTER GUN → <span class="c-cyan">WIDOWMAKER</span> &middot; ROLL 0.52 / 0.84 <span class="c-green">HIT</span> &middot; 9 DMG (9 SHIELD / 0 HULL) &mdash; SHIELD POOL HOLDING</span></div>
+          <div class="log-line"><span class="log-t">T3.4</span><span><span class="c-cyan">HARRIER-2</span> M1 HAMMERHEAD → LAUNCH ↦ <span style="color:var(--fleet-2)">MOTE II</span> &middot; AMMO 2 → 1 &middot; TRACKING 2 BEATS</span></div>
+          <div class="log-line"><span class="log-t">T3.4</span><span>DAMAGE APPLIED IN ONE PASS AGAINST PRE-DAMAGE SNAPSHOT &middot; 4 SHOOTERS &middot; ORDER-INDEPENDENT</span></div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ================= RIGHT — FIRE ASSIGNMENT (FR-20) ================= -->
+    <aside class="col-r" aria-label="Fire assignment">
+      <div class="panel-hd" style="background:linear-gradient(180deg, rgba(34,227,255,.06), transparent)">
+        <span class="glyph fl-0">▲</span>
+        <div class="grow" style="min-width:0">
+          <div class="t-h2 truncate">WIDOWMAKER</div>
+          <div class="mono-xs">MERIDIAN &middot; CRUISER &middot; 5 FIRE SLOTS</div>
+        </div>
+        <span class="chip chip-cyan">5 / 5</span>
+      </div>
+      <div class="mono-xs" style="padding:6px var(--s3);border-bottom:1px solid var(--line);background:var(--panel-in)">
+        TARGETING FROM POST-MOVEMENT POSITIONS.
+      </div>
+
+      <div class="scrolly" style="padding:var(--s3)">
+        <div class="stack">
+
+          <!-- W1 -->
+          <div class="acard is-set" data-slot>
+            <div class="acard-hd">
+              <span class="tag-slot tag-weapon">W</span>
+              <span class="wname grow truncate">PHASE BEAM</span>
+              <span class="chip chip-green">ASSIGNED</span>
+            </div>
+            <div class="mono-xs" style="margin:3px 0 6px">SLOT W1 &middot; RANGE 260 &middot; DMG 18 &times;2 SHOTS &middot; ACC .68</div>
+            <select class="field" aria-label="W1 target">
+              <option selected>● SPUR &middot; LANCER &middot; 118u &middot; IN RANGE</option>
+              <option>● IRON VERDICT &middot; OBELISK &middot; 244u &middot; IN RANGE</option>
+              <option>● WASP-A &middot; WASP &middot; 171u &middot; IN RANGE</option>
+              <option>■ MOTE &middot; WASP &middot; 62u &middot; IN RANGE</option>
+              <option>■ MOTE II &middot; WASP &middot; 233u &middot; IN RANGE</option>
+              <option disabled>■ DULL EDGE &middot; 412u &middot; OUT OF RANGE</option>
+              <option disabled>▲ HARRIER-2 &middot; FRIENDLY &middot; 148u</option>
+            </select>
+            <div class="hitrow">
+              <span class="t-label">HIT CHANCE</span>
+              <span class="hitnum c-green">68%</span>
+            </div>
+            <div class="meter" style="margin-top:4px"><span class="meter-fill f-ok" style="width:68%"></span></div>
+            <div class="mono-xs" style="margin-top:5px;line-height:1.7">
+              BASE ACC .68<br>
+              RANGE 118 / 260 &middot; <span class="c-green">+0.08</span><br>
+              TGT VELOCITY 26 u/t &middot; <span class="c-red">−0.05</span><br>
+              TGT EVASION 0.03 &middot; <span class="c-red">−0.03</span>
+            </div>
+            <div style="display:flex;gap:4px;margin-top:8px">
+              <button class="btn btn-sm grow" data-hold>HOLD FIRE</button>
+              <button class="btn btn-sm">◎ CALLED SHOT</button>
+            </div>
+          </div>
+
+          <!-- W2 -->
+          <div class="acard is-set" data-slot>
+            <div class="acard-hd">
+              <span class="tag-slot tag-weapon">W</span>
+              <span class="wname grow truncate">PULSE ARRAY</span>
+              <span class="chip chip-green">ASSIGNED</span>
+            </div>
+            <div class="mono-xs" style="margin:3px 0 6px">SLOT W2 &middot; RANGE 180 &middot; DMG 6 &times;2 SHOTS &middot; ACC .72</div>
+            <select class="field" aria-label="W2 target">
+              <option selected>● WASP-A &middot; WASP &middot; 171u &middot; IN RANGE</option>
+              <option>● SPUR &middot; LANCER &middot; 118u &middot; IN RANGE</option>
+              <option>■ MOTE &middot; WASP &middot; 62u &middot; IN RANGE</option>
+              <option disabled>● IRON VERDICT &middot; 244u &middot; OUT OF RANGE</option>
+              <option disabled>■ DULL EDGE &middot; 412u &middot; OUT OF RANGE</option>
+            </select>
+            <div class="hitrow">
+              <span class="t-label">HIT CHANCE</span>
+              <span class="hitnum c-amber">41%</span>
+            </div>
+            <div class="meter" style="margin-top:4px"><span class="meter-fill f-dv" style="width:41%"></span></div>
+            <div class="mono-xs" style="margin-top:5px;line-height:1.7">
+              BASE ACC .72<br>
+              RANGE 171 / 180 &middot; <span class="c-red">−0.14</span> EDGE OF ENVELOPE<br>
+              TGT VELOCITY 88 u/t &middot; <span class="c-red">−0.11</span><br>
+              TGT EVASION 0.06 &middot; <span class="c-red">−0.06</span>
+            </div>
+            <div style="display:flex;gap:4px;margin-top:8px">
+              <button class="btn btn-sm grow" data-hold>HOLD FIRE</button>
+              <button class="btn btn-sm is-disabled" title="Called shots require target shields at zero">◎ CALLED SHOT</button>
+            </div>
+          </div>
+
+          <!-- W3 -->
+          <div class="acard is-set" data-slot>
+            <div class="acard-hd">
+              <span class="tag-slot tag-weapon">W</span>
+              <span class="wname grow truncate">FLAK BATTERY</span>
+              <span class="chip chip-green">ASSIGNED</span>
+            </div>
+            <div class="mono-xs" style="margin:3px 0 6px">SLOT W3 &middot; RANGE 120 &middot; DMG 4 &times;4 SHOTS &middot; ACC .80</div>
+            <select class="field" aria-label="W3 target">
+              <option selected>■ MOTE &middot; WASP &middot; 62u &middot; IN RANGE</option>
+              <option>● SPUR &middot; LANCER &middot; 118u &middot; IN RANGE</option>
+              <option>➤ LONGSPEAR (LIVE MISSILE) &middot; 96u &middot; INTERCEPT</option>
+              <option disabled>● WASP-A &middot; 171u &middot; OUT OF RANGE</option>
+              <option disabled>■ DULL EDGE &middot; 412u &middot; OUT OF RANGE</option>
+            </select>
+            <div class="hitrow">
+              <span class="t-label">HIT CHANCE</span>
+              <span class="hitnum c-green">77%</span>
+            </div>
+            <div class="meter" style="margin-top:4px"><span class="meter-fill f-ok" style="width:77%"></span></div>
+            <div class="mono-xs" style="margin-top:5px;line-height:1.7">
+              BASE ACC .80<br>
+              RANGE 62 / 120 &middot; <span class="c-green">+0.06</span><br>
+              TGT VELOCITY 74 u/t &middot; <span class="c-red">−0.05</span><br>
+              TGT EVASION 0.04 &middot; <span class="c-red">−0.04</span>
+            </div>
+            <div style="display:flex;gap:4px;margin-top:8px">
+              <button class="btn btn-sm grow" data-hold>HOLD FIRE</button>
+              <button class="btn btn-sm">◎ CALLED SHOT</button>
+            </div>
+          </div>
+
+          <div class="t-label" style="padding-top:var(--s2)">MISSILE RACKS &middot; AMMO DOES NOT REPLENISH</div>
+
+          <!-- M1 -->
+          <div class="acard is-msl" data-slot>
+            <div class="acard-hd">
+              <span class="tag-slot tag-missile">M</span>
+              <span class="wname grow truncate">TALON</span>
+              <span class="chip chip-red">LAUNCH</span>
+            </div>
+            <div class="mono-xs" style="margin:3px 0 6px">SLOT M1 &middot; DMG 18 &middot; AoE 40 &middot; TRACKS 2 BEATS THEN GOES BALLISTIC</div>
+            <select class="field" aria-label="M1 target">
+              <option selected>● IRON VERDICT &middot; OBELISK &middot; 244u</option>
+              <option>● SPUR &middot; LANCER &middot; 118u</option>
+              <option>■ MOTE II &middot; WASP &middot; 233u</option>
+              <option>■ DULL EDGE &middot; BULWARK &middot; 412u</option>
+            </select>
+            <div style="display:flex;align-items:center;gap:var(--s2);margin-top:8px">
+              <span class="t-label">AMMO</span>
+              <div class="grow meter"><span class="meter-fill f-hot" style="width:75%"></span></div>
+              <span class="t-num">3 / 4</span>
+            </div>
+            <div class="mono-xs" style="margin-top:4px">ON COMMIT: <span class="c-amber">3 → 2</span> &middot; LAUNCHES WITH HULL VELOCITY + BOOST 140</div>
+            <div class="hitrow">
+              <span class="t-label">PREDICTED CONTACT</span>
+              <span class="hitnum c-green">74%</span>
+            </div>
+            <div class="meter" style="margin-top:4px"><span class="meter-fill f-ok" style="width:74%"></span></div>
+            <div class="mono-xs" style="margin-top:5px;line-height:1.7">
+              NO TO-HIT ROLL &mdash; DETONATES ON CONTACT WITH ANY BODY.<br>
+              CLOSING RANGE 244 / 2 BEATS &middot; <span class="c-green">+0.14</span><br>
+              TGT VELOCITY 18 u/t &middot; <span class="c-green">+0.06</span><br>
+              TGT EVASION 0.02 &middot; INTERCEPT RISK <span class="c-red">−0.16</span> (1 PD SOURCE)
+            </div>
+            <div style="display:flex;gap:4px;margin-top:8px">
+              <button class="btn btn-sm grow" data-hold>HOLD LAUNCH</button>
+            </div>
+          </div>
+
+          <!-- M2 empty -->
+          <div class="acard is-off" data-slot>
+            <div class="acard-hd">
+              <span class="tag-slot tag-missile">M</span>
+              <span class="wname grow truncate" style="color:var(--ink-ghost)">HAMMERHEAD</span>
+              <span class="chip">NO LAUNCH</span>
+            </div>
+            <div class="mono-xs" style="margin:3px 0 6px">SLOT M2 &middot; DMG 40 &middot; AoE 60</div>
+            <select class="field" aria-label="M2 target" disabled>
+              <option>— MAGAZINE EMPTY —</option>
+            </select>
+            <div style="display:flex;align-items:center;gap:var(--s2);margin-top:8px">
+              <span class="t-label">AMMO</span>
+              <div class="grow meter"><span class="meter-fill f-hot" style="width:0%"></span></div>
+              <span class="t-num c-red">0 / 2</span>
+            </div>
+            <div class="mono-xs" style="margin-top:4px;color:var(--red)">AMMO 0 / 2 — MAGAZINE EMPTY &middot; CANNOT LAUNCH THIS MATCH</div>
+          </div>
+
+          <hr class="hr-dash">
+
+          <!-- CALLED SHOT -->
+          <div class="panel-in" style="padding:var(--s3)">
+            <div style="display:flex;align-items:center;gap:var(--s2)">
+              <span class="t-h2">CALLED SHOT</span>
+              <span class="grow"></span>
+              <span class="chip chip-amber">UNLOCKED</span>
+            </div>
+            <div class="mono-xs" style="margin-top:3px">AVAILABLE ONLY WHILE TARGET SHIELDS ARE AT ZERO.</div>
+
+            <div style="display:flex;align-items:center;gap:var(--s2);margin-top:10px">
+              <span class="glyph fl-1">●</span>
+              <span class="wname grow truncate">SPUR</span>
+              <span class="chip chip-red">SHIELDS 0 / 38 — DOWN</span>
+            </div>
+            <div class="meter" style="margin-top:5px"><span class="meter-fill f-hot" style="width:0%"></span></div>
+            <div class="mono-xs" style="margin-top:3px">W1 PHASE BEAM &middot; 68% &middot; COMPONENT TARGET:</div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:8px" id="compPicker">
+              <button class="comp-btn">W1 &middot; LANCE PIKE</button>
+              <button class="comp-btn is-x" disabled>W2 &middot; DESTROYED</button>
+              <button class="comp-btn is-on" style="grid-column:1/-1">S1 &middot; AEGIS-II SHIELD GENERATOR</button>
+              <button class="comp-btn">M1 &middot; SWARM POD</button>
+              <button class="comp-btn">ENG &middot; DRIVE</button>
+              <button class="comp-btn" style="grid-column:1/-1">X1 &middot; POINT DEFENCE</button>
+            </div>
+
+            <div class="banner banner-info" style="margin-top:8px;align-items:flex-start">
+              <span class="c-cyan" style="font-size:14px;line-height:1">◎</span>
+              <div class="mono-xs" style="line-height:1.7;color:var(--ink)">
+                <strong class="c-hi">Killing the generator removes the pool permanently. It does not restore depleted shields.</strong><br>
+                <span class="c-dim">S1 HP 12 &middot; EXPECTED 36 DMG &middot; DESTROY CHANCE 68%</span>
+              </div>
+            </div>
+
+            <hr class="hr-dash">
+
+            <div class="locked" aria-hidden="true">
+              <div style="display:flex;align-items:center;gap:var(--s2)">
+                <span class="glyph fl-1">●</span>
+                <span class="wname grow truncate">IRON VERDICT</span>
+                <span class="chip">SHIELDS 88 / 140 — HOLDING</span>
+              </div>
+              <div class="meter" style="margin-top:5px"><span class="meter-fill f-shield" style="width:63%"></span></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:8px">
+                <button class="comp-btn">W1 &middot; FUSION LANCE</button>
+                <button class="comp-btn">W2 &middot; MASS RAIL</button>
+                <button class="comp-btn">S1 &middot; BASTION</button>
+                <button class="comp-btn">ENG &middot; DRIVE</button>
+              </div>
+            </div>
+            <div class="mono-xs" style="margin-top:6px;color:var(--amber);letter-spacing:.14em">🔒 SHIELDS UP — CALLED SHOTS LOCKED</div>
+          </div>
+
+          <!-- FRIENDLY FIRE -->
+          <div class="banner banner-danger" style="align-items:flex-start">
+            <span class="c-red" style="font-size:15px;line-height:1">⚠</span>
+            <div style="font-size:11px;line-height:1.65">
+              <strong class="c-hi">HAMMERHEAD AoE (r60) OVERLAPS TIN CAN 3.</strong>
+              <span class="c-dim">Friendly fire is live. This will not be blocked.</span>
+              <div class="mono-xs" style="margin-top:4px">SOURCE HARRIER-2 · M1 &middot; TARGET MOTE II &middot; TIN CAN 3 AT 44u INSIDE RADIUS &middot; 40 DMG AT CENTRE, EST. <span class="c-amber">12</span> AT 44 / 60 FALLOFF &middot; OWN HULL 18 / 34 → 6 / 34</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="panel-ft">
+        <button class="btn btn-commit" id="commitBtn">COMMIT FIRE &middot; 5/5 ASSIGNED</button>
+        <div class="mono-xs" style="margin-top:8px;line-height:1.7">
+          ALL FIRE RESOLVES SIMULTANEOUSLY AGAINST A PRE-DAMAGE SNAPSHOT. A SHIP YOU DESTROY STILL LANDS ITS SHOTS.
+        </div>
+        <div class="mono-xs" style="margin-top:6px;color:var(--ink-ghost);border-top:1px solid var(--line);padding-top:6px">
+          OPPONENT FIRE ASSIGNMENTS ARE NOT OBSERVABLE UNTIL RESOLUTION.
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- ===== ATTACK RESOLUTION (FR-21) =====
+     All fire resolved against a pre-damage snapshot. Destroyed ships
+     still landed their shots. Debris enters the NEXT movement beat. -->
+<div id="resolveModal" hidden>
+  <div class="scrim" data-res-close></div>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="resTitle" style="width:min(720px,calc(100vw - 64px))">
+    <div class="panel-hd">
+      <span class="t-h2" id="resTitle">Attack Resolved &middot; Turn 04</span>
+      <span class="grow"></span>
+      <span class="chip chip-cyan">SNAPSHOT RESOLUTION</span>
+    </div>
+    <div class="panel-bd">
+      <p class="t-prose" style="margin:0 0 12px;color:var(--ink-dim)">
+        All fire resolved simultaneously against the battlefield as it stood
+        <span class="c-hi">before any damage was applied</span>. Two ships destroyed each other this beat.
+      </p>
+      <div class="log" style="border:1px solid var(--line);border-radius:var(--r);margin-bottom:12px">
+        <div class="log-line"><span class="log-t">T04</span><span>WIDOWMAKER <span class="c-dim">W1 FUSION LANCE →</span> IRON VERDICT · roll 71 vs 68 · <span class="c-green">HIT</span> · 44 dmg → shields 0/120</span></div>
+        <div class="log-line is-crit"><span class="log-t">T04</span><span>WIDOWMAKER <span class="c-dim">W2 CALLED SHOT →</span> IRON VERDICT <span class="c-amber">SHIELD GENERATOR</span> · <span class="c-green">HIT</span> · component destroyed — pool removed permanently</span></div>
+        <div class="log-line is-kill"><span class="log-t">T04</span><span>HARRIER-2 <span class="c-dim">M1 SWARMPOD →</span> MOTE II · <span class="c-red">DESTROYED</span> · AoE 40 dmg also struck <span class="c-amber">TIN CAN 3</span> (friendly fire is live)</span></div>
+        <div class="log-line is-kill"><span class="log-t">T04</span><span>IRON VERDICT <span class="c-dim">W3 →</span> HARRIER-2 · <span class="c-red">DESTROYED</span> · <span class="c-dim">shot landed from a ship destroyed in the same beat</span></span></div>
+      </div>
+      <div class="banner banner-info">
+        <span class="c-cyan">✳</span>
+        <span style="font-size:11px;line-height:1.55">
+          <strong class="c-hi">2 destructions → 9 new debris bodies + 2 AoE detonations.</strong>
+          They enter the battlespace for the <span class="c-hi">next movement beat</span>, not this one.
+          The arena just got more dangerous.
+        </span>
+      </div>
+    </div>
+    <div class="panel-ft" style="display:flex;gap:8px;align-items:center">
+      <span class="mono-xs">3 FLEETS STILL STANDING &middot; NO TURN CAP &middot; NO DRAW STATE</span>
+      <span class="grow"></span>
+      <a class="btn" href="post-match.html" data-proto-next>View Match Summary</a>
+      <a class="btn btn-primary" id="nextTurnBtn" href="tactical-move.html">Next Turn &middot; Movement Plan &rarr;</a>
+    </div>
+  </div>
+</div>
+
+<!-- CONCEDE CONFIRM (FR-28) -->
+<div id="concede" hidden>
+  <div class="scrim" onclick="document.getElementById('concede').hidden=true"></div>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="concedeTitle">
+    <div class="panel-hd"><span class="t-h2 c-red" id="concedeTitle">CONCEDE MATCH</span></div>
+    <div class="panel-bd">
+      <p class="t-prose" style="margin:0">Conceding ends the match immediately as a <strong class="c-red">loss</strong>. Your fleet is not destroyed — you are withdrawing. There is no draw state in Starship Skirmish.</p>
+      <div class="mono-xs" style="margin-top:10px">TURN 4 &middot; 3 SHIPS ALIVE &middot; SEED SK-7F3A-9C21-D4E8 &middot; THE MATCH LOG IS STILL WRITTEN.</div>
+    </div>
+    <div class="panel-ft" style="display:flex;gap:var(--s2);justify-content:flex-end">
+      <button class="btn" onclick="document.getElementById('concede').hidden=true">CANCEL</button>
+      <a class="btn btn-danger" href="post-match.html">CONCEDE — END MATCH AS LOSS</a>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+  // Reduced motion toggle (NFR-Accessibility) — kills motion, keeps all information.
+  var rmBtn = document.getElementById('rmBtn');
+  rmBtn.addEventListener('click', function () {
+    var on = document.body.classList.toggle('rm');
+    rmBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    rmBtn.textContent = on ? '◑ MOTION OFF' : '◐ REDUCED MOTION';
+  });
+
+  // Roster selection
+  document.querySelectorAll('#roster .row').forEach(function (r) {
+    r.addEventListener('click', function () {
+      document.querySelectorAll('#roster .row').forEach(function (x) { x.classList.remove('is-selected'); });
+      r.classList.add('is-selected');
+    });
+    r.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); r.click(); } });
+  });
+
+  // Component picker for the called shot
+  document.querySelectorAll('#compPicker .comp-btn').forEach(function (b) {
+    b.addEventListener('click', function () {
+      if (b.classList.contains('is-x')) return;
+      document.querySelectorAll('#compPicker .comp-btn').forEach(function (x) { x.classList.remove('is-on'); });
+      b.classList.add('is-on');
+    });
+  });
+
+  // HOLD FIRE toggles — recount assignments on the commit button
+  var commit = document.getElementById('commitBtn');
+  function recount() {
+    // 5 fire slots. The empty HAMMERHEAD rack is already resolved (no launch possible).
+    var held = document.querySelectorAll('[data-hold].is-held').length;
+    commit.textContent = 'COMMIT FIRE · ' + (5 - held) + '/5 ASSIGNED';
+  }
+  document.querySelectorAll('[data-hold]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var card = b.closest('.acard');
+      var held = card.classList.toggle('is-off');
+      b.classList.toggle('is-held', held);
+      b.textContent = held ? 'RESUME FIRE' : (card.classList.contains('is-msl') ? 'HOLD LAUNCH' : 'HOLD FIRE');
+      var chip = card.querySelector('.chip');
+      if (chip) { chip.textContent = held ? 'HELD' : (card.classList.contains('is-msl') ? 'LAUNCH' : 'ASSIGNED'); }
+      recount();
+    });
+  });
+
+  // Commit fire → attack resolution (FR-21), which then offers the two
+  // real exits: the next movement beat, or the match summary.
+  var resModal = document.getElementById('resolveModal');
+  commit.addEventListener('click', function () { resModal.hidden = false; });
+  resModal.querySelectorAll('[data-res-close]').forEach(function (el) {
+    el.addEventListener('click', function () { resModal.hidden = true; });
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !resModal.hidden) resModal.hidden = true;
+  });
+
+  // Loop back to the movement beat carrying any prototype-flow context.
+  (function () {
+    var q = new URLSearchParams(location.search);
+    var f = q.get('flow');
+    if (f) document.getElementById('nextTurnBtn').href = 'tactical-move.html?flow=' + f + '&step=2';
+  })();
+</script>
+
+<!-- Prototype flow runner (mock-only; not for src/) -->
+<script src="prototype.js"></script>
+</body>
+</html>
