@@ -3,14 +3,13 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
-    "types": ["vite/client"],
+    "lib": ["ES2022"],
+    "types": ["node"],
 
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
-    "noPropertyAccessFromIndexSignature": true,
     "forceConsistentCasingInFileNames": true,
 
     "isolatedModules": true,
@@ -20,11 +19,8 @@
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,
 
-    "jsx": "react-jsx",
-    "jsxImportSource": "preact",
-
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "src/vite-env.d.ts"],
-  "exclude": ["prototypes/**", "dist/**", "node_modules/**"]
+  "include": ["vite.config.ts", "tools/**/*.ts", "tests/**/*.ts"],
+  "exclude": ["node_modules/**", "dist/**"]
 }
