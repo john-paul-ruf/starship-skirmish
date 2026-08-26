@@ -1,9 +1,18 @@
 // Sim-wide shared types (architecture §4).
 //
 // Intentionally minimal: this file holds only what physics needs AND what downstream
-// sim modules (`sim/rules`, `sim/loop`) will inevitably need to agree on. Full
-// MatchState / AttackPlan / ResolutionTrace shapes land with the modules that own
-// them — putting them here now would prejudge those designs.
+// sim modules (`sim/rules`, `sim/loop`, `sim/trace`) inevitably need to agree on.
+// `MatchState` and `ResolutionTrace` proper land with the modules that own them
+// (`sim/loop`, `sim/trace`) — putting those shapes here would prejudge those designs.
+//
+// The *combat vocabulary* — `AttackPlan`, `CalledShotTarget`, `CombatLogEntry`,
+// `DestructionEvent`, `HitChanceBreakdown`, `CombatConfig` — lives HERE for the same
+// reason `MovementPlan` and `Body` do: `sim/rules` (M09) produces the atomic events,
+// `sim/trace` (M11) records them, `sim/loop` (M10) composes them, and future
+// `render`/`ai` read them. The registry has rules and trace as siblings (no cross-
+// edge), so the shared leaf is the one place they can meet without a cycle. This
+// intentionally supersedes the earlier tentative note that "AttackPlan lands with the
+// module that owns it" — sibling modules mean no owner exists but this file.
 
 import type { Vec3 } from './mathx/index.js';
 
@@ -173,4 +182,138 @@ export interface SimShip {
 export interface SimFleet {
   readonly fleetId: number;
   readonly ships: readonly SimShip[];
+}
+
+// ---- Attack planning (symmetric with MovementPlan) --------------------------
+// AttackPlan lives HERE (not sim/rules) for the same reason MovementPlan does:
+// rules consume it, the loop's Commander interface returns it, and future ai/ui
+// produce/read it — the shared leaf avoids a rules↔loop↔ai cycle.
+
+/**
+ * Which subsystem a called shot targets. Legal only while target shields == 0
+ * (FR-25). Weapons/missiles/specials are addressed by their index into the
+ * matching `SimShip` array; shield-generator and engine are aggregate
+ * subsystems (see S02 design note in STATE.md).
+ */
+export type CalledShotTarget =
+  | { readonly kind: 'weapon'; readonly index: number }
+  | { readonly kind: 'missile'; readonly index: number }
+  | { readonly kind: 'special'; readonly index: number }
+  | { readonly kind: 'shield-generator' }
+  | { readonly kind: 'engine' };
+
+/**
+ * One fire assignment emitted by a Commander for the attack beat (FR-20).
+ * A weapon assignment sets `weaponIndex`; a missile launch sets `missileIndex`.
+ * `calledShot` is honoured only when the target's shields are already at zero.
+ */
+export interface AttackPlan {
+  readonly shooterId: BodyId;
+  readonly targetId: BodyId;
+  readonly weaponIndex?: number;
+  readonly missileIndex?: number;
+  readonly calledShot?: CalledShotTarget;
+}
+
+// ---- Combat-log + destruction events (recorded by trace, produced by rules) --
+
+export type CombatLogResult =
+  | 'hit'
+  | 'miss'
+  | 'crit'
+  | 'kill'
+  | 'intercept'
+  | 'boundary-exit';
+
+export type DamageSourceKind =
+  | 'weapon'
+  | 'missile'
+  | 'collision'
+  | 'aoe'
+  | 'boundary';
+
+/**
+ * One resolution event (FR-21 "every shot: shooter, target, roll, result,
+ * damage"). `turn`/`beat` locate it; `roll`/`chance` record the seeded decision;
+ * the `shield*`/`hull*` pairs are the target's pool BEFORE→AFTER so the UI /
+ * post-match can render deltas.
+ */
+export interface CombatLogEntry {
+  readonly turn: number;
+  readonly beat: 'movement' | 'attack';
+  readonly source: DamageSourceKind;
+  readonly sourceId: BodyId;
+  readonly targetId: BodyId;
+  readonly result: CombatLogResult;
+  /** 0..1 — the published hit chance for this shot (0 for non-rolled sources). */
+  readonly chance: number;
+  /** 0..1 — the seeded draw (0 for non-rolled sources). */
+  readonly roll: number;
+  /** Damage applied to the target this event. */
+  readonly damage: number;
+  readonly shieldBefore: number;
+  readonly shieldAfter: number;
+  readonly hullBefore: number;
+  readonly hullAfter: number;
+  readonly calledShot?: CalledShotTarget;
+}
+
+/**
+ * A ship destruction, emitted after damage application (attack beat) or on an
+ * in-arena boundary/collision death (movement beat). Drives AoE + debris
+ * (FR-23/FR-26).
+ */
+export interface DestructionEvent {
+  readonly bodyId: BodyId;
+  readonly chassisClass: ChassisClass;
+  readonly position: Vec3;
+  readonly velocity: Vec3;
+  readonly cause: DamageSourceKind;
+  /** True when the death position is inside the arena — only then does it detonate (FR-26). */
+  readonly detonates: boolean;
+}
+
+// ---- Hit-chance published breakdown (Ruling H, architecture §13.3) -----------
+// The FORMULA lives in sim/rules; the UI must read THIS breakdown, never recompute.
+
+export interface HitChanceBreakdown {
+  /** `weapon.accuracy`. */
+  readonly base: number;
+  /** 0..1 falloff from range vs `weapon.range`. */
+  readonly rangeFactor: number;
+  /** 0..1 penalty from target speed. */
+  readonly velocityFactor: number;
+  /** 0..1 penalty from target evasion (+ any active decoy bonus). */
+  readonly evasionFactor: number;
+  /** Clamped product actually rolled against. */
+  readonly final: number;
+}
+
+// ---- Resolved combat tuning the sim consumes (domain produces it) -----------
+// Mirrors PhysicsConfig: the sim never imports the catalog, so domain reads
+// `tuning.json` and hands this plain struct to createMatch (F4 S04). Every
+// value here already exists in tuning.json — no catalog / tuning change is in
+// scope for the seam session (S01).
+
+export interface CombatConfig {
+  readonly hazards: {
+    readonly maxSimultaneousBodies: number;
+    readonly debrisLifetimeTurns: number;
+    readonly debrisPerDestruction: Readonly<Record<ChassisClass, number>>;
+    readonly debrisScatterImpulse: number;
+    readonly debrisMassFractionOfHull: number;
+    readonly debrisRadius: number;
+  };
+  readonly destruction: {
+    readonly aoeRadiusByClass: Readonly<Record<ChassisClass, number>>;
+    readonly aoeDamageByClass: Readonly<Record<ChassisClass, number>>;
+  };
+  readonly missiles: {
+    readonly trackingBeats: number;
+    readonly spentRemainsArmed: boolean;
+    readonly reacquireOnTargetLoss: boolean;
+  };
+  readonly shields: {
+    readonly regenTicksRegardlessOfDamage: boolean;
+  };
 }
