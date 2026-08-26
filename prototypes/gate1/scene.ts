@@ -60,6 +60,11 @@ export const TOKEN = {
 
 export type FleetIdx = 0 | 1;
 
+export interface TimeMark {
+  readonly position: Vector3;
+  readonly second: number;
+}
+
 export interface ShipVisual {
   readonly fleet: FleetIdx;
   readonly group: Group;
@@ -72,6 +77,8 @@ export interface ShipVisual {
   setGhost(positions: readonly Vector3[], hostile: boolean): void;
   /** Show/hide the ✕ EXIT crash marker at the ghost's endpoint. */
   setExit(visible: boolean, at: Vector3 | null): void;
+  /** Numbered time-graduation marks along the ghost (planning only). Empty array clears them. */
+  setTimeMarks(marks: readonly TimeMark[]): void;
   dispose(): void;
 }
 
@@ -278,6 +285,38 @@ export const buildScene = (arenaRadius: number): Scenery => {
 
   const exitTex = buildExitTexture();
 
+  // Scenery-scoped digit-texture cache — mirrors the `exitTex` seam (built once
+  // here, disposed in `dispose()`). Digits repeat across ships and turns, so each
+  // is built once and shared. No minted hex literal — amber derives from TOKEN.amber.
+  const markTex = new Map<number, CanvasTexture>();
+  const getMarkTexture = (second: number): CanvasTexture => {
+    const cached = markTex.get(second);
+    if (cached !== undefined) return cached;
+    const size = 64;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    const amber = `#${TOKEN.amber.getHexString()}`; // single source of truth — no new literal
+    // faint filled dot so the mark reads as "point + number"
+    ctx.globalAlpha = 0.28;
+    ctx.fillStyle = amber;
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, size * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+    // the second, centered
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = amber;
+    ctx.font = `bold ${Math.floor(size * 0.5)}px 'JetBrains Mono', ui-monospace, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(second), size / 2, size / 2 + size * 0.02);
+    const tex = new CanvasTexture(canvas);
+    tex.needsUpdate = true;
+    markTex.set(second, tex);
+    return tex;
+  };
+
   const addShip = (fleet: FleetIdx, position: Vector3, hullRadius: number): ShipVisual => {
     const color = fleet === 0 ? TOKEN.cyan : TOKEN.magenta;
     // Ghost path uses a lightened sibling for magenta so it separates cleanly
@@ -323,6 +362,13 @@ export const buildScene = (arenaRadius: number): Scenery => {
     exitSprite.visible = false;
     scene.add(exitSprite);
 
+    // Per-ship pool of numbered time-marks, drawn in WORLD space (a Group added to
+    // `scene`, not parented to `group`) so mark coordinates stay authoritative and
+    // never inherit the ship's playback transform — the same rule the ghost follows.
+    const markGroup = new Group();
+    scene.add(markGroup);
+    const markSprites: Sprite[] = [];
+
     const restretchStalk = () => {
       // Stretch the local unit stalk from the ship's y to the grid plane.
       const yToFloor = -arenaRadius - group.position.y;
@@ -365,6 +411,31 @@ export const buildScene = (arenaRadius: number): Scenery => {
         exitSprite.visible = visible;
         if (visible && at !== null) exitSprite.position.copy(at);
       },
+      setTimeMarks(marks) {
+        // Grow the pool to fit; sprites are reused across calls (this fires on
+        // every slider `input`) — never allocate per call, and never rebuild a
+        // texture here: `getMarkTexture` caches them.
+        while (markSprites.length < marks.length) {
+          const spr = new Sprite(new SpriteMaterial({ transparent: true, depthTest: false }));
+          spr.scale.setScalar(hullRadius * 1.2); // smaller than the ✕ EXIT sprite (2.2)
+          spr.visible = false;
+          markGroup.add(spr);
+          markSprites.push(spr);
+        }
+        for (let i = 0; i < markSprites.length; i += 1) {
+          const spr = markSprites[i]!;
+          const m = marks[i];
+          if (m === undefined) {
+            spr.visible = false;
+            continue;
+          }
+          const mat = spr.material as SpriteMaterial;
+          mat.map = getMarkTexture(m.second);
+          mat.needsUpdate = true;
+          spr.position.copy(m.position);
+          spr.visible = true;
+        }
+      },
       dispose() {
         scene.remove(group);
         scene.remove(ghost);
@@ -376,6 +447,10 @@ export const buildScene = (arenaRadius: number): Scenery => {
         ghost.geometry.dispose();
         (ghost.material as LineBasicMaterial).dispose();
         (exitSprite.material as SpriteMaterial).dispose();
+        scene.remove(markGroup);
+        // Dispose each sprite's MATERIAL only — the `map` is the shared scenery-level
+        // cache (`markTex`), disposed once in the scenery `dispose()` below.
+        for (const spr of markSprites) (spr.material as SpriteMaterial).dispose();
       },
     };
     return visual;
@@ -422,6 +497,7 @@ export const buildScene = (arenaRadius: number): Scenery => {
     axes.geometry.dispose();
     axisMat.dispose();
     exitTex.dispose();
+    for (const tex of markTex.values()) tex.dispose();
     clearStressHazards();
   };
 
