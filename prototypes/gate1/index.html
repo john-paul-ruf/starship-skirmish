@@ -206,6 +206,60 @@
         background: var(--line);
         margin: 8px 0;
       }
+      /* --- Checkpoint 3 turn-commit button --- */
+      #hud-plan button.commit {
+        flex: 2;
+        height: 34px;
+        border: 1px solid var(--cyan);
+        background: var(--cyan);
+        color: #04141a;
+        font: inherit;
+        font-size: 11px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      #hud-plan button.commit.is-hostile {
+        background: var(--red);
+        border-color: var(--red);
+        color: #1a0007;
+      }
+      #hud-plan button.commit:disabled {
+        background: var(--panel-in);
+        border-color: var(--line);
+        color: var(--ink-ghost);
+        cursor: not-allowed;
+      }
+      /* Marker-density stress toggle + preset picker (§7.4 probe controls) */
+      #topbar button.tb {
+        height: 26px;
+        padding: 0 10px;
+        border: 1px solid var(--line);
+        background: var(--panel-in);
+        color: var(--ink);
+        font: inherit;
+        font-size: 10px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+      #topbar button.tb.is-active {
+        color: var(--amber);
+        border-color: var(--amber);
+      }
+      #topbar .tb-group { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+      #topbar select.tb {
+        background: var(--panel-in);
+        color: var(--ink);
+        border: 1px solid var(--line);
+        height: 26px;
+        padding: 0 8px;
+        font: inherit;
+        font-size: 10px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
     </style>
   </head>
   <body>
@@ -219,7 +273,19 @@
           &nbsp;·&nbsp;
           <span class="red">RED = BOUNDARY</span>
         </span>
-        <span id="turn-label">TURN 01 · SCENE ONLINE</span>
+        <span id="turn-label">TURN 01 · PLAN</span>
+        <span class="tb-group">
+          <label for="preset-select" style="color:var(--ink-dim);font-size:10px;letter-spacing:.14em">SCENARIO</label>
+          <select id="preset-select" class="tb" aria-label="Preload a scripted scenario">
+            <option value="stationary">Stationary — free plot</option>
+            <option value="headOn">Head-on collision (Δv 100 each)</option>
+            <option value="graze">Graze pass (offset)</option>
+            <option value="debrisRun">Chase — set up next-turn debris hit</option>
+          </select>
+          <button id="stress-toggle" class="tb" type="button" aria-pressed="false" title="§7.4 marker-density probe">
+            + 60 hazards
+          </button>
+        </span>
       </header>
       <div id="stage">
         <div id="canvas-mount"></div>
@@ -261,7 +327,11 @@
           <div class="divider"></div>
           <div class="btnrow">
             <button class="ghost" id="btn-coast" type="button" title="Zero the thrust for the selected ship">↔ Coast</button>
+            <button class="commit" id="btn-commit" type="button">Commit — Resolve Beat</button>
           </div>
+          <p class="status" id="commit-hint">
+            Both plans commit simultaneously — blind. Contact spawns debris that persists into the next turn.
+          </p>
         </div>
         <div id="hud-help" class="hud">
           <span class="h">Controls</span>

@@ -13,7 +13,7 @@
 //   * Free orbit/pan/zoom camera; `R` resets to fleet view; `F` focuses selected ship.
 //   * Animation loop draws at rAF cadence.
 //
-// CHECKPOINT 2 STATE (this iteration):
+// CHECKPOINT 2 STATE:
 //   * Numeric arc-plotting form (bearing / pitch / magnitude) — the accessible
 //     baseline (design §7.2, NFR-Accessibility). Bearing/pitch are unbounded
 //     text-numeric inputs; magnitude is a slider clamped by the Δv budget.
@@ -26,18 +26,36 @@
 //     input layer AND at plan construction — over-spend is structurally
 //     impossible from this HUD.
 //
-// Turn resolution and debris persistence land in Checkpoint 3.
+// CHECKPOINT 3 STATE (this iteration):
+//   * Full turn loop: plans commit → `resolveMovement()` → animate the returned
+//     keyframes. Architecture §2 / §6.2 discipline: SIMULATE FULLY, THEN ANIMATE
+//     THE TRACE. The renderer here plays back the pre-computed keyframes; it
+//     does not run physics per frame.
+//   * Debris persistence: every `StepContact` spawns two symmetric shards at
+//     the contact point moving along the contact normal. Debris `Body`s live in
+//     the world state and enter the next turn's `bodies` array — a shard flying
+//     into a ship next turn will register as a StepContact next turn.
+//   * Scripted scenarios (head-on, graze, chase) prime the fun-verdict probe
+//     without hunting for happy-accident slider values (design §7 answers).
+//   * §7.4 marker-density stress toggle spawns 60 inert hazard sprites so the
+//     legibility of the field at ceiling-ish body counts can be inspected.
 
 import { Vector3, WebGLRenderer } from 'three';
 
 import { of as vec3Of, type Vec3 } from '../../src/sim/mathx/index.js';
 import { dirFromBearingPitch } from '../../src/sim/mathx/index.js';
 import type { PhysicsConfig } from '../../src/sim/physics/index.js';
-import { previewPath } from '../../src/sim/physics/index.js';
-import type { BodyId, MovementPlan, ShipBody } from '../../src/sim/types.js';
+import { previewPath, resolveMovement } from '../../src/sim/physics/index.js';
+import type {
+  Body,
+  BodyId,
+  DebrisBody,
+  MovementPlan,
+  ShipBody,
+} from '../../src/sim/types.js';
 
 import { mountCamera, type CameraHandle } from './camera.js';
-import { buildScene, type FleetIdx, type ShipVisual } from './scene.js';
+import { buildScene, type DebrisVisual, type FleetIdx, type ShipVisual } from './scene.js';
 
 // -------- config --------
 
@@ -111,6 +129,12 @@ interface WorldShip {
   draft: PlanDraft;
 }
 
+interface WorldDebris {
+  readonly id: BodyId;
+  body: DebrisBody;
+  visual: DebrisVisual;
+}
+
 // -------- boot --------
 
 const mount = document.getElementById('canvas-mount');
@@ -150,6 +174,15 @@ const ships: [WorldShip, WorldShip] = [
   makeShip(1, INITIAL_POSITIONS[1]),
 ];
 
+/** Persistent debris — cleared only when it exits the arena. Body ids start at
+ *  100 so they never collide with ship ids (2 today, an order of magnitude of
+ *  headroom for prototype scenarios). Real sim owns a monotonic id source. */
+const debris: WorldDebris[] = [];
+let nextDebrisId = 100;
+
+let turnIdx = 1;
+let animating = false;
+
 // -------- top-bar HUD wiring --------
 
 const $ = <T extends HTMLElement>(id: string): T => {
@@ -178,7 +211,11 @@ const dvBudget = $<HTMLInputElement>('dv-budget');
 const dvRemaining = $<HTMLElement>('dv-remaining');
 const planStatus = $<HTMLElement>('plan-status');
 const btnCoast = $<HTMLButtonElement>('btn-coast');
+const btnCommit = $<HTMLButtonElement>('btn-commit');
+const commitHint = $<HTMLElement>('commit-hint');
 const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>('#hud-plan .tabs button'));
+const stressBtn = $<HTMLButtonElement>('stress-toggle');
+const presetSelect = $<HTMLSelectElement>('preset-select');
 
 // Cap the magnitude slider at the enforced budget so the DOM cannot present an
 // input that violates the cap. Match the number-input caps for the same reason.
@@ -230,6 +267,26 @@ const renderStatusText = () => {
     planStatus.textContent =
       `Planned — Δv ${s.draft.magnitude} / brg ${s.draft.bearing}° / pitch ${s.draft.pitch}°.`;
   }
+  renderCommitState();
+};
+
+const renderCommitState = () => {
+  if (animating) {
+    btnCommit.disabled = true;
+    btnCommit.textContent = 'Resolving…';
+    btnCommit.classList.remove('is-hostile');
+    return;
+  }
+  const anyHostile = ships.some((sh) => {
+    const p = draftToPlan(sh.id, sh.draft);
+    return previewPath(sh.body, p, PHYSICS).endsOutsideArena;
+  });
+  btnCommit.disabled = false;
+  btnCommit.classList.toggle('is-hostile', anyHostile);
+  btnCommit.textContent = anyHostile ? '✕ Commit — Boundary Exit' : 'Commit — Resolve Beat';
+  commitHint.textContent = anyHostile
+    ? 'At least one arc exits the arena — legal but lethal. Blind: both plans resolve together.'
+    : 'Both plans commit simultaneously — blind. Contact spawns debris that persists into the next turn.';
 };
 
 const loadDraftIntoForm = () => {
@@ -297,6 +354,260 @@ btnCoast.addEventListener('click', () => {
   s.draft.magnitude = 0;
   loadDraftIntoForm();
   refreshGhost(s);
+});
+
+// -------- turn resolution & playback (Checkpoint 3) --------
+
+/** All bodies the physics layer needs to know about this beat. */
+const collectBodies = (): Body[] => {
+  const out: Body[] = [];
+  for (const s of ships) out.push(s.body);
+  for (const d of debris) out.push(d.body);
+  return out;
+};
+
+/** Only ships have plans; debris coasts. */
+const collectPlans = (): MovementPlan[] => {
+  const plans: MovementPlan[] = [];
+  for (const s of ships) {
+    const p = draftToPlan(s.id, s.draft);
+    if (p !== null) plans.push(p);
+  }
+  return plans;
+};
+
+const spawnDebrisAt = (position: Vec3, velocity: Vec3): WorldDebris => {
+  const id: BodyId = nextDebrisId;
+  nextDebrisId += 1;
+  const body: DebrisBody = {
+    kind: 'debris',
+    id,
+    position,
+    velocity,
+    mass: 20,
+    radius: 22,
+  };
+  const visual = scenery.addDebris(toVec3(position), 22);
+  return { id, body, visual };
+};
+
+/**
+ * Play the pre-computed keyframes back in wall time. This is the design intent
+ * from architecture §2/§6.2: "simulate fully, then animate the trace". Wall
+ * clock never enters the sim — every physics number is fixed before the first
+ * frame paints; the loop below just interpolates between snapshots.
+ */
+const animateResolution = (keyframes: readonly (readonly Body[])[]): Promise<Body[]> => {
+  return new Promise((resolve) => {
+    // 55 ms per keyframe reads as chunky-but-tense at 30–60 real fps. Real
+    // playback in M13 will interpolate more smoothly; this is prototype-scale.
+    const kfMs = 55;
+    let idx = 0;
+    let acc = 0;
+    let last = performance.now();
+    const step = (now: number) => {
+      const dt = now - last;
+      last = now;
+      acc += dt;
+      while (acc >= kfMs && idx < keyframes.length - 1) {
+        idx += 1;
+        acc -= kfMs;
+      }
+      const frame = keyframes[idx]!;
+      const seen = new Set<BodyId>();
+      for (const b of frame) {
+        seen.add(b.id);
+        if (b.kind === 'ship') {
+          const ship = ships.find((s) => s.id === b.id);
+          if (ship !== undefined) ship.visual.moveTo(toVec3(b.position));
+        } else if (b.kind === 'debris') {
+          const d = debris.find((x) => x.id === b.id);
+          if (d !== undefined) d.visual.moveTo(toVec3(b.position));
+        }
+      }
+      // Anything missing from the frame was boundary-culled this sub-step.
+      for (const s of ships) if (!seen.has(s.id)) s.visual.group.visible = false;
+      if (idx < keyframes.length - 1) {
+        requestAnimationFrame(step);
+      } else {
+        resolve(frame.slice());
+      }
+    };
+    requestAnimationFrame(step);
+  });
+};
+
+const onCommit = async () => {
+  if (animating) return;
+  animating = true;
+  turnLabelEl.textContent = `TURN ${String(turnIdx).padStart(2, '0')} · RESOLVE`;
+  // Hide all ghosts + exit markers — plans are locked and we're playing back.
+  for (const s of ships) {
+    s.visual.setGhost([], false);
+    s.visual.setExit(false, null);
+  }
+  renderCommitState();
+
+  const before = collectBodies();
+  const plans = collectPlans();
+  const step = resolveMovement(before, plans, PHYSICS);
+  const final = await animateResolution(step.keyframes);
+
+  // Adopt the resolved bodies FIRST. Ships keep their `WorldShip` wrappers;
+  // only `body` swaps out. Debris survivors — carry forward; boundary-culled
+  // shards have their visuals removed. Debris spawned by contact THIS beat
+  // is added below — it never participated in this beat's sim, so filtering
+  // it against `final` would incorrectly cull every new shard.
+  const byId = new Map<BodyId, Body>();
+  for (const b of final) byId.set(b.id, b);
+  for (const s of ships) {
+    const post = byId.get(s.id);
+    if (post !== undefined && post.kind === 'ship') s.body = post;
+  }
+  const survivors: WorldDebris[] = [];
+  for (const d of debris) {
+    const post = byId.get(d.id);
+    if (post !== undefined && post.kind === 'debris') {
+      d.body = post;
+      survivors.push(d);
+    } else {
+      scenery.scene.remove(d.visual.point);
+      d.visual.dispose();
+    }
+  }
+  debris.length = 0;
+  debris.push(...survivors);
+
+  // Spawn shard debris at each contact. Two shards per contact, symmetric
+  // along the contact normal — the prototype's stand-in for rules-layer
+  // wreckage (F4 owns the real spawn rules — hull damage, shard counts,
+  // debris mass). Shard velocity is a scaled contact-normal so the debris
+  // radiates outward from the collision — reads as intent; F4 will refine.
+  const shardSpeed = 40;
+  for (const c of step.contacts) {
+    const nPlus: Vec3 = {
+      x: c.point.x + c.normal.x * 30,
+      y: c.point.y + c.normal.y * 30,
+      z: c.point.z + c.normal.z * 30,
+    };
+    const nMinus: Vec3 = {
+      x: c.point.x - c.normal.x * 30,
+      y: c.point.y - c.normal.y * 30,
+      z: c.point.z - c.normal.z * 30,
+    };
+    const vPlus: Vec3 = {
+      x: c.normal.x * shardSpeed,
+      y: c.normal.y * shardSpeed,
+      z: c.normal.z * shardSpeed,
+    };
+    const vMinus: Vec3 = { x: -vPlus.x, y: -vPlus.y, z: -vPlus.z };
+    debris.push(spawnDebrisAt(nPlus, vPlus));
+    debris.push(spawnDebrisAt(nMinus, vMinus));
+  }
+
+  // Reset plans for the next turn — every ship starts as coast. Presets
+  // re-seed velocities separately; this only zeroes the draft.
+  for (const s of ships) s.draft.magnitude = 0;
+
+  turnIdx += 1;
+  animating = false;
+
+  debrisCountEl.textContent = String(debris.length);
+  bodiesCountEl.textContent = String(ships.length + debris.length);
+  turnLabelEl.textContent = `TURN ${String(turnIdx).padStart(2, '0')} · PLAN`;
+  loadDraftIntoForm();
+  refreshAllGhosts();
+};
+
+btnCommit.addEventListener('click', () => {
+  void onCommit();
+});
+
+// -------- scripted scenarios (§7 fun-verdict probe) --------
+//
+// The Gate 1 exit question is *"is that turn fun?"* — the fun verdict can't be
+// answered by clicking sliders into a happy accident. These presets seed a few
+// known-interesting starting positions/velocities that make each verdict
+// reproducible: a head-on collision, a graze (both ships close but do not
+// collide), and a chase set-up where the trailing ship can catch shrapnel from
+// the leader's contact-turn debris next beat (the "debris hits ship next turn"
+// clause of the CP3 exit condition).
+
+const clearAllDebris = () => {
+  for (const d of debris) {
+    scenery.scene.remove(d.visual.point);
+    d.visual.dispose();
+  }
+  debris.length = 0;
+};
+
+const teleport = (ship: WorldShip, position: Vec3, velocity: Vec3) => {
+  ship.body = { ...ship.body, position, velocity };
+  ship.visual.moveTo(toVec3(position));
+  ship.visual.group.visible = true;
+  ship.draft = { bearing: ship.draft.bearing, pitch: ship.draft.pitch, magnitude: 0 };
+};
+
+type PresetName = 'stationary' | 'headOn' | 'graze' | 'debrisRun';
+
+const applyPreset = (name: PresetName) => {
+  if (animating) return;
+  clearAllDebris();
+  turnIdx = 1;
+  if (name === 'stationary') {
+    teleport(ships[0], INITIAL_POSITIONS[0], { x: 0, y: 0, z: 0 });
+    teleport(ships[1], INITIAL_POSITIONS[1], { x: 0, y: 0, z: 0 });
+    ships[0].draft = { bearing: 0, pitch: 0, magnitude: 0 };
+    ships[1].draft = { bearing: 180, pitch: 0, magnitude: 0 };
+  } else if (name === 'headOn') {
+    teleport(ships[0], vec3Of(-1200, 0, 0), { x: 0, y: 0, z: 0 });
+    teleport(ships[1], vec3Of(1200, 0, 0), { x: 0, y: 0, z: 0 });
+    // Both burn toward one another at Δv=100 → 100 units/s velocity → over 8s
+    // beats they close ~800 units per side → head-on contact by beat 2.
+    ships[0].draft = { bearing: 0, pitch: 0, magnitude: 100 };
+    ships[1].draft = { bearing: 180, pitch: 0, magnitude: 100 };
+  } else if (name === 'graze') {
+    teleport(ships[0], vec3Of(-1200, 0, -80), { x: 0, y: 0, z: 0 });
+    teleport(ships[1], vec3Of(1200, 0, 80), { x: 0, y: 0, z: 0 });
+    ships[0].draft = { bearing: 0, pitch: 0, magnitude: 120 };
+    ships[1].draft = { bearing: 180, pitch: 0, magnitude: 120 };
+  } else {
+    // Chase — cyan trails magenta at a fair speed; commit two beats with a
+    // straight burn to catch up + collide, then next turn debris carries into
+    // wherever magenta drifts. Fires the "debris hits ship next turn" clause.
+    teleport(ships[0], vec3Of(-400, 0, 0), { x: 60, y: 0, z: 0 });
+    teleport(ships[1], vec3Of(400, 0, 0), { x: 40, y: 0, z: 0 });
+    ships[0].draft = { bearing: 0, pitch: 0, magnitude: 90 };
+    ships[1].draft = { bearing: 0, pitch: 0, magnitude: 0 };
+  }
+  debrisCountEl.textContent = String(debris.length);
+  bodiesCountEl.textContent = String(ships.length + debris.length);
+  turnLabelEl.textContent = `TURN 01 · PLAN`;
+  loadDraftIntoForm();
+  refreshAllGhosts();
+};
+
+presetSelect.addEventListener('change', () => {
+  applyPreset(presetSelect.value as PresetName);
+});
+
+// -------- marker-density stress toggle (§7.4 probe) --------
+
+stressBtn.addEventListener('click', () => {
+  const isOn = stressBtn.getAttribute('aria-pressed') === 'true';
+  if (isOn) {
+    scenery.clearStressHazards();
+    stressBtn.setAttribute('aria-pressed', 'false');
+    stressBtn.classList.remove('is-active');
+    stressBtn.textContent = '+ 60 hazards';
+  } else {
+    scenery.addStressHazards(60, ARENA_RADIUS);
+    stressBtn.setAttribute('aria-pressed', 'true');
+    stressBtn.classList.add('is-active');
+    stressBtn.textContent = '− 60 hazards';
+  }
+  // The stress hazards are prototype-scale legibility probes only — they are
+  // NOT `Body`s in the sim, so `debris`/`bodies` counters do not change.
 });
 
 // -------- keyboard shortcuts --------
