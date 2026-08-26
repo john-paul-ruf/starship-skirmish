@@ -24,3 +24,6 @@ yarn-error.log*
 # Test / e2e output
 /test-results/
 /playwright-report/
+/ENSO.md
+/JIKIJITSU.md
+/MU.md
