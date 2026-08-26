@@ -25,7 +25,7 @@ import type { Catalog } from '../catalog/index.js';
 import type { Build, RefitDiff } from '../domain/index.js';
 import type { Loaded } from '../io/migrate/migrate.js';
 import { finishLoad } from '../io/migrate/migrate.js';
-import { INDEX_KEY, buildKey } from './keys.js';
+import { INDEX_KEY, META_KEY, PREFS_KEY, buildKey } from './keys.js';
 import {
   bytesOf,
   headroom as headroomBytes,
@@ -33,13 +33,20 @@ import {
   type UsageLevel,
 } from './quota.js';
 import {
+  DEFAULT_PREFS,
   parseBuildRecord,
   parseIndexRecord,
+  parseMetaRecord,
+  parsePrefsRecord,
   serializeBuild,
   serializeIndexRecord,
+  serializeMetaRecord,
+  serializePrefsRecord,
   type BuildDoc,
   type IndexEntry,
   type IndexRecord,
+  type MetaRecord,
+  type PrefsRecord,
 } from './records.js';
 import {
   countBuildKeys,
@@ -139,6 +146,14 @@ export interface LibraryRepo {
   findByNameKey(nameKey: string): readonly string[];
   /** `true` while writes are still going to the durable store. Flips false after a session-mode degrade. */
   isDurable(): boolean;
+  /** Timestamp of the most recent export (§3.8 / FR-7 recurring backup nudge). `null` if never exported. */
+  lastExportAt(): string | null;
+  /** Stamp `:meta.lastExportAt` — F7/F8's export path calls this after a successful download. */
+  markExported(at: string): void;
+  /** Read the current user prefs — TOTAL: corrupt/missing prefs quietly return DEFAULT_PREFS (§3.8). */
+  loadPrefs(): PrefsRecord;
+  /** Persist a `PrefsRecord`. Non-critical write — a failure is swallowed rather than surfaced. */
+  savePrefs(prefs: PrefsRecord): void;
 }
 
 /**
@@ -462,6 +477,36 @@ export const openLibrary = (
     }
   }
 
+  // ---- :meta — first-run stamp + lastExportAt bookkeeping (§3.8) ----------
+
+  const rawMeta = currentStore.getItem(META_KEY);
+  const bootStamp = now();
+  let meta: MetaRecord = rawMeta !== null
+    ? parseMetaRecord(rawMeta) ?? {
+        schemaVersion: 1,
+        catalogVersion: catalog.catalogVersion,
+        createdAt: bootStamp,
+        lastExportAt: null,
+        backupNudgeDismissedAt: null,
+        usedBytes: 0,
+      }
+    : {
+        schemaVersion: 1,
+        catalogVersion: catalog.catalogVersion,
+        createdAt: bootStamp,
+        lastExportAt: null,
+        backupNudgeDismissedAt: null,
+        usedBytes: 0,
+      };
+
+  const persistMeta = (): void => {
+    // Fail-soft: meta is bookkeeping; a quota-failure here doesn't block the
+    // user's actual save/load. Never throws past the boundary.
+    trySetItem(currentStore, META_KEY, serializeMetaRecord(meta));
+  };
+
+  if (rawMeta === null) persistMeta();
+
   const mem = indexFrom(initialIndex.entries);
 
   // ---- private helpers over the mutable state ----------------------------
@@ -607,6 +652,20 @@ export const openLibrary = (
     },
     isDurable() {
       return currentDurable;
+    },
+    lastExportAt() {
+      return meta.lastExportAt;
+    },
+    markExported(at) {
+      meta = { ...meta, lastExportAt: at };
+      persistMeta();
+    },
+    loadPrefs() {
+      const raw = currentStore.getItem(PREFS_KEY);
+      return raw === null ? DEFAULT_PREFS : parsePrefsRecord(raw);
+    },
+    savePrefs(prefs) {
+      trySetItem(currentStore, PREFS_KEY, serializePrefsRecord(prefs));
     },
   };
 
