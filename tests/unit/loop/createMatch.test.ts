@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildInitialState,
   fleetsOutOfMutualWeaponsRange,
+  minFleetCentroidSeparation,
   shipsNoOverlap,
 } from '../../../src/sim/loop/createMatch.js';
 import type { MatchConfig } from '../../../src/sim/loop/matchState.js';
@@ -21,6 +22,7 @@ import type {
   SimWeapon,
 } from '../../../src/sim/types.js';
 import type { PhysicsConfig } from '../../../src/sim/physics/index.js';
+import tuningFile from '../../../catalog/tuning.json';
 
 // ---- Fixtures --------------------------------------------------------------
 
@@ -193,6 +195,40 @@ describe('createMatch — starting posture', () => {
     ]);
     const state = buildInitialState(cfg);
     expect(fleetsOutOfMutualWeaponsRange(state)).toBe(true);
+  });
+});
+
+describe('createMatch — min fleet-centroid separation (CP5, D-MINSEP)', () => {
+  // Read the reconciled tuning value the sim placement must satisfy.
+  const minSepFrac = tuningFile.arena.minFleetSeparationFraction;
+  const maxFleets = tuningFile.match.maxFleets;
+
+  it(`placement satisfies minFleetSeparationFraction (=${minSepFrac} · R) for N=2..${maxFleets}`, () => {
+    // For each supported fleet count, build a match with that many single-ship
+    // fleets and assert the min pairwise centroid separation is ≥ threshold.
+    // Uses a stable per-N seed so failures reproduce.
+    const arenaRadius = 5000;
+    for (let n = 2; n <= maxFleets; n += 1) {
+      const fleets: SimFleet[] = [];
+      for (let fid = 0; fid < n; fid += 1) {
+        fleets.push(fleet(fid, [`F${fid}`]));
+      }
+      const cfg = configOf(
+        seedOf(0x101 + n, 0x202 + n),
+        fleets,
+        arena(arenaRadius),
+      );
+      const state = buildInitialState(cfg);
+      const sep = minFleetCentroidSeparation(state);
+      const threshold = minSepFrac * arenaRadius;
+      expect(sep).toBeGreaterThanOrEqual(threshold);
+    }
+  });
+
+  it('returns +Infinity for a single-fleet match (nothing to separate)', () => {
+    const cfg = configOf(seedOf(1, 1), [fleet(0, ['X'])]);
+    const state = buildInitialState(cfg);
+    expect(minFleetCentroidSeparation(state)).toBe(Infinity);
   });
 });
 

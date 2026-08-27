@@ -340,19 +340,73 @@ describe('missile fuel-out (FR-24 / Decision 15)', () => {
 // ===========================================================================
 
 describe('in-arena kill spawns AoE + debris (FR-23, ownership-blind)', () => {
-  it('a killed frigate spawns class-correct debris and blast damages nearby friendly', () => {
+  it('cascade ON: attack-beat kill\'s AoE + debris lands on the NEXT movement beat', () => {
     // Fleet 0: [victim, friend-near, friend-far]
     // Fleet 1: [attacker]
-    // The victim is killed by the attacker's weapon.
-    // Frigate AoE radius = 160, damage = 30 (defaults above).
-    // Place friend-near well inside the AoE (distance 80),
-    // friend-far outside (distance 300).
-    // Debris count for frigate = 4.
-    //
-    // Note: attack-beat kills spawn debris + AoE that enters the NEXT
-    // movement beat's cascade (FR-21 "destruction effects enter the
-    // battlespace for the NEXT movement beat"). We run runTurn twice:
-    // first to kill, second to trigger the AoE/debris cascade.
+    // Frigate AoE radius = 160, damage = 30 (defaults above); debris = 4.
+    // Place FriendNear well inside the AoE (distance 80), FriendFar outside
+    // (distance 500). With cascadeToNextMovement=true the attack-beat kill's
+    // destruction event carries over as a `PendingDetonation` and fires on
+    // the following movement beat (FR-21 "destruction effects enter the
+    // battlespace for the NEXT movement beat").
+    const configBase = cfg([
+      fleet(0, [
+        ship('Victim', { maxHull: 60 }),
+        ship('FriendNear', { maxHull: 200 }),
+        ship('FriendFar', { maxHull: 200 }),
+      ]),
+      fleet(1, [
+        ship('Attacker', {
+          weapons: [{ range: 3000, damage: 120, shotsPerTurn: 1, accuracy: 1 }],
+        }),
+      ]),
+    ]);
+    const config: MatchConfig = {
+      ...configBase,
+      combat: {
+        ...configBase.combat,
+        destruction: {
+          ...configBase.combat.destruction,
+          cascadeToNextMovement: true,
+        },
+      },
+    };
+    let state = buildInitialState(config);
+    // Body ids assigned in (fleetId, shipIndex) order: 1=Victim, 2=FriendNear,
+    // 3=FriendFar, 4=Attacker.
+    state = withBody(state, 1, { position: { x: 0, y: 0, z: 0 } });
+    state = withBody(state, 2, { position: { x: 80, y: 0, z: 0 } }); // inside AoE
+    state = withBody(state, 3, { position: { x: 500, y: 0, z: 0 } }); // outside AoE
+    state = withBody(state, 4, { position: { x: -500, y: 0, z: 0 } });
+    // Turn 1 ATTACK beat only — attacker kills victim. Verify pending queued.
+    const attackPlans: AttackPlan[] = [{ shooterId: 4, targetId: 1, weaponIndex: 0 }];
+    const beat1 = runAttackBeat(state, attackPlans);
+    expect(beat1.state.ships.has(1)).toBe(false);
+    expect(beat1.record.destroyed.some((d) => d.bodyId === 1 && d.detonates)).toBe(true);
+    expect(beat1.state.pendingDetonations ?? []).toHaveLength(1);
+    // No debris yet — those spawn on the NEXT movement beat's cascade consume.
+    expect(
+      Array.from(beat1.state.bodies.values()).filter((b) => b.kind === 'debris'),
+    ).toHaveLength(0);
+    // Turn 2 MOVEMENT beat — cascade fires. FriendNear takes AoE; FriendFar
+    // is outside the radius; frigate debris (count=4) spawns.
+    const friendNearBefore = beat1.state.ships.get(2)!.hull;
+    const friendFarBefore = beat1.state.ships.get(3)!.hull;
+    const beat2 = runMovementBeat(beat1.state, []);
+    expect(beat2.state.ships.get(2)!.hull).toBeLessThan(friendNearBefore);
+    expect(beat2.state.ships.get(3)!.hull).toBe(friendFarBefore);
+    const debrisCount = Array.from(beat2.state.bodies.values()).filter(
+      (b) => b.kind === 'debris',
+    ).length;
+    expect(debrisCount).toBe(4);
+    // Pending list is consumed (cleared) after the movement beat.
+    expect(beat2.state.pendingDetonations ?? []).toEqual([]);
+  });
+
+  it('cascade OFF (frozen-goldens path): attack-beat kill spawns no cascade the next beat', () => {
+    // Same fixture but with cascadeToNextMovement absent — matches the pre-F6
+    // baked-config the frozen combat goldens use. Guards the byte-frozen
+    // behaviour that lets the goldens stay hash-stable.
     const config = cfg([
       fleet(0, [
         ship('Victim', { maxHull: 60 }),
@@ -366,47 +420,22 @@ describe('in-arena kill spawns AoE + debris (FR-23, ownership-blind)', () => {
       ]),
     ]);
     let state = buildInitialState(config);
-    // Body ids assigned in (fleetId, shipIndex) order: 1=Victim, 2=FriendNear,
-    // 3=FriendFar, 4=Attacker.
     state = withBody(state, 1, { position: { x: 0, y: 0, z: 0 } });
-    state = withBody(state, 2, { position: { x: 80, y: 0, z: 0 } }); // inside AoE
-    state = withBody(state, 3, { position: { x: 500, y: 0, z: 0 } }); // outside AoE
+    state = withBody(state, 2, { position: { x: 80, y: 0, z: 0 } });
+    state = withBody(state, 3, { position: { x: 500, y: 0, z: 0 } });
     state = withBody(state, 4, { position: { x: -500, y: 0, z: 0 } });
-    // Turn 1: attacker kills victim (attack beat only — no movement plans).
-    const t1Plans: AttackPlan[] = [{ shooterId: 4, targetId: 1, weaponIndex: 0 }];
-    const beat1 = runAttackBeat(state, t1Plans);
+    const attackPlans: AttackPlan[] = [{ shooterId: 4, targetId: 1, weaponIndex: 0 }];
+    const beat1 = runAttackBeat(state, attackPlans);
     expect(beat1.state.ships.has(1)).toBe(false);
-    expect(beat1.record.destroyed.some((d) => d.bodyId === 1 && d.detonates)).toBe(true);
-    // Debris + AoE cascade runs in the NEXT movement beat (FR-21). Since the
-    // victim died in the attack beat, its debris/AoE actually spawn during
-    // the FOLLOWING movement beat's Stage-G cascade — BUT `runAttackBeat`
-    // itself does not spawn debris (that lives in the movement resolver's
-    // in-arena-death cascade). Verify: post-attack, no new debris bodies yet.
-    const debrisAfterAttack = Array.from(beat1.state.bodies.values()).filter(
-      (b) => b.kind === 'debris',
-    ).length;
-    expect(debrisAfterAttack).toBe(0);
-    // Run a movement beat with empty plans — the death from the prior attack
-    // is already reflected in the ships/bodies maps, so the movement beat
-    // will not re-cascade THAT death (secondary AoE/debris only applies to
-    // deaths happening during THAT movement beat). This matches the
-    // resolveBeat.ts Stage-G doc: "cascade for in-arena deaths killed by
-    // collision/missile THIS beat".
-    //
-    // The concrete FR-21 promise is that ATTACK-BEAT kills' debris/AoE
-    // enters the NEXT movement beat — via the loop's carrying of those
-    // deaths forward. That path is NOT yet wired in the assembled loop
-    // (S04 handoff note: attack-beat destruction cascade to next movement is
-    // deferred — the loop's Stage-G only handles movement-beat kills). So
-    // this test asserts what IS true today:
-    //   • attack-beat kill removes the victim
-    //   • DestructionEvent has detonates=true (in-arena)
-    //   • the runtime cascade will follow when the loop wires it (F5)
-    // Guarded so a future wire-through does not silently break the test.
-    void runMovementBeat(beat1.state, []);
-    // FriendNear and FriendFar are still alive (no cascade wired yet).
-    expect(beat1.state.ships.has(2)).toBe(true);
-    expect(beat1.state.ships.has(3)).toBe(true);
+    // No pending queued when the gate is absent.
+    expect(beat1.state.pendingDetonations ?? []).toEqual([]);
+    const friendNearBefore = beat1.state.ships.get(2)!.hull;
+    const beat2 = runMovementBeat(beat1.state, []);
+    // FriendNear unhurt — no cascade ran.
+    expect(beat2.state.ships.get(2)!.hull).toBe(friendNearBefore);
+    expect(
+      Array.from(beat2.state.bodies.values()).filter((b) => b.kind === 'debris'),
+    ).toHaveLength(0);
   });
 
   it("a movement-beat collision kill DOES spawn debris + AoE the same beat", () => {

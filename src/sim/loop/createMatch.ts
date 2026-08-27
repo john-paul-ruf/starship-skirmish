@@ -250,6 +250,57 @@ export const shipsNoOverlap = (state: MatchState): boolean => {
 };
 
 /**
+ * Minimum centroid-to-centroid separation between any two DIFFERENT fleets.
+ * The invariant `tuning.arena.minFleetSeparationFraction` (v1 = 0.8) is
+ * interpreted as a fraction of arena RADIUS — a placement satisfies it when
+ * the returned value is `≥ minFleetSeparationFraction × arena.radius`.
+ *
+ * Returns `+Infinity` if fewer than two distinct fleets exist (nothing to
+ * separate). Iterates fleets in ascending id — deterministic.
+ */
+export const minFleetCentroidSeparation = (state: MatchState): number => {
+  // Fleet id → running sum of positions + count.
+  const acc = new Map<number, { sum: Vec3; count: number }>();
+  const shipIds: BodyId[] = [];
+  for (const [id, body] of state.bodies) {
+    if (body.kind === 'ship') shipIds.push(id);
+  }
+  shipIds.sort((a, b) => a - b);
+  for (let i = 0; i < shipIds.length; i += 1) {
+    const id = shipIds[i]!;
+    const fid = state.fleetOf.get(id);
+    if (fid === undefined) continue;
+    const body = state.bodies.get(id)!;
+    const cur = acc.get(fid);
+    if (cur === undefined) {
+      acc.set(fid, { sum: of(body.position.x, body.position.y, body.position.z), count: 1 });
+    } else {
+      cur.sum = of(
+        cur.sum.x + body.position.x,
+        cur.sum.y + body.position.y,
+        cur.sum.z + body.position.z,
+      );
+      cur.count += 1;
+    }
+  }
+  // Fleet ids sorted ascending — deterministic pairwise iteration.
+  const fleetIds = Array.from(acc.keys()).sort((a, b) => a - b);
+  if (fleetIds.length < 2) return Infinity;
+  const centroids = fleetIds.map((fid) => {
+    const a = acc.get(fid)!;
+    return of(a.sum.x / a.count, a.sum.y / a.count, a.sum.z / a.count);
+  });
+  let minSep = Infinity;
+  for (let i = 0; i < centroids.length; i += 1) {
+    for (let j = i + 1; j < centroids.length; j += 1) {
+      const d = distance(centroids[i]!, centroids[j]!);
+      if (d < minSep) minSep = d;
+    }
+  }
+  return minSep;
+};
+
+/**
  * True when every pair of ships from DIFFERENT fleets is outside the maximum
  * weapon range in the fleet drafting the shot. This is the FR-12 "out of
  * weapons range at start" invariant.
