@@ -1,5 +1,5 @@
 // tests/e2e/tacticalMove.spec.ts — Tactical Movement screen e2e (S05 CP4 +
-// SESSION-03 CP4).
+// SESSION-03 CP4 + `finite-thrust-movement` SESSION-05 CP4).
 //
 // Chromium tests (UI smoke, like postMatch / skirmishBoot):
 //
@@ -25,6 +25,12 @@
 //      selecting a BOT ship shows the read-only inspector and NO plan form
 //      (FR-17); the marks-interval selector transitions Off / 1s / 2s / 4s; the
 //      camera HUD Reset / Focus buttons exist and are keyboard-reachable.
+//
+//   5. WAYPOINT PLOTTING (setContent harness, SESSION-05) — switch marks to 2s
+//      (4 waypoints), assert the waypoint selector appears with per-segment
+//      labels (t=0s · LAUNCH, t=2s, …), plot waypoint 0 and waypoint 2
+//      independently, and assert the segmented COMMIT payload + the segmented
+//      `previewArc` call the ghost path fires.
 //
 // The tactical viewport reaches render via a dynamic `import()` that cannot
 // resolve inside the bundled harness page, so the viewport DEGRADES to numeric
@@ -103,9 +109,30 @@ const buildHarness = async (): Promise<string> => {
       view, phase, turn: signal(1), movementBeat, attackBeat: signal(null), state,
       outcome: signal(null), trace: signal({}), seedLabel: 'SK-7F3A-9C21-D4E8',
       playerFleetId: 0, initialFleets,
-      previewArc(bodyId, deltaV) {
-        const mag = Math.hypot(deltaV.x, deltaV.y, deltaV.z);
-        return { positions: [{ x: 0, y: 0, z: 0 }, { x: mag, y: 0, z: 0 }], endsOutsideArena: mag > 40 };
+      // SESSION-05: previewArc accepts the discriminated Vec3 | {segments} union
+      // (D-ADDITIVE-PLAN, S04). SESSION-05 CP3 has the screen always send
+      // {segments}; the impulsive-Vec3 branch stays here for future callers.
+      previewArc(bodyId, arc) {
+        globalThis.__lastPreviewArc = { bodyId, arc };
+        const isSegmented = arc !== null && typeof arc === 'object' && 'segments' in arc;
+        const mag = isSegmented
+          ? arc.segments.reduce(
+              (s, b) => s + Math.hypot(b.deltaV.x, b.deltaV.y, b.deltaV.z),
+              0,
+            )
+          : Math.hypot(arc.x, arc.y, arc.z);
+        const positions = [{ x: 0, y: 0, z: 0 }, { x: mag, y: 0, z: 0 }];
+        const result = { positions, endsOutsideArena: mag > 40 };
+        // Segmented previews carry markPositions at each waypoint boundary
+        // (S04 seam) — synthesize a plausible boundary set for the harness.
+        if (isSegmented) {
+          result.markPositions = arc.segments.map((_b, i) => ({
+            x: (mag / Math.max(1, arc.segments.length)) * (i + 1),
+            y: 0,
+            z: 0,
+          }));
+        }
+        return result;
       },
       commitMovement(plans) {
         globalThis.__committedPlans = plans;
@@ -208,6 +235,18 @@ test.describe('tactical movement screen', () => {
     await expect
       .poll(() => page.evaluate(() => (globalThis as Record<string, unknown>)['__navCalls']))
       .toContainEqual({ name: 'tactical-attack' });
+
+    // SESSION-05 CP4: every committed plan carries `segments` (D-ADDITIVE-PLAN).
+    const commitShape = await page.evaluate(() => {
+      const plans = (globalThis as Record<string, unknown>)['__committedPlans'] as
+        | ReadonlyArray<{ readonly bodyId: number; readonly segments?: readonly unknown[] }>
+        | undefined;
+      return plans === undefined
+        ? null
+        : plans.map((p) => ({ bodyId: p.bodyId, segCount: p.segments ? p.segments.length : 0 }));
+    });
+    expect(commitShape).not.toBeNull();
+    for (const p of commitShape!) expect(p.segCount).toBeGreaterThan(0);
 
     expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
   });
@@ -331,6 +370,131 @@ test.describe('tactical movement screen', () => {
     // Blind-commit contract preserved — no timer, blind commit visible.
     await expect(page.getByTestId('no-timer')).toBeVisible();
     await expect(page.getByTestId('blind-commit')).toBeVisible();
+
+    expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // SESSION-05 CP4 — per-waypoint plotting + curved (segmented) previewArc
+  // -------------------------------------------------------------------------
+
+  test('plots two waypoints at marks=2s, commits a segmented plan, and the ghost path passes {segments} to previewArc', async ({
+    page,
+  }) => {
+    const errors = await mount(page);
+
+    // Default marks interval is 1s → 8 waypoints. Switch to 2s → 4 waypoints
+    // (the session example: `2s → dt/2` segments). The screen re-segments
+    // every player draft, so the selector appears with 4 labeled options.
+    await page.locator('[data-testid="marks-interval-option"][data-value="2"]').click();
+
+    // Waypoint selector: real <button>s, aria-pressed, aria-labels, role=group.
+    const selector = page.getByTestId('waypoint-selector');
+    await expect(selector).toBeVisible();
+    await expect(selector).toHaveAttribute('role', 'group');
+    await expect(selector).toHaveAttribute('aria-label', 'Waypoint selector');
+    const options = page.getByTestId('waypoint-option');
+    await expect(options).toHaveCount(4);
+    // Waypoint 0 is active by default (rebuildForInterval snaps activeIndex → 0).
+    await expect(
+      page.locator('[data-testid="waypoint-option"][data-index="0"]'),
+    ).toHaveAttribute('aria-pressed', 'true');
+    // Every button carries a screen-reader label — never color-alone.
+    await expect(
+      page.locator('[data-testid="waypoint-option"][data-index="0"]'),
+    ).toHaveAttribute('aria-label', /Edit waypoint/);
+    // Labels use the `t=Ns` cadence — waypoint 0 is `t=0s · LAUNCH`.
+    await expect(
+      page.locator('[data-testid="waypoint-option"][data-index="0"]'),
+    ).toContainText('t=0s · LAUNCH');
+    await expect(
+      page.locator('[data-testid="waypoint-option"][data-index="2"]'),
+    ).toContainText('t=4s');
+    // Keyboard-reachable: the selector is real button elements.
+    await page.locator('[data-testid="waypoint-option"][data-index="0"]').focus();
+    await expect(
+      page.locator('[data-testid="waypoint-option"][data-index="0"]'),
+    ).toBeFocused();
+
+    // Plot the launch burn (waypoint 0 already active): fill magnitude 20.
+    await page.getByTestId('arc-magnitude').fill('20');
+
+    // Now select waypoint 2 (`t=4s`) — the form re-binds to that waypoint.
+    await page.locator('[data-testid="waypoint-option"][data-index="2"]').click();
+    await expect(
+      page.locator('[data-testid="waypoint-option"][data-index="2"]'),
+    ).toHaveAttribute('aria-pressed', 'true');
+    await expect(
+      page.locator('[data-testid="waypoint-option"][data-index="0"]'),
+    ).toHaveAttribute('aria-pressed', 'false');
+
+    // The re-bound bearing field reads waypoint 2's aim (aim was preserved from
+    // waypoint 0 by rebuildForInterval — bearing 0 — magnitudes reset to 0).
+    await expect(page.getByLabel('Bearing in degrees, 0 to 360')).toHaveValue('0');
+    await page.getByLabel('Bearing in degrees, 0 to 360').fill('90');
+    await page.getByTestId('arc-magnitude').fill('15');
+
+    // The ghost-draw path passes `{ segments }` to controller.previewArc for
+    // EVERY plotted arc (S04 seam / CP3). Capture the last call and lock the
+    // segmented shape — this is CP4's e2e lock on the CP3 wiring.
+    const lastArc = await page.evaluate(() => {
+      const entry = (globalThis as Record<string, unknown>)['__lastPreviewArc'] as
+        | { readonly bodyId: number; readonly arc: unknown }
+        | undefined;
+      return entry === undefined ? null : entry;
+    });
+    expect(lastArc).not.toBeNull();
+    expect(lastArc!.arc).not.toBeNull();
+    expect(lastArc!.arc).toHaveProperty('segments');
+    const segCount = (lastArc!.arc as { segments: readonly unknown[] }).segments.length;
+    expect(segCount).toBe(4); // 2s marks → 4 segments over the 8s beat
+
+    // COAST the second player ship so the fleet gate opens.
+    await page.locator('[data-testid="roster-ship"][data-ship-id="2"]').click();
+    await page.getByRole('button', { name: /Set to Coast/ }).click();
+
+    // COMMIT → the harness captures the segmented payload; assert the shape.
+    const commit = page.getByTestId('commit-btn');
+    await expect(commit).toBeEnabled();
+    await commit.click();
+    await expect
+      .poll(() => page.evaluate(() => (globalThis as Record<string, unknown>)['__navCalls']))
+      .toContainEqual({ name: 'tactical-attack' });
+
+    const commitShape = await page.evaluate(() => {
+      const plans = (globalThis as Record<string, unknown>)['__committedPlans'] as
+        | ReadonlyArray<{
+            readonly bodyId: number;
+            readonly segments?: ReadonlyArray<{ readonly deltaV: { x: number; y: number; z: number } }>;
+          }>
+        | undefined;
+      if (plans === undefined) return null;
+      return plans.map((p) => ({
+        bodyId: p.bodyId,
+        segCount: p.segments === undefined ? 0 : p.segments.length,
+        nonZeroIndices:
+          p.segments === undefined
+            ? []
+            : p.segments
+                .map((s, i) => ({
+                  mag: Math.hypot(s.deltaV.x, s.deltaV.y, s.deltaV.z),
+                  i,
+                }))
+                .filter((r) => r.mag > 0)
+                .map((r) => r.i),
+      }));
+    });
+    expect(commitShape).not.toBeNull();
+    // WIDOWMAKER (bodyId 1) — 4 segments; waypoints 0 and 2 non-zero, 1 and 3 zero.
+    const widowmakerPlan = commitShape!.find((p) => p.bodyId === 1);
+    expect(widowmakerPlan).toBeDefined();
+    expect(widowmakerPlan!.segCount).toBe(4);
+    expect(widowmakerPlan!.nonZeroIndices).toEqual([0, 2]);
+    // HARRIER-2 (bodyId 2) — coasting: 4 zero segments (segCount == 4 after rebuild).
+    const harrierPlan = commitShape!.find((p) => p.bodyId === 2);
+    expect(harrierPlan).toBeDefined();
+    expect(harrierPlan!.segCount).toBe(4);
+    expect(harrierPlan!.nonZeroIndices).toEqual([]);
 
     expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
   });
