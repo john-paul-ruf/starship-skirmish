@@ -1,0 +1,27 @@
+{
+  "kind": "match",
+  "name": "seed-1-rookie-vs-ace-m2",
+  "seed": {
+    "hi": 532009125,
+    "lo": 3239169134
+  },
+  "budget": 25,
+  "fleetTiers": [
+    "rookie",
+    "ace"
+  ],
+  "movementModel": 2,
+  "outcome": {
+    "kind": "victory",
+    "fleetId": 0,
+    "turns": 6
+  },
+  "turnDigests": [
+    "fc86f572",
+    "7dd13800",
+    "bb5687bb",
+    "f8e567d3",
+    "f3c7a050",
+    "2ec935bb"
+  ]
+}

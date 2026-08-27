@@ -63,6 +63,15 @@ interface RecipeSpec {
   readonly n: number;
   readonly budget: number;
   readonly fleetTiers: readonly BotTier[];
+  /**
+   * Movement-model version marker. Undefined = 1 (impulsive; the pre-S06
+   * generation on disk). >= 2 = a new generation recorded under a distinct
+   * physics model. The recipe list is APPEND-ONLY (Custom Rule 3 / FR-2):
+   * new generations get new entries with a distinct name suffix — historical
+   * recipes are NEVER edited (an edit would produce different fixture bytes,
+   * flip the SHA, and fail the append-only check).
+   */
+  readonly movementModel?: number;
 }
 
 const RECIPES: readonly RecipeSpec[] = [
@@ -100,6 +109,39 @@ const RECIPES: readonly RecipeSpec[] = [
     budget: 50,
     fleetTiers: ['ace', 'ace'],
   },
+
+  // --- Generation 2: finite-thrust model (finite-thrust-movement S06) -------
+  //
+  // Same `(n, budget, fleetTiers)` as the model-1 fixtures above, but with
+  // `movementModel: 2` — `runMatchScenario` now injects
+  // `PhysicsConfig.maxAccel` from `tuning.physics.maxAccel = 25`, so bots'
+  // single-segment finite-thrust plans (S03) actually exercise the curved-
+  // arc integrator (`thrustSchedule` finite-thrust branch, not the impulsive
+  // fallback). Recorded outcomes differ from the model-1 counterparts —
+  // that is the DELIBERATE effect the version bump exists to record
+  // (D-VERSION-RERECORD, Custom Rule 3 / FR-2). Old recipes stay pinned to
+  // model 1; new recipes are APPENDED here (never edit-in-place).
+  {
+    name: 'seed-1-rookie-vs-ace-m2',
+    n: 1,
+    budget: 25,
+    fleetTiers: ['rookie', 'ace'],
+    movementModel: 2,
+  },
+  {
+    name: 'seed-2-mixed-tier-m2',
+    n: 7,
+    budget: 25,
+    fleetTiers: ['rookie', 'veteran', 'ace'],
+    movementModel: 2,
+  },
+  {
+    name: 'seed-3-ace-vs-ace-m2',
+    n: 2,
+    budget: 50,
+    fleetTiers: ['ace', 'ace'],
+    movementModel: 2,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -125,12 +167,21 @@ const main = async (): Promise<void> => {
 
   for (const recipe of RECIPES) {
     // seedToMatch names it `match-${n}`; override to the recipe name so the
-    // filename and the scenario name agree.
+    // filename and the scenario name agree. `movementModel` is spread onto
+    // the scenario only when the recipe carries one — a model-1 recipe
+    // produces a scenario without the field, which serializes byte-
+    // equivalent to the pre-S06 fixtures (append-only guarantee).
     const drawn = seedToMatch(recipe.n, catalog, {
       budget: recipe.budget,
       fleetTiers: recipe.fleetTiers,
     });
-    const scenario: MatchScenario = { ...drawn, name: recipe.name };
+    const scenario: MatchScenario = {
+      ...drawn,
+      name: recipe.name,
+      ...(recipe.movementModel !== undefined
+        ? { movementModel: recipe.movementModel }
+        : {}),
+    };
     const result = await runMatchScenario(scenario, catalog);
 
     const fixture: HarnessFixtureFile = {
@@ -139,6 +190,9 @@ const main = async (): Promise<void> => {
       seed: scenario.seed,
       budget: scenario.budget,
       fleetTiers: scenario.fleetTiers,
+      ...(scenario.movementModel !== undefined
+        ? { movementModel: scenario.movementModel }
+        : {}),
       outcome: result.outcome,
       turnDigests: result.turnDigests,
     };

@@ -1,0 +1,28 @@
+{
+  "kind": "match",
+  "name": "seed-3-ace-vs-ace-m2",
+  "seed": {
+    "hi": 2362881995,
+    "lo": 2488029200
+  },
+  "budget": 50,
+  "fleetTiers": [
+    "ace",
+    "ace"
+  ],
+  "movementModel": 2,
+  "outcome": {
+    "kind": "victory",
+    "fleetId": 1,
+    "turns": 7
+  },
+  "turnDigests": [
+    "31651b81",
+    "e8425ca2",
+    "b199df1e",
+    "1992069a",
+    "f67351b2",
+    "00cb87b4",
+    "08919a6c"
+  ]
+}
