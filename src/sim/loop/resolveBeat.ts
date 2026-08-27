@@ -656,6 +656,11 @@ export const runMovementBeat = (
     fleetOf: fleetOfOut,
     guidances: guidancesOut,
     debrisAge: debrisAgeOut,
+    // Movement beat CONSUMES pendingDetonations (checkpoint 3 wires the
+    // consume path). This checkpoint leaves the array empty on the way out:
+    // the field is behavior-neutral until both produce (attack beat) and
+    // consume (movement beat) sides land.
+    pendingDetonations: [],
   };
   return { state: stateOut, record };
 };
@@ -807,6 +812,10 @@ export const runAttackBeat = (
     fleetOf: fleetOfOut,
     guidances: guidancesOut,
     debrisAge: state.debrisAge,
+    // Attack beat PRODUCES pendingDetonations (checkpoint 3 wires the produce
+    // path behind `combat.destruction.cascadeToNextMovement`). This checkpoint
+    // emits an empty list, keeping frozen goldens byte-identical.
+    pendingDetonations: [],
   };
   return { state: stateOut, record };
 };
@@ -834,6 +843,10 @@ export const applyTurnEnd = (state: MatchState): MatchState => {
     fleetOf: state.fleetOf,
     guidances: state.guidances,
     debrisAge: state.debrisAge,
+    // PRESERVE attack-beat pending detonations across the turn boundary — the
+    // consuming movement beat is the NEXT turn's first beat, so end-of-turn
+    // must not clear them (§7.3: two-phase produce/consume, ferried by state).
+    pendingDetonations: state.pendingDetonations,
   };
 };
 

@@ -34,7 +34,12 @@ import type {
   ShipBody,
   SimShip,
 } from '../types.js';
-import type { Match, MatchConfig, MatchState } from './matchState.js';
+import type {
+  Match,
+  MatchConfig,
+  MatchState,
+  PendingDetonation,
+} from './matchState.js';
 
 /** Fixed uint32 stream tag for placement-phase draws — separates fleet-angle
  *  and per-ship-offset streams from any beat-time draws so a placement-phase
@@ -211,6 +216,7 @@ export const buildInitialState = (config: MatchConfig): MatchState => {
     fleetOf,
     guidances: new Map<BodyId, MissileGuidance>(),
     debrisAge: new Map<BodyId, number>(),
+    pendingDetonations: [] as readonly PendingDetonation[],
   };
 };
 

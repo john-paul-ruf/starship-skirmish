@@ -27,7 +27,9 @@ import type {
   Body,
   BodyId,
   CombatConfig,
+  DestructionEvent,
   SimFleet,
+  SimShip,
 } from '../types.js';
 
 /**
@@ -45,13 +47,30 @@ export interface MatchConfig {
 }
 
 /**
+ * An attack-beat kill awaiting its next-movement-beat AoE + debris (FR-21).
+ *
+ * Carries the dying ship's `SimShip` because `spawnDebris` reads `ship.mass`
+ * (`rules/debris.ts`) and by the time the cascade fires the killed ship has
+ * already been removed from `state.ships` by the attack-beat resolver.
+ *
+ * `event.detonates === true` invariant — only in-arena destructions cascade.
+ * NOT part of the blind-commit surface: it is post-resolution destruction
+ * data, not a plan (§6.3). Built and consumed in ascending `event.bodyId`.
+ */
+export interface PendingDetonation {
+  readonly event: DestructionEvent;
+  readonly ship: SimShip;
+}
+
+/**
  * The running state of a match. Structurally immutable — beat resolvers
  * produce a fresh `MatchState` rather than mutating in place. The bare `Map`
  * fields are declared `ReadonlyMap<K,V>` for the same reason: a caller cannot
  * accidentally add or remove an entry through the state handle.
  *
  * There is NO field for a pending plan (blind-commit invariant, §6.3). Plans
- * live only as locals inside `runTurn`.
+ * live only as locals inside `runTurn`. `pendingDetonations` is NOT a plan —
+ * it is post-resolution destruction data ferried between beats.
  */
 export interface MatchState {
   readonly seed: Seed;
@@ -72,6 +91,24 @@ export interface MatchState {
   readonly guidances: ReadonlyMap<BodyId, MissileGuidance>;
   /** Debris body → turns alive. Advanced by `tickDebrisLifetime` each beat. */
   readonly debrisAge: ReadonlyMap<BodyId, number>;
+  /**
+   * Attack-beat kills carried into the NEXT movement beat for their cascade
+   * (FR-21). Produced by `runAttackBeat` when
+   * `combat.destruction.cascadeToNextMovement === true`; consumed and cleared
+   * at the start of the next `runMovementBeat`. Preserved across
+   * `applyTurnEnd`. NOT part of the blind-commit surface (§6.3) and NOT
+   * hashed by `matchDigest` (D-DIGEST) — the effect of a pending detonation
+   * is captured by the following turn's bodies/ships, which the digest
+   * already reads.
+   *
+   * Additive/optional (mirrors S01's `CombatConfig` gate pattern): absent ⇒
+   * empty; every reader must defend with `?? []`. Loop constructors ALWAYS
+   * populate it explicitly (`buildInitialState`, both `resolveBeat` outputs,
+   * `applyTurnEnd`) — the optional marker exists only so out-of-lease
+   * test-only MatchState reconstructions that predate this field continue to
+   * typecheck without pretending to know the new invariant.
+   */
+  readonly pendingDetonations?: readonly PendingDetonation[];
 }
 
 /**
@@ -117,3 +154,13 @@ export const guidancesSorted = (state: MatchState): MissileGuidance[] => {
   for (let i = 0; i < ids.length; i += 1) out.push(state.guidances.get(ids[i]!)!);
   return out;
 };
+
+/**
+ * Pending attack-beat detonations in ascending `event.bodyId` order —
+ * deterministic iteration for the movement-beat cascade consumer. Returns an
+ * empty array when the field is absent (older test-only reconstructions).
+ */
+export const pendingDetonationsSorted = (state: MatchState): PendingDetonation[] =>
+  (state.pendingDetonations ?? [])
+    .slice()
+    .sort((a, b) => a.event.bodyId - b.event.bodyId);
