@@ -91,8 +91,10 @@ function ShipGroup(props: ShipGroupProps) {
   const slots = liveFireSlots(shooter);
   return (
     <section class="panel-in" style="padding:var(--s3)">
-      <div class="acard-hd">
-        <span class="wname grow truncate">{shooter.name}</span>
+      <div style="display:flex;align-items:center;gap:var(--s2)">
+        <span class="grow truncate" style="font-weight:700;color:var(--ink-hi);letter-spacing:.04em">
+          {shooter.name}
+        </span>
         <span class="mono-xs">{`${shooter.chassisClass.toUpperCase()} · ${String(slots.length)} FIRE SLOTS`}</span>
       </div>
       {slots.length === 0 ? (
@@ -144,10 +146,16 @@ function FireRow(props: FireRowProps) {
   };
 
   return (
-    <div class="acard" data-testid="weapon-row" data-slot={slotKey(slot)}>
-      <div class="acard-hd">
+    <div
+      data-testid="weapon-row"
+      data-slot={slotKey(slot)}
+      style={`border:1px solid var(--line);border-left:2px solid ${isMissile ? 'var(--red)' : 'var(--line-hot)'};border-radius:var(--r);padding:var(--s2) var(--s3)`}
+    >
+      <div style="display:flex;align-items:center;gap:var(--s2)">
         <span class={`tag-slot ${isMissile ? 'tag-missile' : 'tag-weapon'}`}>{label}</span>
-        <span class="wname grow truncate">{isMissile ? 'MISSILE RACK' : 'WEAPON'}</span>
+        <span class="grow truncate" style="font-weight:700;color:var(--ink-hi);letter-spacing:.06em">
+          {isMissile ? 'MISSILE RACK' : 'WEAPON'}
+        </span>
         {isMissile ? (
           <span class="mono-xs">{`AMMO ${String(shooter.missileAmmo[slot.index] ?? 0)}`}</span>
         ) : (
@@ -195,9 +203,13 @@ function HitChance(props: HitChanceProps) {
   const b = props.breakdown;
   return (
     <div style="margin-top:6px">
-      <div class="hitrow">
+      <div style="display:flex;align-items:baseline;justify-content:space-between">
         <span class="t-label">HIT CHANCE</span>
-        <span class={`hitnum ${toneClass(b.final)}`} data-testid="hitchance-final">
+        <span
+          class={`t-num ${toneClass(b.final)}`}
+          data-testid="hitchance-final"
+          style="font-size:20px;font-weight:700"
+        >
           {pct(b.final)}
         </span>
       </div>

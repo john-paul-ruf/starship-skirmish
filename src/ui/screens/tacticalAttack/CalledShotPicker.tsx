@@ -8,6 +8,10 @@
 // DESTROYED component renders struck-through + red with a text marker and is
 // unselectable, everywhere. The shield-generator option carries the verbatim
 // warning that killing it removes the pool permanently.
+//
+// Composed from shipped classes only (`.seg` segmented group + `is-active`,
+// `.banner`, token-driven inline styles) — the mock's `.comp-btn`/`.acard`
+// overlay classes are mock-local and not in the shipped stylesheet.
 
 import type { BlindShipView, CalledShotTarget } from '../../../sim/index.js';
 
@@ -33,8 +37,13 @@ export function CalledShotPicker(props: CalledShotPickerProps) {
     // Locked: the readout is the whole story. The list is not rendered — there
     // is nothing to choose until the shields fall.
     return (
-      <div class="panel-in locked-note" data-testid="called-shot-picker" data-locked="true">
-        <div class="acard-hd">
+      <div
+        class="panel-in"
+        data-testid="called-shot-picker"
+        data-locked="true"
+        style="margin-top:8px;padding:var(--s2) var(--s3)"
+      >
+        <div style="display:flex;align-items:center;gap:var(--s2)">
           <span class="t-label grow">CALLED SHOT</span>
           <span class="chip">LOCKED</span>
         </div>
@@ -48,8 +57,13 @@ export function CalledShotPicker(props: CalledShotPickerProps) {
   const options = calledShotOptions(target);
 
   return (
-    <div class="panel-in" data-testid="called-shot-picker" data-locked="false">
-      <div class="acard-hd">
+    <div
+      class="panel-in"
+      data-testid="called-shot-picker"
+      data-locked="false"
+      style="margin-top:8px;padding:var(--s2) var(--s3)"
+    >
+      <div style="display:flex;align-items:center;gap:var(--s2)">
         <span class="t-label grow">CALLED SHOT</span>
         <span class="chip chip-amber">UNLOCKED</span>
       </div>
@@ -61,24 +75,27 @@ export function CalledShotPicker(props: CalledShotPickerProps) {
       </div>
 
       <div
+        class="seg"
         role="group"
         aria-label={`Called-shot subsystem for ${target.name}`}
-        style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:8px"
+        style="flex-wrap:wrap;margin-top:8px"
       >
         {options.map((opt) => {
           const on = calledShotEquals(selected, opt.target);
-          const cls = ['comp-btn', on ? 'is-on' : '', opt.alive ? '' : 'is-x']
-            .filter(Boolean)
-            .join(' ');
           return (
             <button
               key={opt.label}
               type="button"
-              class={cls}
+              class={opt.alive && on ? 'is-active' : undefined}
               disabled={!opt.alive}
               aria-pressed={opt.alive ? on : undefined}
               aria-disabled={opt.alive ? undefined : true}
               title={opt.alive ? undefined : 'Destroyed — cannot be targeted'}
+              style={
+                opt.alive
+                  ? undefined
+                  : 'text-decoration:line-through;color:var(--red);opacity:.6'
+              }
               onClick={() => (on ? onPick(null) : onPick(opt.target))}
             >
               {opt.alive ? opt.label : `${opt.label} · DESTROYED`}
