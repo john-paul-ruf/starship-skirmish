@@ -28,9 +28,17 @@
 import { useMemo, useState } from 'preact/hooks';
 
 import { useApp } from '../appContext.js';
-import { Button, Field, Tabs, type TabsOption } from '../components/index.js';
+import { Field, Tabs, type TabsOption } from '../components/index.js';
+import { CollisionModal } from './share/CollisionModal.js';
 import { TokenPreviewError, TokenPreviewOk } from './share/TokenPreview.js';
-import { errorCopy, previewToken } from './share/model.js';
+import {
+  errorCopy,
+  previewToken,
+  resolveAddAction,
+  suggestRenamed,
+  type CollisionChoice,
+  type Preview,
+} from './share/model.js';
 
 // ---- Tab identifiers ------------------------------------------------------
 
@@ -41,6 +49,28 @@ const TABS: readonly TabsOption<TabId>[] = [
   { id: 'json', label: 'JSON FLEET IMPORT' },
 ];
 
+// ---- Identity minters (UI boundary — §6) ---------------------------------
+
+/**
+ * Mint a fresh v4 UUID. Persist's `applyImport` mints these too but on our
+ * paths we mint here at the UI boundary (as S05 does for the Shipyard save).
+ * Falls back to a v4-shaped pseudo-uuid built from `crypto.getRandomValues`
+ * on the off-chance `randomUUID` is missing (older Safari inside a subframe).
+ */
+const mintId = (): string => {
+  const c = (globalThis as { crypto?: { randomUUID?: () => string; getRandomValues?: (a: Uint8Array) => Uint8Array } }).crypto;
+  if (c?.randomUUID !== undefined) return c.randomUUID();
+  const bytes = new Uint8Array(16);
+  c?.getRandomValues?.(bytes);
+  // Force the v4 + variant bits.
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40;
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+};
+
+const now = (): string => new Date().toISOString();
+
 // ---- Screen --------------------------------------------------------------
 
 /**
@@ -48,7 +78,7 @@ const TABS: readonly TabsOption<TabId>[] = [
  * while keeping the export name stable.
  */
 export function ShareImport() {
-  const { catalog, route, navigate } = useApp();
+  const { catalog, repo, route, navigate, toast } = useApp();
 
   // Route-carried token is the initial paste value. `route.value` is a
   // ReadonlySignal — reading `.value` inside the render subscribes.
@@ -57,6 +87,11 @@ export function ShareImport() {
 
   const [tab, setTab] = useState<TabId>('token');
   const [token, setToken] = useState<string>(routeToken ?? '');
+  const [collision, setCollision] = useState<null | {
+    preview: Extract<Preview, { status: 'ok' }>;
+    collidingIds: readonly string[];
+    suggestedRename: string;
+  }>(null);
 
   // A route re-arrival (user pasted a new URL) should refresh the local
   // paste value once. We track the last-seen route token so re-renders don't
@@ -69,21 +104,80 @@ export function ShareImport() {
 
   const preview = useMemo(() => previewToken(catalog, token), [catalog, token]);
 
+  // ---- ADD button click handler (checkpoint 2) --------------------------
+
+  const commitAction = (choice: CollisionChoice, editedName: string) => {
+    if (collision === null) return;
+    const action = resolveAddAction({
+      preview: collision.preview,
+      choice,
+      editedName,
+      collidingIds: collision.collidingIds,
+      mintId,
+      now,
+    });
+    setCollision(null);
+    if (action.writeAs === 'cancel') return;
+    const result = repo.put(action.build);
+    if (!result.ok) {
+      toast(`Could not save: ${result.reason}`, 'danger');
+      return;
+    }
+    const actionLabel =
+      action.writeAs === 'replace' ? 'replaced' : action.action === 'renamed' ? 'renamed' : 'added';
+    toast(`Build ${actionLabel} — ${action.build.name}`, 'default');
+    navigate({ name: 'encyclopedia' });
+  };
+
+  const onAddClicked = () => {
+    if (preview.status !== 'ok') return;
+    const collidingIds = repo.findByNameKey(preview.nameKey);
+    if (collidingIds.length === 0) {
+      // Direct-insert path — no collision, no modal.
+      const action = resolveAddAction({
+        preview,
+        choice: 'rename',
+        collidingIds: [],
+        mintId,
+        now,
+      });
+      if (action.writeAs !== 'insert') return;
+      const result = repo.put(action.build);
+      if (!result.ok) {
+        toast(`Could not save: ${result.reason}`, 'danger');
+        return;
+      }
+      toast(`Build added — ${action.build.name}`, 'default');
+      navigate({ name: 'encyclopedia' });
+      return;
+    }
+    // Collision path — open the modal with a pre-populated rename suggestion.
+    setCollision({
+      preview,
+      collidingIds,
+      suggestedRename: suggestRenamed(preview.build.name, (nk) => repo.findByNameKey(nk)),
+    });
+  };
+
+  const dismissCollision = () => {
+    setCollision(null);
+  };
+
   return (
     <div class="panel ticks" data-testid="screen-share">
       <div class="panel-hd">
         <span class="t-h2">SHARE / IMPORT</span>
         <div class="grow"></div>
-        <Button
-          size="sm"
-          variant="ghost"
+        <button
+          type="button"
+          class="btn btn-sm btn-ghost"
           onClick={() => {
             navigate({ name: 'encyclopedia' });
           }}
           data-testid="nav-encyclopedia"
         >
           ← ENCYCLOPEDIA
-        </Button>
+        </button>
       </div>
       <div class="panel-bd stack-lg">
         <Tabs
@@ -122,7 +216,23 @@ export function ShareImport() {
             </div>
 
             {preview.status === 'ok' ? (
-              <TokenPreviewOk preview={preview} />
+              <>
+                <TokenPreviewOk preview={preview} />
+                <div style="display:flex;gap:var(--s2);align-items:center">
+                  <span class="mono-xs c-dim">
+                    NOTHING IS WRITTEN UNTIL YOU CONFIRM.
+                  </span>
+                  <div class="grow"></div>
+                  <button
+                    type="button"
+                    class="btn btn-primary"
+                    onClick={onAddClicked}
+                    data-testid="share-add-btn"
+                  >
+                    ⭳ ADD TO ENCYCLOPEDIA
+                  </button>
+                </div>
+              </>
             ) : token.length === 0 ? null : (
               <TokenPreviewError copy={errorCopy(preview.error)} />
             )}
@@ -136,6 +246,16 @@ export function ShareImport() {
           </div>
         )}
       </div>
+
+      {collision !== null ? (
+        <CollisionModal
+          incomingName={collision.preview.build.name}
+          collidingIds={collision.collidingIds}
+          suggestedRename={collision.suggestedRename}
+          onResolve={commitAction}
+          onClose={dismissCollision}
+        />
+      ) : null}
     </div>
   );
 }

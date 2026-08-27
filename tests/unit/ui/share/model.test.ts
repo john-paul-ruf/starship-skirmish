@@ -284,6 +284,118 @@ describe('resolveAddAction — mint identity + apply collision policy', () => {
   });
 });
 
+// ─── CP2 integration — resolveAddAction against a REAL in-memory repo ─────
+
+describe('resolveAddAction × in-memory repo — the three collision outcomes', () => {
+  const preview = () => {
+    const v = previewToken(catalog, encodedFighter('Wasp Alpha'));
+    if (v.status !== 'ok') throw new Error('fixture: preview failed');
+    return v;
+  };
+
+  const seedRepo = (name: string) => {
+    const { repo } = openLibrary(catalog, { store: memoryStore(), now: () => STAMP });
+    const seed = buildDocOf('00000000-0000-4000-8000-000000000aaa', name);
+    const put = repo.put(seed);
+    if (!put.ok) throw new Error(`seed put failed: ${put.reason}`);
+    return repo;
+  };
+
+  it('no collision → direct insert; count grows by one', () => {
+    const { repo } = openLibrary(catalog, { store: memoryStore(), now: () => STAMP });
+    const before = repo.entries().length;
+    const v = preview();
+    const collidingIds = repo.findByNameKey(v.nameKey);
+    expect(collidingIds).toHaveLength(0);
+    const action = resolveAddAction({
+      preview: v,
+      choice: 'rename',
+      collidingIds,
+      mintId: () => 'insert-id-x',
+      now: () => STAMP,
+    });
+    expect(action.writeAs).toBe('insert');
+    if (action.writeAs !== 'insert') return;
+    const put = repo.put(action.build);
+    expect(put.ok).toBe(true);
+    expect(repo.entries().length).toBe(before + 1);
+    expect(repo.entry('insert-id-x')?.name).toBe('Wasp Alpha');
+  });
+
+  it('rename mints a unique name; the ORIGINAL is untouched', () => {
+    const repo = seedRepo('Wasp Alpha');
+    const beforeIds = repo.entries().map((e) => e.id).sort();
+    const v = preview();
+    const collidingIds = repo.findByNameKey(v.nameKey);
+    expect(collidingIds).toHaveLength(1);
+    const suggestion = suggestRenamed(v.build.name, (nk) => repo.findByNameKey(nk));
+    expect(suggestion).toBe('Wasp Alpha (2)');
+    const action = resolveAddAction({
+      preview: v,
+      choice: 'rename',
+      editedName: suggestion,
+      collidingIds,
+      mintId: () => 'rename-id-y',
+      now: () => STAMP,
+    });
+    expect(action.writeAs).toBe('insert');
+    if (action.writeAs !== 'insert') return;
+    expect(action.action).toBe('renamed');
+    expect(action.build.name).toBe('Wasp Alpha (2)');
+    const put = repo.put(action.build);
+    expect(put.ok).toBe(true);
+    // Original preserved verbatim.
+    expect(repo.entry('00000000-0000-4000-8000-000000000aaa')?.name).toBe('Wasp Alpha');
+    // New entry present.
+    expect(repo.entry('rename-id-y')?.name).toBe('Wasp Alpha (2)');
+    // Both survive.
+    const afterIds = repo.entries().map((e) => e.id).sort();
+    expect(afterIds).toEqual([...beforeIds, 'rename-id-y'].sort());
+  });
+
+  it('replace overwrites the same id; count stays the same', () => {
+    const repo = seedRepo('Wasp Alpha');
+    const beforeCount = repo.entries().length;
+    const v = preview();
+    const collidingIds = repo.findByNameKey(v.nameKey);
+    const action = resolveAddAction({
+      preview: v,
+      choice: 'replace',
+      collidingIds,
+      mintId: () => 'never-used',
+      now: () => STAMP,
+    });
+    expect(action.writeAs).toBe('replace');
+    if (action.writeAs !== 'replace') return;
+    expect(action.replacedId).toBe('00000000-0000-4000-8000-000000000aaa');
+    const put = repo.put(action.build);
+    expect(put.ok).toBe(true);
+    // Same count — overwrite is in place.
+    expect(repo.entries().length).toBe(beforeCount);
+    // The seeded entry now carries the incoming build's slots (a fighter with
+    // 2 slots filled, 1 empty — same shape as our fixture buildDocOf, so this
+    // is more a "still exists at same id" assertion).
+    expect(repo.entry('00000000-0000-4000-8000-000000000aaa')?.name).toBe('Wasp Alpha');
+  });
+
+  it('cancel writes nothing; entries stay BYTE-IDENTICAL', () => {
+    const repo = seedRepo('Wasp Alpha');
+    const before = repo.entries();
+    const v = preview();
+    const collidingIds = repo.findByNameKey(v.nameKey);
+    const action = resolveAddAction({
+      preview: v,
+      choice: 'cancel',
+      collidingIds,
+      mintId: () => 'never-used',
+      now: () => STAMP,
+    });
+    expect(action.writeAs).toBe('cancel');
+    // Fail-closed: no put call was made; repo unchanged.
+    expect(repo.entries()).toEqual(before);
+  });
+});
+
 // ─── summarizeReport ───────────────────────────────────────────────────────
 
 describe('summarizeReport — flatten persist ImportReport into display rows', () => {
