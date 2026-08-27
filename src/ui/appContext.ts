@@ -17,6 +17,7 @@ import type { ReadonlySignal, Signal } from '@preact/signals';
 
 import type { Catalog } from '../catalog/index.js';
 import type { LibraryRepo } from '../persist/index.js';
+import type { MatchController, MatchSetup } from './matchContext.js';
 
 // ---- Route ----------------------------------------------------------------
 
@@ -93,10 +94,25 @@ export interface AppServices {
   readonly reducedMotion: Signal<boolean>;
   /** Current toast queue — the shell renders it; screens never read this. */
   readonly toasts: ReadonlySignal<readonly ToastItem[]>;
+  /**
+   * The active match controller, or `null` when no match is running (D-MATCH-
+   * CONTEXT). `startMatch` sets it; the shell reads it to mount `MatchProvider`
+   * on the match routes, and a match route entered with `null` redirects to
+   * setup (S01 CP5). Produced by `src/app/match` — the value the ui-owned
+   * `MatchController` contract describes.
+   */
+  readonly activeMatch: ReadonlySignal<MatchController | null>;
   /** Push a new route to `location.hash`. `hashchange` writes the signal. */
   navigate(to: Route): void;
   /** Enqueue a toast. Duration + host lifecycle belong to the shell. */
   toast(msg: string, kind?: ToastKind): void;
+  /**
+   * Assemble + start a match from the setup screen's selections (FR-11), store
+   * it as `activeMatch`, and return the controller. The app side mints the seed
+   * (arch §7.2) and runs the domain/ai assembly — the setup screen computes
+   * nothing. Implemented in `src/app/session.ts` over `src/app/match`.
+   */
+  startMatch(setup: MatchSetup): MatchController;
 }
 
 // ---- Context + hook -------------------------------------------------------

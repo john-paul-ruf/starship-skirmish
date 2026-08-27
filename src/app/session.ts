@@ -23,7 +23,9 @@ import {
   type ToastItem,
   type ToastKind,
 } from '../ui/appContext.js';
+import type { MatchController, MatchSetup } from '../ui/matchContext.js';
 import { createRouter, type Router } from './router.js';
+import { assembleMatchConfig, createMatchController, mintSeed } from './match/index.js';
 
 // Re-export the context symbol so `boot.tsx` provides via the same reference
 // the ui/appContext hook consumes.
@@ -146,6 +148,28 @@ export const createSession = (inputs: SessionInputs): Session => {
     pendingTimers.add(timer);
   };
 
+  // ---- Match session -----------------------------------------------------
+  // `startMatch` is the app-side factory the setup screen (S04) calls at
+  // LAUNCH. It mints the seed (arch §7.2 — `crypto.getRandomValues` is
+  // app-only), assembles the `MatchConfig`, creates the controller, and stores
+  // it as `activeMatch` for the shell to mount `MatchProvider` around.
+  const activeMatch = signal<MatchController | null>(null);
+  const startMatch = (setup: MatchSetup): MatchController => {
+    const seed = mintSeed();
+    const config = assembleMatchConfig(
+      inputs.catalog,
+      inputs.catalog.tuning,
+      setup.budget,
+      seed,
+      setup.playerBuilds,
+      setup.botSpecs,
+    );
+    const botTiers = setup.botSpecs.map((spec) => spec.tier);
+    const controller = createMatchController(services, config, botTiers);
+    activeMatch.value = controller;
+    return controller;
+  };
+
   const services: AppServices = {
     catalog: inputs.catalog,
     repo: inputs.repo,
@@ -153,10 +177,12 @@ export const createSession = (inputs: SessionInputs): Session => {
     route: router.route,
     reducedMotion,
     toasts,
+    activeMatch,
     navigate: (to: Route) => {
       router.navigate(to);
     },
     toast: enqueueToast,
+    startMatch,
   };
 
   const dispose = (): void => {
