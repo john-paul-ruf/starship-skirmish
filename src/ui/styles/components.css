@@ -640,8 +640,10 @@ select.field {
     0 0 60px -40px rgba(255, 46, 99, 0.6);
 }
 .boundary-label {
+  /* 10px minimum for uppercase tracked type (design §1.2 — below that
+     tracked caps stop being legible). Mock had 9px; corrected here. */
   position: absolute;
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.24em;
   text-transform: uppercase;
   color: var(--red);
@@ -794,8 +796,21 @@ select.field {
 }
 
 /* ---------- 14. MOTION (all opt-out) ------------------------- */
-/* Reduced-motion gating for these keyframes is finalized in
-   Checkpoint 3 (base.css already gates the scanline overlay). */
+/* Every decorative effect is DECORATIVE and OPT-OUT (design §1.6,
+   NFR-Accessibility). No fact is carried by animation alone: `flick`
+   only ripples opacity, `pulse` only ripples opacity, `sweep` moves a
+   glow bar, `glitch-x` shakes 2px. Every readout that changes is a
+   static number in markup — the animations reinforce, never inform.
+
+   Gating strategy: keyframes are declared unconditionally (harmless as
+   definitions), but the `.anim-*` / `.sweeper` classes bind an
+   `animation` property only inside `@media (prefers-reduced-motion:
+   no-preference)`. A manual `<body class="rm">` toggle additionally
+   overrides to `animation: none` so a user who has not set the OS
+   preference can silence motion with the in-app control. `.sweeper`'s
+   visual chrome (positioning, background) stays in every state so
+   layout does not shift when motion is off. */
+
 @keyframes flick {
   0%, 97%, 100% { opacity: 1; }
   98% { opacity: 0.55; }
@@ -817,10 +832,8 @@ select.field {
   96% { transform: translateX(2px); }
 }
 
-.anim-flick  { animation: flick 6s infinite steps(1); }
-.anim-pulse  { animation: pulse 1.6s ease-in-out infinite; }
-.anim-glitch { animation: glitch-x 7s infinite; }
-/* Requires a positioned ancestor. Crosses the full height of that ancestor. */
+/* Sweeper visual (kept in every state — layout parity). Requires a
+   positioned ancestor; crosses the full height of that ancestor. */
 .sweeper {
   position: absolute;
   left: 0;
@@ -828,8 +841,22 @@ select.field {
   top: -2px;
   height: 2px;
   background: linear-gradient(90deg, transparent, rgba(34, 227, 255, 0.5), transparent);
-  animation: sweep 7s linear infinite;
   pointer-events: none;
+}
+
+/* Motion only when the user has NOT expressed a reduced-motion preference. */
+@media (prefers-reduced-motion: no-preference) {
+  .anim-flick  { animation: flick 6s infinite steps(1); }
+  .anim-pulse  { animation: pulse 1.6s ease-in-out infinite; }
+  .anim-glitch { animation: glitch-x 7s infinite; }
+  .sweeper     { animation: sweep 7s linear infinite; }
+}
+/* Manual toggle wins even when the OS preference is unset. */
+body.rm .anim-flick,
+body.rm .anim-pulse,
+body.rm .anim-glitch,
+body.rm .sweeper {
+  animation: none;
 }
 
 /* ---------- 16. APP CHROME ----------------------------------- */
