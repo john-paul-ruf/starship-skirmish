@@ -643,6 +643,76 @@ describe('runMovementBeat — mixed segmented ship + impulsive missile (SESSION-
   });
 });
 
+describe('runMovementBeat outcome shape unchanged by finite-thrust (SESSION-02)', () => {
+  it('MovementBeatOutcome fields are structurally identical for impulsive vs finite-thrust plans', () => {
+    // Two beat runs on isomorphic starting scenes:
+    //   • impulsive: `{ deltaV: {x:0, y:10, z:0} }`, no segments.
+    //   • finite-thrust: `deltaV = 0` + `segments: [{ deltaV: {x:0, y:10, z:0} }]`.
+    // Both plans deliver the same +y impulse to the same body. Only the
+    // *values* (positions on the curved arc, sub-step count, keyframes) may
+    // differ. The record's SHAPE — presence and types of `subStepCount`,
+    // `keyframes` (array of body-array snapshots), `contacts`, `log`,
+    // `destroyed`, `removedHazardIds` — must be identical. No new trace-event
+    // kind is needed for the curve.
+    const a = arena();
+    const build = (): MatchState => {
+      let s = buildInitialState(cfgFT([fleet(0, ['A']), fleet(1, ['B'])], a));
+      s = withBody(s, 1, {
+        position: { x: 0, y: 0, z: 0 },
+        velocity: { x: 0, y: 0, z: 0 },
+      });
+      s = withBody(s, 2, { position: { x: 4000, y: 0, z: 0 } });
+      return s;
+    };
+
+    const impulsivePlan: MovementPlan = {
+      bodyId: 1,
+      deltaV: { x: 0, y: 10, z: 0 },
+    };
+    const finitePlan: MovementPlan = {
+      bodyId: 1,
+      deltaV: { x: 0, y: 0, z: 0 },
+      segments: [{ deltaV: { x: 0, y: 10, z: 0 } }],
+    };
+
+    const impOut = runMovementBeat(build(), [impulsivePlan]);
+    const finOut = runMovementBeat(build(), [finitePlan]);
+
+    // Same record top-level keys (no new field surfaced by finite thrust).
+    const impKeys = Object.keys(impOut.record).sort();
+    const finKeys = Object.keys(finOut.record).sort();
+    expect(finKeys).toEqual(impKeys);
+
+    // Same field TYPES / shapes.
+    expect(typeof finOut.record.subStepCount).toBe('number');
+    expect(typeof impOut.record.subStepCount).toBe('number');
+    expect(Array.isArray(finOut.record.keyframes)).toBe(true);
+    expect(Array.isArray(impOut.record.keyframes)).toBe(true);
+    expect(Array.isArray(finOut.record.contacts)).toBe(true);
+    expect(Array.isArray(impOut.record.contacts)).toBe(true);
+    expect(Array.isArray(finOut.record.log)).toBe(true);
+    expect(Array.isArray(impOut.record.log)).toBe(true);
+    expect(Array.isArray(finOut.record.destroyed)).toBe(true);
+    expect(Array.isArray(impOut.record.destroyed)).toBe(true);
+    expect(Array.isArray(finOut.record.removedHazardIds)).toBe(true);
+    expect(Array.isArray(impOut.record.removedHazardIds)).toBe(true);
+
+    // Keyframes are `subStepCount + 1` snapshots on both branches — the
+    // curve rides entirely inside keyframe POSITIONS; no new event kind.
+    expect(finOut.record.keyframes.length).toBe(finOut.record.subStepCount + 1);
+    expect(impOut.record.keyframes.length).toBe(impOut.record.subStepCount + 1);
+
+    // Neither beat produced a contact / destruction / log entry (lone burn,
+    // ship far from opponent). Impulsive and finite-thrust agree here too.
+    expect(finOut.record.contacts.length).toBe(0);
+    expect(impOut.record.contacts.length).toBe(0);
+    expect(finOut.record.destroyed.length).toBe(0);
+    expect(impOut.record.destroyed.length).toBe(0);
+    expect(finOut.record.log.length).toBe(0);
+    expect(impOut.record.log.length).toBe(0);
+  });
+});
+
 describe('runMovementBeat — determinism (shuffle-invariance)', () => {
   it('shuffled movement plans ⇒ identical digest', () => {
     // Multi-body scenario where the physics + damage stack could reorder if
