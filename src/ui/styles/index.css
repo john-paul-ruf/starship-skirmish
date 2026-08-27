@@ -1,0 +1,18 @@
+/* =============================================================
+   STARSHIP SKIRMISH — index.css
+   Single entry point for the design system. Imported once by the
+   composition root (src/app/, S03). The Preact screen sessions
+   (S02, S04–S06) reference class names as strings — they never
+   `import` any of these stylesheets directly.
+
+   Order matters: tokens → fonts → base → components.
+   - tokens.css declares the custom properties everything else reads
+   - fonts.css declares @font-face + the font-family tokens base.css
+     consumes on <body>
+   - base.css sets html/body defaults and typography utilities
+   - components.css is the component inventory built on top
+   ============================================================= */
+@import './tokens.css';
+@import './fonts.css';
+@import './base.css';
+@import './components.css';
