@@ -32,7 +32,7 @@ import { useEffect, useImperativeHandle, useRef } from 'preact/hooks';
 import type { Ref } from 'preact';
 
 import type { BodyId, MatchState, MovementBeatRecord, Vec3 } from '../../../sim/index.js';
-import type { GhostLayer, TacticalView, TracePlayer } from '../../../render/index.js';
+import type { GhostLayer, TacticalView, TracePlayer, TrailLayer } from '../../../render/index.js';
 
 type RenderModule = typeof import('../../../render/index.js');
 
@@ -47,12 +47,14 @@ export interface GhostArc {
   readonly markIntervalSec?: number;
 }
 
-/** Imperative handle the sibling CameraHud drives (reset / focus buttons). */
+/** Imperative handle the sibling CameraHud + parent screen drive. */
 export interface ViewportHandle {
   /** Reset the orbit camera to the neutral fleet framing (mirrors `R`). */
   resetView(): void;
   /** Slide the orbit target onto the selected ship id (mirrors `F`). */
   focusSelected(): void;
+  /** Drop every recorded trail point (called on a new plan turn). */
+  clearTrail(): void;
 }
 
 export interface ViewportProps {
@@ -66,6 +68,12 @@ export interface ViewportProps {
   readonly movementBeat: MovementBeatRecord | null;
   /** Skip the animation to its final frame (reduced motion). */
   readonly reducedMotion: boolean;
+  /** SESSION-03: `physicsConfig.dt` — passed through to the trail as the
+   *  per-keyframe sim-time step (matches S01's `TracePlayer` contract). */
+  readonly beatSeconds: number;
+  /** SESSION-03: sim-time (seconds) this beat starts at — the trail's per-push
+   *  timestamp is `startSimTime + keyframeIdx · beatSeconds` (S01 wiring). */
+  readonly beatStartSimTime: number;
   /** SESSION-03: currently-selected ship id (any fleet), for `F`-focus + focus HUD. */
   readonly selectedId: BodyId | null;
   /** SESSION-03: live position lookup — the `focusSourceFor` payload, `Vec3`-like. */
@@ -86,6 +94,8 @@ export function Viewport({
   ghostKey,
   movementBeat,
   reducedMotion,
+  beatSeconds,
+  beatStartSimTime,
   selectedId,
   positionOf,
   onPick,
@@ -95,6 +105,7 @@ export function Viewport({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const viewRef = useRef<TacticalView | null>(null);
   const ghostRef = useRef<GhostLayer | null>(null);
+  const trailRef = useRef<TrailLayer | null>(null);
   const fromPreviewRef = useRef<RenderModule['fromPreviewPath'] | null>(null);
   const roRef = useRef<ResizeObserver | null>(null);
   const playbackRef = useRef<ReturnType<TracePlayer['playMovement']> | null>(null);
@@ -137,6 +148,9 @@ export function Viewport({
         if (id === null) return;
         viewRef.current?.focusBody(id);
       },
+      clearTrail: () => {
+        trailRef.current?.clear();
+      },
     }),
     [],
   );
@@ -153,8 +167,10 @@ export function Viewport({
         if (cancelled) return;
         const view = mod.createTacticalView(canvas, arenaRadius);
         const ghost = mod.attachGhost(view);
+        const trail = mod.attachTrail(view);
         viewRef.current = view;
         ghostRef.current = ghost;
+        trailRef.current = trail;
         fromPreviewRef.current = mod.fromPreviewPath;
 
         // Wire the `F`-key focus source so `positionOf(selectedId)` tracks the
@@ -196,6 +212,8 @@ export function Viewport({
       roRef.current = null;
       playbackRef.current?.dispose();
       playbackRef.current = null;
+      trailRef.current?.dispose();
+      trailRef.current = null;
       ghostRef.current?.dispose();
       ghostRef.current = null;
       viewRef.current?.dispose();
@@ -252,10 +270,14 @@ export function Viewport({
           const mod = await import('../../../render/index.js');
           if (cancelled || viewRef.current === null) return;
           const player = mod.attachTracePlayer(view);
+          const trail = trailRef.current;
           const playback = player.playMovement(movementBeat, {
             onDone: () => {
               if (!cancelled) onResolveDone();
             },
+            ...(trail !== null
+              ? { trail, beatSeconds, startSimTime: beatStartSimTime }
+              : {}),
           });
           playbackRef.current = playback;
           if (reducedMotion) playback.skip();

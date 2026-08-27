@@ -214,6 +214,76 @@ export const playerRosterRows = (
   return rows;
 };
 
+// ---- Marks-interval selector (Gate 1 prototype port) ----------------------
+
+/** The four ghost-arc marks-interval values the shipped selector supports. */
+export type MarksIntervalValue = 0 | 1 | 2 | 4;
+
+/** Stable option list — order matches the prototype (Off → 1s → 2s → 4s). */
+export interface MarksIntervalOption {
+  readonly value: MarksIntervalValue;
+  readonly label: string;
+  readonly srLabel: string;
+}
+
+export const MARKS_INTERVAL_OPTIONS: readonly MarksIntervalOption[] = [
+  { value: 0, label: 'OFF', srLabel: 'Marks off' },
+  { value: 1, label: '1s', srLabel: 'Marks every second' },
+  { value: 2, label: '2s', srLabel: 'Marks every two seconds' },
+  { value: 4, label: '4s', srLabel: 'Marks every four seconds' },
+];
+
+/** Snap an arbitrary numeric input to the nearest supported interval value.
+ *  Non-finite / negative → 1s (the default). Guards against a stray future
+ *  caller (settings deserializer, hash-state restore) that hands a bad value. */
+export const normalizeMarksInterval = (raw: number): MarksIntervalValue => {
+  if (!Number.isFinite(raw) || raw < 0) return 1;
+  if (raw === 0) return 0;
+  if (raw <= 1) return 1;
+  if (raw <= 2) return 2;
+  return 4;
+};
+
+// ---- Ghost arc construction (pure) ----------------------------------------
+
+/** The shape the render layer's ghost draws — mirrors `Viewport.GhostArc` but
+ *  lives here in `.ts` so the assembly is pure-testable in vitest's node env.
+ *  Kept structural so a widened `GhostArc` in the sibling `.tsx` is compatible
+ *  as long as the same fields are present. */
+export interface GhostArcInputs {
+  readonly positions: readonly Vec3[];
+  readonly endsOutsideArena: boolean;
+  readonly deltaVMag: number;
+  readonly beatSeconds: number;
+  readonly hullRadius: number;
+  readonly markIntervalSec?: number;
+}
+
+/**
+ * Assemble a ghost arc from a preview + a plan draft. Pure; the caller pins the
+ * `beatSeconds` (= `physicsConfig.dt`), `hullRadius` (the ship's collider
+ * radius), and `markIntervalSec` (the Off/1s/2s/4s selector). The marks
+ * interval is threaded through verbatim — the render layer honors 0 (Off) as
+ * "arc line only, no numbered marks" (S01 `GhostDrawInput.markIntervalSec`).
+ */
+export const buildGhostArc = (
+  preview: { readonly positions: readonly Vec3[]; readonly endsOutsideArena: boolean },
+  draft: PlanDraft,
+  budget: number,
+  opts: {
+    readonly beatSeconds: number;
+    readonly hullRadius: number;
+    readonly markIntervalSec: MarksIntervalValue;
+  },
+): GhostArcInputs => ({
+  positions: preview.positions,
+  endsOutsideArena: preview.endsOutsideArena,
+  deltaVMag: deltaVMag(draft, budget),
+  beatSeconds: opts.beatSeconds,
+  hullRadius: opts.hullRadius,
+  markIntervalSec: opts.markIntervalSec,
+});
+
 // ---- Plan-status badge (annotate for FleetRoster) -------------------------
 
 /** One roster row's plan-status badge — text + token class, never color alone. */

@@ -38,9 +38,10 @@ import { FleetRoster, ShipInspector, groupByFleet } from '../components/roster/i
 import { ArcPlotter } from './tacticalMove/ArcPlotter.js';
 import { CameraHud } from './tacticalMove/CameraHud.js';
 import { CommitBar } from './tacticalMove/CommitBar.js';
+import { MarksInterval } from './tacticalMove/MarksInterval.js';
 import { Viewport, type GhostArc, type ViewportHandle } from './tacticalMove/Viewport.js';
 import {
-  deltaVMag,
+  buildGhostArc,
   fleetGateStatus,
   initialDraft,
   planBadgeFor,
@@ -49,6 +50,7 @@ import {
   setCoast,
   toDeltaV,
   toMovementPlans,
+  type MarksIntervalValue,
   type PlanDraft,
   type RosterShip,
 } from './tacticalMove/model.js';
@@ -63,6 +65,7 @@ export function TacticalMove() {
 
   const drafts = useSignal<Map<BodyId, PlanDraft>>(new Map());
   const selected = useSignal<BodyId | null>(null);
+  const markInterval = useSignal<MarksIntervalValue>(1);
   const planTurn = useRef<number | null>(null);
   const viewportRef = useRef<ViewportHandle | null>(null);
 
@@ -73,7 +76,8 @@ export function TacticalMove() {
   // Engine-dead ships start on COAST (initialDraft); every other living ship
   // starts UNPLANNED and must be decided before the gate opens. Selection
   // defaults to the first living player ship so the plotter has a target on
-  // entry (roster clicks can then move selection to any fleet).
+  // entry (roster clicks can then move selection to any fleet). Also clears
+  // the flown trail so a new plan turn opens with a clean historical layer.
   useEffect(() => {
     if (view === null) return;
     if (planTurn.current === view.turn) return;
@@ -86,6 +90,7 @@ export function TacticalMove() {
     }
     drafts.value = next;
     selected.value = first;
+    viewportRef.current?.clearTrail();
   }, [view === null ? -1 : view.turn]);
 
   // ---- Derivations ---------------------------------------------------------
@@ -125,16 +130,14 @@ export function TacticalMove() {
   let ghostKey = 'none';
   if (isPlan && selPlayerRow !== null && selDraft !== null && selId !== null) {
     const preview = match.previewArc(selId, toDeltaV(selDraft, selPlayerRow.budget));
-    ghostArc = {
-      positions: preview.positions,
-      endsOutsideArena: preview.endsOutsideArena,
-      deltaVMag: deltaVMag(selDraft, selPlayerRow.budget),
+    ghostArc = buildGhostArc(preview, selDraft, selPlayerRow.budget, {
       beatSeconds: state.physics.dt,
       hullRadius: selBody === null ? selPlayerRow.budget : selBody.radius,
-    };
+      markIntervalSec: markInterval.value,
+    });
     ghostKey = `${String(selId)}:${selDraft.status}:${Math.round(selDraft.bearing)}:${Math.round(
       selDraft.pitch,
-    )}:${Math.round(selDraft.magnitude)}:${String(view === null ? 0 : view.turn)}`;
+    )}:${Math.round(selDraft.magnitude)}:${String(markInterval.value)}:${String(view === null ? 0 : view.turn)}`;
   }
 
   const doomedNames = playerRows.filter((r) => exitIds.has(r.bodyId)).map((r) => r.name);
@@ -226,6 +229,8 @@ export function TacticalMove() {
             ghostKey={ghostKey}
             movementBeat={phase === 'movement-resolve' ? match.movementBeat.value : null}
             reducedMotion={services.reducedMotion.value}
+            beatSeconds={state.physics.dt}
+            beatStartSimTime={Math.max(0, match.turn.value - 1) * state.physics.dt}
             selectedId={selId}
             positionOf={positionOf}
             onPick={selectShip}
@@ -239,10 +244,19 @@ export function TacticalMove() {
           />
         </main>
 
-        {/* ---- RIGHT: ship inspector + arc plotter + commit dock ---- */}
+        {/* ---- RIGHT: inspector + marks-interval + arc plotter + commit dock ---- */}
         <aside class="tm-plan panel" aria-label="Movement plan">
           <div class="tm-plan-body">
             <ShipInspector ship={selShipView} velocity={selVelocity} />
+
+            {isPlan ? (
+              <MarksInterval
+                value={markInterval.value}
+                onChange={(v) => {
+                  markInterval.value = v;
+                }}
+              />
+            ) : null}
 
             {isPlan ? (
               selPlayerRow !== null && selDraft !== null ? (
@@ -361,6 +375,15 @@ const TM_STYLES = `
   .tm-no-timer-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-ghost);
                      display: inline-block; }
   .tm-blind-line { opacity: .72; letter-spacing: .1em; }
+
+  .tm-marks-interval { display: flex; align-items: center; gap: var(--s2); }
+  .tm-marks-interval-buttons { display: inline-flex; gap: 2px; }
+  .tm-marks-interval-btn { padding: 4px 8px; border: 1px solid var(--line);
+                           background: var(--panel-in); color: var(--ink-dim);
+                           font: inherit; letter-spacing: .12em; cursor: pointer;
+                           border-radius: var(--r-sm); }
+  .tm-marks-interval-btn[aria-pressed="true"] { background: rgba(34,227,255,.15);
+                                                color: var(--cyan); border-color: var(--cyan); }
 `;
 
 function TacticalMoveStyles() {

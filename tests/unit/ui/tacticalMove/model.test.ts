@@ -7,11 +7,14 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  MARKS_INTERVAL_OPTIONS,
+  buildGhostArc,
   clampMag,
   clampPitch,
   deltaVMag,
   fleetGateStatus,
   initialDraft,
+  normalizeMarksInterval,
   planBadgeFor,
   playerRosterRows,
   plotArc,
@@ -19,6 +22,7 @@ import {
   toDeltaV,
   toMovementPlans,
   wrapBearing,
+  type MarksIntervalValue,
   type PlanDraft,
   type RosterShip,
 } from '../../../../src/ui/screens/tacticalMove/model.js';
@@ -302,5 +306,91 @@ describe('planBadgeFor', () => {
 
   it('destroyed ships never get a badge (excluded from the gate)', () => {
     expect(planBadgeFor(entry(1, 0, false), inputs())).toBeNull();
+  });
+});
+
+// ---- Marks-interval selector (SESSION-03) ---------------------------------
+
+describe('MARKS_INTERVAL_OPTIONS', () => {
+  it('lists Off / 1s / 2s / 4s in order (Gate 1 prototype cadence)', () => {
+    expect(MARKS_INTERVAL_OPTIONS.map((o) => o.value)).toEqual([0, 1, 2, 4]);
+    expect(MARKS_INTERVAL_OPTIONS.map((o) => o.label)).toEqual(['OFF', '1s', '2s', '4s']);
+    // Every option carries a screen-reader label — never color-alone.
+    for (const opt of MARKS_INTERVAL_OPTIONS) {
+      expect(opt.srLabel.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('normalizeMarksInterval', () => {
+  it('passes valid values through', () => {
+    expect(normalizeMarksInterval(0)).toBe(0);
+    expect(normalizeMarksInterval(1)).toBe(1);
+    expect(normalizeMarksInterval(2)).toBe(2);
+    expect(normalizeMarksInterval(4)).toBe(4);
+  });
+
+  it('snaps arbitrary numeric input to the nearest supported interval', () => {
+    expect(normalizeMarksInterval(0.5)).toBe(1);
+    expect(normalizeMarksInterval(1.5)).toBe(2);
+    expect(normalizeMarksInterval(3)).toBe(4);
+    expect(normalizeMarksInterval(100)).toBe(4);
+  });
+
+  it('non-finite / negative → 1s (default)', () => {
+    expect(normalizeMarksInterval(Number.NaN)).toBe(1);
+    expect(normalizeMarksInterval(-1)).toBe(1);
+    expect(normalizeMarksInterval(Number.POSITIVE_INFINITY)).toBe(1);
+  });
+});
+
+// ---- Ghost arc construction (marks-interval reaches the draw input) -------
+
+describe('buildGhostArc', () => {
+  const preview = {
+    positions: [
+      { x: 0, y: 0, z: 0 },
+      { x: 20, y: 0, z: 0 },
+    ],
+    endsOutsideArena: false,
+  };
+  const draft: PlanDraft = {
+    bodyId: 1,
+    bearing: 0,
+    pitch: 0,
+    magnitude: 20,
+    status: 'planned',
+  };
+
+  it('threads markIntervalSec through verbatim — the S01 ghost input', () => {
+    for (const mi of [0, 1, 2, 4] as const satisfies readonly MarksIntervalValue[]) {
+      const arc = buildGhostArc(preview, draft, 30, {
+        beatSeconds: 8,
+        hullRadius: 4,
+        markIntervalSec: mi,
+      });
+      expect(arc.markIntervalSec).toBe(mi);
+    }
+  });
+
+  it('pins beatSeconds + hullRadius and mirrors preview positions / exit flag', () => {
+    const arc = buildGhostArc(preview, draft, 30, {
+      beatSeconds: 8,
+      hullRadius: 4,
+      markIntervalSec: 1,
+    });
+    expect(arc.positions).toBe(preview.positions);
+    expect(arc.endsOutsideArena).toBe(false);
+    expect(arc.beatSeconds).toBe(8);
+    expect(arc.hullRadius).toBe(4);
+  });
+
+  it('deltaVMag is the clamped thrust magnitude — a COAST draft reads 0', () => {
+    const arc = buildGhostArc(preview, { ...draft, status: 'coast' }, 30, {
+      beatSeconds: 8,
+      hullRadius: 4,
+      markIntervalSec: 1,
+    });
+    expect(arc.deltaVMag).toBe(0);
   });
 });
