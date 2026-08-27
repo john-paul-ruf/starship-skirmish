@@ -94,3 +94,82 @@ describe('previewPath — the "preview must not lie" invariant', () => {
     }
   });
 });
+
+// SESSION-01 additions — finite-thrust preview MUST agree with the resolver's
+// lone-body path byte-for-byte on the SAME segmented plan, and MUST curve.
+describe('previewPath — finite-thrust (D-SHARED-SCHEDULE)', () => {
+  const finiteConfig: PhysicsConfig = { ...config, maxAccel: 25 };
+
+  it('matches resolveMovement position for an unobstructed body with a segmented plan', () => {
+    const body = ship(of(0, 0, 0), of(10, 0, 0));
+    const plan: MovementPlan = {
+      bodyId: 1,
+      deltaV: of(0, 0, 0),
+      segments: [{ deltaV: of(0, 3, 0) }, { deltaV: of(0, 0, 2) }],
+    };
+    const pv = previewPath(body, plan, finiteConfig);
+    const step = resolveMovement([body], [plan], finiteConfig);
+    // Byte-identical sub-step count + endpoint: the "preview must not lie"
+    // invariant extends to the finite-thrust path.
+    expect(pv.subStepCount).toBe(step.subStepCount);
+    expect(pv.positions[pv.positions.length - 1]).toEqual(step.finalBodies[0]!.position);
+    for (let k = 0; k < pv.positions.length; k += 1) {
+      const kf = step.keyframes[k]!;
+      expect(kf).toHaveLength(1);
+      expect(kf[0]!.position).toEqual(pv.positions[k]);
+    }
+  });
+
+  it('a single lateral-burn segment CURVES the arc (end bearing differs from start)', () => {
+    // Start moving purely +x; burn lateral +y once. The preview must produce a
+    // path whose end position has a positive y component (the whole feature's
+    // reason to exist — an impulsive plan applied at t=0 would still curve too,
+    // but the resolver-preview byte-identity test above pins that separately).
+    const body = ship(of(0, 0, 0), of(10, 0, 0));
+    const plan: MovementPlan = {
+      bodyId: 1,
+      deltaV: of(0, 0, 0),
+      segments: [{ deltaV: of(0, 4, 0) }],
+    };
+    const pv = previewPath(body, plan, finiteConfig);
+    const end = pv.positions[pv.positions.length - 1]!;
+    expect(end.y).toBeGreaterThan(0);
+    // And y grows monotonically over the beat (single-direction +y burn).
+    let priorY = pv.positions[0]!.y;
+    for (let k = 1; k < pv.positions.length; k += 1) {
+      const y = pv.positions[k]!.y;
+      expect(y).toBeGreaterThanOrEqual(priorY - 1e-9);
+      priorY = y;
+    }
+  });
+
+  it('markPositions has segments.length + 1 entries, start + end match positions', () => {
+    const body = ship(of(0, 0, 0), of(10, 0, 0));
+    const plan: MovementPlan = {
+      bodyId: 1,
+      deltaV: of(0, 0, 0),
+      segments: [
+        { deltaV: of(0, 2, 0) },
+        { deltaV: of(0, 2, 0) },
+        { deltaV: of(0, 2, 0) },
+        { deltaV: of(0, 2, 0) },
+      ],
+    };
+    const pv = previewPath(body, plan, finiteConfig);
+    expect(pv.markPositions).toHaveLength(plan.segments!.length + 1);
+    // First mark == positions[0] (t=0); last mark == positions[N] (t=dt).
+    expect(pv.markPositions[0]).toEqual(pv.positions[0]);
+    const lastMark = pv.markPositions[pv.markPositions.length - 1]!;
+    const lastPos = pv.positions[pv.positions.length - 1]!;
+    expect(lastMark.x).toBeCloseTo(lastPos.x, 9);
+    expect(lastMark.y).toBeCloseTo(lastPos.y, 9);
+    expect(lastMark.z).toBeCloseTo(lastPos.z, 9);
+  });
+
+  it('markPositions is empty for a null plan and for a segments-absent impulsive plan', () => {
+    const body = ship(of(0, 0, 0), of(5, 0, 0));
+    expect(previewPath(body, null, finiteConfig).markPositions).toEqual([]);
+    const impulsive: MovementPlan = { bodyId: 1, deltaV: of(1, 0, 0) };
+    expect(previewPath(body, impulsive, finiteConfig).markPositions).toEqual([]);
+  });
+});
