@@ -30,6 +30,12 @@ export default defineConfig({
   test: {
     passWithNoTests: true,
     environment: 'node',
+    // Suffix-scoped discovery keeps the two runners cleanly partitioned:
+    //   Vitest → *.test.ts  (this file)
+    //   Playwright → *.spec.ts  (playwright.config.ts, tests/e2e/**)
+    // Without this, Vitest's default include picks up tests/e2e/*.spec.ts and
+    // crashes on Playwright's `test.beforeAll` API. Do NOT drop the .test.ts
+    // scope — a bare `vitest run` (`npm test`) depends on it.
     include: ['tests/**/*.test.ts', 'src/**/*.test.ts'],
   },
 });
