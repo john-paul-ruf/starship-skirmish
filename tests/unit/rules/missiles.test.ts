@@ -68,6 +68,79 @@ describe('launch — boost + ammo state', () => {
     expect(r.guidance.rackDamage).toBe(60);
   });
 
+  it('launchClearsLauncher absent (default): spawns at shooterPosition (frozen-golden path)', () => {
+    const shooter = newShipCombat(
+      shipWith({ radius: 20, missiles: [rack({ bodyRadius: 6 })] }),
+      1,
+    );
+    const r = launch({
+      shooter,
+      shooterPosition: of(100, 200, 300),
+      shooterVelocity: of(0, 0, 0),
+      rackIndex: 0,
+      targetId: 2,
+      targetPosition: of(500, 200, 300),
+      turn: 1,
+      bodyId: 99,
+      trackingBeats: 2,
+    })!;
+    // No offset — spawns exactly on the launcher.
+    expect(r.body.position).toEqual({ x: 100, y: 200, z: 300 });
+  });
+
+  it('launchClearsLauncher=true: spawns offset by (shooterRadius + missileRadius + ε) along firing bearing', () => {
+    const shooter = newShipCombat(
+      shipWith({ radius: 20, missiles: [rack({ bodyRadius: 6 })] }),
+      1,
+    );
+    const r = launch({
+      shooter,
+      shooterPosition: of(0, 0, 0),
+      shooterVelocity: of(0, 0, 0),
+      rackIndex: 0,
+      targetId: 2,
+      targetPosition: of(100, 0, 0),  // firing along +X
+      turn: 1,
+      bodyId: 99,
+      trackingBeats: 2,
+      launchClearsLauncher: true,
+    })!;
+    // Offset = 20 + 6 + 1e-3 = 26.001 along +X.
+    expect(r.body.position.x).toBeCloseTo(26.001, 6);
+    expect(r.body.position.y).toBe(0);
+    expect(r.body.position.z).toBe(0);
+    // Distance from launcher STRICTLY greater than (shooterRadius+bodyRadius)
+    // — the physics broadphase will not report an overlap on t=0.
+    const d = Math.sqrt(
+      r.body.position.x ** 2 + r.body.position.y ** 2 + r.body.position.z ** 2,
+    );
+    expect(d).toBeGreaterThan(20 + 6);
+  });
+
+  it('launchClearsLauncher=true with degenerate zero-length bearing offsets along +X', () => {
+    // Zero-length bearing → the fallback +X direction is used for both boost
+    // AND the offset, so the missile lands ahead of the launcher on +X.
+    const shooter = newShipCombat(
+      shipWith({ radius: 20, missiles: [rack({ bodyRadius: 6 })] }),
+      1,
+    );
+    const r = launch({
+      shooter,
+      shooterPosition: of(0, 0, 0),
+      shooterVelocity: of(0, 0, 0),
+      rackIndex: 0,
+      targetId: 2,
+      targetPosition: of(0, 0, 0),  // degenerate
+      turn: 1,
+      bodyId: 99,
+      trackingBeats: 2,
+      launchClearsLauncher: true,
+    })!;
+    expect(r.body.position.x).toBeCloseTo(26.001, 6);
+    expect(r.body.position.y).toBe(0);
+    expect(r.body.position.z).toBe(0);
+  });
+
   it('empty magazine cannot launch (returns null)', () => {
     const s = newShipCombat(shipWith({ missiles: [rack({ ammo: 0 })] }), 1);
     const r = launch({

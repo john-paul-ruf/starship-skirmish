@@ -67,7 +67,21 @@ export interface LaunchInput {
   readonly turn: number;
   readonly bodyId: BodyId;
   readonly trackingBeats: number;
+  /**
+   * When true, the missile spawns offset ahead of its launcher by
+   * (`shooter.ship.radius + rack.bodyRadius + ε`) along the firing bearing so
+   * it cannot detonate on its own launcher on the following movement beat.
+   * Absent/false ⇒ spawns at `shooterPosition` (pre-F6 behavior; matches the
+   * frozen combat golden fixtures whose loaded `CombatConfig` omits the
+   * flag — the loop passes false when the flag is absent).
+   */
+  readonly launchClearsLauncher?: boolean;
 }
+
+/** Numeric floor between the missile and its launcher when the offset is
+ *  applied — keeps the two spheres strictly non-overlapping without pushing
+ *  the missile so far it snaps past intervening geometry. */
+const LAUNCH_CLEARANCE_EPSILON = 1e-3;
 
 /**
  * Launch one missile from `rackIndex`. Returns the physics body + rules-side
@@ -94,10 +108,26 @@ export const launch = (input: LaunchInput): {
   const ny = dist > 0 ? dy / dist : 0;
   const nz = dist > 0 ? dz / dist : 0;
 
+  // Spawn offset: when the config flag is on, push the missile forward by the
+  // sum of the launcher and missile radii (plus ε) along the firing bearing
+  // so the physics broadphase does not report a contact on the FIRST sub-step
+  // (which would fire `detonatesOnContact` on the launcher). Degenerate
+  // zero-length bearing already falls back to +X above — the +X-shifted
+  // position stays valid.
+  const clearLaunch = input.launchClearsLauncher ?? false;
+  const offset = clearLaunch
+    ? input.shooter.ship.radius + rack.bodyRadius + LAUNCH_CLEARANCE_EPSILON
+    : 0;
+  const position: Vec3 = of(
+    input.shooterPosition.x + nx * offset,
+    input.shooterPosition.y + ny * offset,
+    input.shooterPosition.z + nz * offset,
+  );
+
   const body: MissileBody = {
     kind: 'missile',
     id: input.bodyId,
-    position: input.shooterPosition,
+    position,
     velocity: of(
       input.shooterVelocity.x + rack.boostVelocity * nx,
       input.shooterVelocity.y + rack.boostVelocity * ny,

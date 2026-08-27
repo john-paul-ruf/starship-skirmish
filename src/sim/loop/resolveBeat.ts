@@ -41,6 +41,7 @@ import {
   enforceHazardCap,
   guideMissiles,
   interceptMissiles,
+  launch as launchMissile,
   regenShields,
   resolveAttackBeat,
   spawnDebris,
@@ -853,9 +854,10 @@ export const runAttackBeat = (
     velocities.set(id, b.velocity);
   }
 
-  // LaunchEnv wires the loop's id counter to the rules module. Guidance comes
-  // back typed `unknown` per the rules boundary — we cast at the loop layer
-  // where we know it's a MissileGuidance.
+  // LaunchEnv wires the loop's id counter into `rules.launch` and threads the
+  // per-match combat config it needs (`trackingBeats`, `launchClearsLauncher`).
+  // The launch geometry (bearing math, offset, velocity boost) lives ONCE, in
+  // `rules/missiles.ts::launch`; the env is id-minting + config wiring only.
   let nextBodyId = state.nextBodyId;
   const launchEnv: LaunchEnv = {
     nextBodyId: () => {
@@ -863,43 +865,12 @@ export const runAttackBeat = (
       nextBodyId += 1;
       return id;
     },
-    launch: (input) => {
-      const rack = input.shooter.ship.missiles[input.rackIndex];
-      if (rack === undefined) return null;
-      if (!input.shooter.missileAlive[input.rackIndex]!) return null;
-      if (input.shooter.missileAmmo[input.rackIndex]! <= 0) return null;
-      // Compute unit direction; delegate to the geometry the rules module
-      // uses (identical math to `rules/missiles.ts::launch`, deterministic
-      // arithmetic only).
-      const dx = input.targetPosition.x - input.shooterPosition.x;
-      const dy = input.targetPosition.y - input.shooterPosition.y;
-      const dz = input.targetPosition.z - input.shooterPosition.z;
-      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      const nx = dist > 0 ? dx / dist : 1;
-      const ny = dist > 0 ? dy / dist : 0;
-      const nz = dist > 0 ? dz / dist : 0;
-      const body: MissileBody = {
-        kind: 'missile',
-        id: input.bodyId,
-        position: input.shooterPosition,
-        velocity: of(
-          input.shooterVelocity.x + rack.boostVelocity * nx,
-          input.shooterVelocity.y + rack.boostVelocity * ny,
-          input.shooterVelocity.z + rack.boostVelocity * nz,
-        ),
-        mass: rack.bodyMass,
-        radius: rack.bodyRadius,
-      };
-      const guidance: MissileGuidance = {
-        bodyId: input.bodyId,
-        targetId: input.targetId,
-        trackingBeatsLeft: state.combat.missiles.trackingBeats,
-        rackDamage: rack.damage,
-        aoeRadius: rack.aoeRadius,
-        trackingTurnRate: rack.trackingTurnRate,
-      };
-      return { body, guidance };
-    },
+    launch: (input) =>
+      launchMissile({
+        ...input,
+        trackingBeats: state.combat.missiles.trackingBeats,
+        launchClearsLauncher: state.combat.missiles.launchClearsLauncher ?? false,
+      }),
   };
 
   const res = resolveAttackBeat(
