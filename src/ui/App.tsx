@@ -29,7 +29,15 @@ import {
   type TopbarRoute,
   type ToastTone,
 } from './components/index.js';
-import { Encyclopedia, ShareImport, Shipyard } from './screens/index.js';
+import {
+  Encyclopedia,
+  PostMatch,
+  ShareImport,
+  Shipyard,
+  SkirmishSetup,
+  TacticalAttack,
+  TacticalMove,
+} from './screens/index.js';
 
 // ---- Constants ------------------------------------------------------------
 
@@ -39,6 +47,7 @@ const NAV_ROUTES: readonly TopbarRoute[] = [
   { id: 'encyclopedia', label: 'ENCYCLOPEDIA' },
   { id: 'shipyard', label: 'SHIPYARD' },
   { id: 'share', label: 'SHARE' },
+  { id: 'skirmish', label: 'SKIRMISH' },
 ];
 
 const TOAST_TONE: Record<'default' | 'warn' | 'danger', ToastTone> = {
@@ -112,6 +121,14 @@ const Outlet = () => {
       return <Shipyard />;
     case 'share':
       return <ShareImport />;
+    case 'skirmish-setup':
+      return <SkirmishSetup />;
+    case 'tactical-move':
+      return <TacticalMove />;
+    case 'tactical-attack':
+      return <TacticalAttack />;
+    case 'post-match':
+      return <PostMatch />;
   }
 };
 
@@ -161,6 +178,7 @@ export function App() {
             if (id === 'encyclopedia') navigate({ name: 'encyclopedia' });
             else if (id === 'shipyard') navigate({ name: 'shipyard' });
             else if (id === 'share') navigate({ name: 'share' });
+            else if (id === 'skirmish') navigate({ name: 'skirmish-setup' });
           }}
           reducedMotion={rm}
           onToggleReducedMotion={() => {

@@ -21,10 +21,16 @@ import type { LibraryRepo } from '../persist/index.js';
 // ---- Route ----------------------------------------------------------------
 
 /**
- * The three routes the shipyard-suite feature exposes. `share.token` is the
- * raw share-token string as it arrived in the URL hash — bootstrap does NOT
- * decode it (S06 owns the preview + `decodeShareToken`). Missing token means
- * the user landed on `#/share` with nothing to paste-preview yet.
+ * The routes the app exposes. `share.token` is the raw share-token string as
+ * it arrived in the URL hash — bootstrap does NOT decode it (S06 owns the
+ * preview + `decodeShareToken`). Missing token means the user landed on
+ * `#/share` with nothing to paste-preview yet.
+ *
+ * The four `tactical-skirmish` variants (`skirmish-setup` / `tactical-move` /
+ * `tactical-attack` / `post-match`) are the match flow (S01). They carry no
+ * payload — the active match lives on `AppServices.activeMatch`, not the URL —
+ * so a match route entered cold (deep-link, reload) has no controller and the
+ * shell redirects to `skirmish-setup` (S01 CP5).
  *
  * `Route` is a discriminated union on `name` — the outlet switch in `App.tsx`
  * (D-ROUTE-OUTLET) narrows on that field. A new screen = a new variant here
@@ -33,7 +39,11 @@ import type { LibraryRepo } from '../persist/index.js';
 export type Route =
   | { readonly name: 'encyclopedia' }
   | { readonly name: 'shipyard'; readonly buildId?: string }
-  | { readonly name: 'share'; readonly token?: string };
+  | { readonly name: 'share'; readonly token?: string }
+  | { readonly name: 'skirmish-setup' }
+  | { readonly name: 'tactical-move' }
+  | { readonly name: 'tactical-attack' }
+  | { readonly name: 'post-match' };
 
 // ---- Toast surface --------------------------------------------------------
 

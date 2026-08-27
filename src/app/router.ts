@@ -1,13 +1,17 @@
 // M16 App — hash router (D-ROUTE-OUTLET: the router only produces the Route
 // signal + `navigate`; it never imports a screen).
 //
-// Hash format — copy-pasteable, token-safe, three variants:
+// Hash format — copy-pasteable, token-safe:
 //
 //   `#/encyclopedia`
 //   `#/shipyard`
 //   `#/shipyard/<buildId>`
 //   `#/share`
 //   `#/share?t=<token>`
+//   `#/skirmish`          (skirmish-setup)
+//   `#/skirmish/move`     (tactical-move)
+//   `#/skirmish/attack`   (tactical-attack)
+//   `#/skirmish/result`   (post-match)
 //
 // Anything else parses to the `encyclopedia` route (the safe landing surface).
 // `parseHash` and `serializeRoute` are total pure functions — every `Route`
@@ -44,6 +48,14 @@ export const serializeRoute = (route: Route): string => {
       return route.token !== undefined && route.token.length > 0
         ? `#/share?t=${encodeURIComponent(route.token)}`
         : '#/share';
+    case 'skirmish-setup':
+      return '#/skirmish';
+    case 'tactical-move':
+      return '#/skirmish/move';
+    case 'tactical-attack':
+      return '#/skirmish/attack';
+    case 'post-match':
+      return '#/skirmish/result';
   }
 };
 
@@ -86,6 +98,14 @@ export const parseHash = (hash: string): Route => {
       return { name: 'share', token: decoded };
     }
     return { name: 'share' };
+  }
+  if (head === 'skirmish') {
+    const sub = segments[1];
+    if (sub === 'move') return { name: 'tactical-move' };
+    if (sub === 'attack') return { name: 'tactical-attack' };
+    if (sub === 'result') return { name: 'post-match' };
+    // Bare `#/skirmish` (or any unrecognised sub) lands on setup.
+    return { name: 'skirmish-setup' };
   }
 
   return DEFAULT_ROUTE;
