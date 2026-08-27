@@ -16,7 +16,13 @@
 import { describe, expect, it } from 'vitest';
 import { of } from '../../../src/sim/mathx/index.js';
 import type { Vec3 } from '../../../src/sim/mathx/index.js';
-import type { Body, BodyId, SimShip } from '../../../src/sim/types.js';
+import type {
+  Body,
+  BodyId,
+  ChassisClass,
+  CombatConfig,
+  SimShip,
+} from '../../../src/sim/types.js';
 import type {
   BlindMatchView,
   BlindShipView,
@@ -313,5 +319,246 @@ describe('planFleetAttack — weapon + missile assignment', () => {
     const plans = planFleetAttack(view, 0, TIER_CONFIG.rookie);
     expect(plans).toHaveLength(1);
     expect(plans[0]!.targetId).toBe(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CP2 — FR-25 called-shot ladder gated by tier.enableCalledShots
+// ---------------------------------------------------------------------------
+
+describe('planFleetAttack — FR-25 called-shot ladder', () => {
+  const p = shipProfile('X');
+
+  it('shielded target: no calledShot regardless of tier', () => {
+    const view = buildView(0, [
+      { bodyId: 1, fleetId: 0, position: of(0, 0, 0), view: shipView(1, 0, 100, 60, p) },
+      { bodyId: 2, fleetId: 1, position: of(200, 0, 0), view: shipView(2, 1, 100, 60, p) },
+    ]);
+    for (const tier of ['rookie', 'veteran', 'ace'] as const) {
+      const plans = planFleetAttack(view, 0, TIER_CONFIG[tier]);
+      expect(plans).toHaveLength(1);
+      expect(plans[0]!.calledShot).toBeUndefined();
+    }
+  });
+
+  it('rookie: never emits calledShot even against zero-shield target', () => {
+    const dropped = shipView(2, 1, 100, 0, p);
+    const view = buildView(0, [
+      { bodyId: 1, fleetId: 0, position: of(0, 0, 0), view: shipView(1, 0, 100, 60, p) },
+      { bodyId: 2, fleetId: 1, position: of(200, 0, 0), view: dropped },
+    ]);
+    const plans = planFleetAttack(view, 0, TIER_CONFIG.rookie);
+    expect(plans).toHaveLength(1);
+    expect(plans[0]!.calledShot).toBeUndefined();
+  });
+
+  it('veteran + zero-shield + shieldGenAlive → calledShot shield-generator', () => {
+    const dropped = shipView(2, 1, 100, 0, p);
+    const view = buildView(0, [
+      { bodyId: 1, fleetId: 0, position: of(0, 0, 0), view: shipView(1, 0, 100, 60, p) },
+      { bodyId: 2, fleetId: 1, position: of(200, 0, 0), view: dropped },
+    ]);
+    const plans = planFleetAttack(view, 0, TIER_CONFIG.veteran);
+    expect(plans).toHaveLength(1);
+    expect(plans[0]!.calledShot).toEqual({ kind: 'shield-generator' });
+  });
+
+  it('ace + zero-shield + shieldGenAlive → calledShot shield-generator', () => {
+    const dropped = shipView(2, 1, 100, 0, p);
+    const view = buildView(0, [
+      { bodyId: 1, fleetId: 0, position: of(0, 0, 0), view: shipView(1, 0, 100, 60, p) },
+      { bodyId: 2, fleetId: 1, position: of(200, 0, 0), view: dropped },
+    ]);
+    const plans = planFleetAttack(view, 0, TIER_CONFIG.ace);
+    expect(plans).toHaveLength(1);
+    expect(plans[0]!.calledShot).toEqual({ kind: 'shield-generator' });
+  });
+
+  it('veteran + zero-shield + shieldGen dead → escalates to engine', () => {
+    const p2 = shipProfile('T');
+    const stripped = shipView(2, 1, 100, 0, p2, {
+      shieldGenAlive: false,
+      engineAlive: true,
+    });
+    const view = buildView(0, [
+      { bodyId: 1, fleetId: 0, position: of(0, 0, 0), view: shipView(1, 0, 100, 60, p) },
+      { bodyId: 2, fleetId: 1, position: of(200, 0, 0), view: stripped },
+    ]);
+    const plans = planFleetAttack(view, 0, TIER_CONFIG.veteran);
+    expect(plans).toHaveLength(1);
+    expect(plans[0]!.calledShot).toEqual({ kind: 'engine' });
+  });
+
+  it('veteran + shieldGen dead + engine dead + live weapon → picks highest-DPS weapon', () => {
+    const twoWeapons = shipProfile('T', {
+      weapons: [
+        // idx 0: DPS 20 * 1 * 0.5 = 10
+        { range: 400, damage: 20, shotsPerTurn: 1, accuracy: 0.5 },
+        // idx 1: DPS 30 * 2 * 0.9 = 54  ← highest
+        { range: 400, damage: 30, shotsPerTurn: 2, accuracy: 0.9 },
+        // idx 2: DPS 40 * 1 * 0.9 = 36
+        { range: 400, damage: 40, shotsPerTurn: 1, accuracy: 0.9 },
+      ],
+    });
+    const disabled = shipView(2, 1, 100, 0, twoWeapons, {
+      shieldGenAlive: false,
+      engineAlive: false,
+    });
+    const view = buildView(0, [
+      { bodyId: 1, fleetId: 0, position: of(0, 0, 0), view: shipView(1, 0, 100, 60, p) },
+      { bodyId: 2, fleetId: 1, position: of(200, 0, 0), view: disabled },
+    ]);
+    const plans = planFleetAttack(view, 0, TIER_CONFIG.veteran);
+    expect(plans).toHaveLength(1);
+    expect(plans[0]!.calledShot).toEqual({ kind: 'weapon', index: 1 });
+  });
+
+  it('veteran + zero-shield + everything called-shot-able dead → no calledShot', () => {
+    // No weapons at all, no shield gen, no engine.
+    const bare = shipProfile('bare', { weapons: [] });
+    const husk = shipView(2, 1, 100, 0, bare, {
+      shieldGenAlive: false,
+      engineAlive: false,
+    });
+    const view = buildView(0, [
+      { bodyId: 1, fleetId: 0, position: of(0, 0, 0), view: shipView(1, 0, 100, 60, p) },
+      { bodyId: 2, fleetId: 1, position: of(200, 0, 0), view: husk },
+    ]);
+    const plans = planFleetAttack(view, 0, TIER_CONFIG.veteran);
+    expect(plans).toHaveLength(1);
+    expect(plans[0]!.calledShot).toBeUndefined();
+  });
+
+  it('called shot applies to missile plans too (same subsystem as weapons)', () => {
+    const withRack = shipProfile('shooter', {
+      missiles: [
+        {
+          ammo: 3,
+          damage: 60,
+          aoeRadius: 0,
+          boostVelocity: 100,
+          trackingTurnRate: 0.5,
+          bodyMass: 5,
+          bodyRadius: 2,
+        },
+      ],
+    });
+    const dropped = shipView(2, 1, 100, 0, p);
+    const view = buildView(0, [
+      { bodyId: 1, fleetId: 0, position: of(0, 0, 0), view: shipView(1, 0, 100, 60, withRack) },
+      { bodyId: 2, fleetId: 1, position: of(200, 0, 0), view: dropped },
+    ]);
+    const plans = planFleetAttack(view, 0, TIER_CONFIG.veteran);
+    // 1 weapon plan + 1 missile plan, both with calledShot.
+    expect(plans).toHaveLength(2);
+    for (const plan of plans) {
+      expect(plan.calledShot).toEqual({ kind: 'shield-generator' });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CP2 — FR-29 ace AoE friendly-fire skip on missile assignment
+// ---------------------------------------------------------------------------
+
+const aoeCombat = (radius: number): CombatConfig => {
+  const byClass: Record<ChassisClass, number> = {
+    fighter: radius,
+    frigate: radius,
+    cruiser: radius,
+    'mega-destroyer': radius,
+  };
+  return {
+    hazards: {
+      maxSimultaneousBodies: 512,
+      debrisLifetimeTurns: 3,
+      debrisPerDestruction: {
+        fighter: 2,
+        frigate: 4,
+        cruiser: 6,
+        'mega-destroyer': 10,
+      },
+      debrisScatterImpulse: 30,
+      debrisMassFractionOfHull: 0.05,
+      debrisRadius: 3,
+    },
+    destruction: {
+      aoeRadiusByClass: byClass,
+      aoeDamageByClass: {
+        fighter: 10,
+        frigate: 15,
+        cruiser: 20,
+        'mega-destroyer': 30,
+      },
+    },
+    missiles: {
+      trackingBeats: 3,
+      spentRemainsArmed: false,
+      reacquireOnTargetLoss: false,
+    },
+    shields: {
+      regenTicksRegardlessOfDamage: true,
+    },
+  };
+};
+
+describe('planFleetAttack — FR-29 ace AoE friendly-fire skip on missiles', () => {
+  const missileRack = {
+    ammo: 3,
+    damage: 60,
+    aoeRadius: 40,
+    boostVelocity: 100,
+    trackingTurnRate: 0.5,
+    bodyMass: 5,
+    bodyRadius: 2,
+  } as const;
+  const shooterProfile = shipProfile('S', { missiles: [missileRack] });
+  const targetProfile = shipProfile('T');
+  const friendlyProfile = shipProfile('F');
+
+  // Own bodyId=3 sits 30 units from enemy target bodyId=2; AoE radius = 50.
+  const friendlyInAoeView = (): BlindMatchView =>
+    buildView(0, [
+      { bodyId: 1, fleetId: 0, position: of(0, 0, 0), view: shipView(1, 0, 100, 60, shooterProfile) },
+      { bodyId: 2, fleetId: 1, position: of(200, 0, 0), view: shipView(2, 1, 100, 60, targetProfile) },
+      { bodyId: 3, fleetId: 0, position: of(230, 0, 0), view: shipView(3, 0, 100, 60, friendlyProfile) },
+    ]);
+
+  it('ace + friendly in AoE + combat provided → skips missile; keeps weapon', () => {
+    const view = friendlyInAoeView();
+    const plans = planFleetAttack(view, 0, TIER_CONFIG.ace, aoeCombat(50));
+    // Shooter bodyId=1: weapon plan kept, missile plan skipped.
+    // Friendly bodyId=3: weapon plan (no missile rack). Total: 2 plans, both weapons.
+    expect(plans).toHaveLength(2);
+    expect(plans.every((p) => p.weaponIndex !== undefined)).toBe(true);
+    expect(plans.every((p) => p.missileIndex === undefined)).toBe(true);
+  });
+
+  it('ace + no friendly in AoE → missile flies', () => {
+    const clearView = buildView(0, [
+      { bodyId: 1, fleetId: 0, position: of(0, 0, 0), view: shipView(1, 0, 100, 60, shooterProfile) },
+      // Enemy alone — no friendly anywhere near.
+      { bodyId: 2, fleetId: 1, position: of(200, 0, 0), view: shipView(2, 1, 100, 60, targetProfile) },
+    ]);
+    const plans = planFleetAttack(clearView, 0, TIER_CONFIG.ace, aoeCombat(50));
+    // Weapon + missile from shooter.
+    expect(plans).toHaveLength(2);
+    expect(plans.filter((p) => p.missileIndex !== undefined)).toHaveLength(1);
+  });
+
+  it('veteran + friendly in AoE → missile still flies (check is ace-only)', () => {
+    const view = friendlyInAoeView();
+    const plans = planFleetAttack(view, 0, TIER_CONFIG.veteran, aoeCombat(50));
+    // Veteran ignores the AoE check → missile plan present.
+    const missiles = plans.filter((p) => p.missileIndex !== undefined);
+    expect(missiles).toHaveLength(1);
+  });
+
+  it('ace + combat undefined → missile still flies (opted-out path)', () => {
+    const view = friendlyInAoeView();
+    const plans = planFleetAttack(view, 0, TIER_CONFIG.ace /* no combat */);
+    // Without combat the check is a no-op; missile plan is present.
+    const missiles = plans.filter((p) => p.missileIndex !== undefined);
+    expect(missiles).toHaveLength(1);
   });
 });
