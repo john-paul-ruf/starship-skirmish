@@ -25,6 +25,13 @@
 // well under a second. The gate 2 prototype ran 100 × 15 = 1500 beats for its
 // verdict; this regression is the same shape at ~⅓ scale, still large enough
 // to catch a regression of the cruise-velocity target or the previewPath veto.
+//
+// FINITE-THRUST (SESSION-03): PhysicsConfig carries `maxAccel` so the shared
+// `thrustSchedule` builds a curved schedule — the veto in `evaluateCandidate`
+// runs through the SAME curved preview the ship will fly (D-BOT-SAME-MODEL /
+// D-SHARED-SCHEDULE). Domain-side `physicsConfigFromTuning` propagation is
+// owned by NO session in this feature (S01 followUp) — for these unit tests
+// the value is constructed directly, in-lease.
 
 import { describe, expect, it } from 'vitest';
 import {
@@ -59,6 +66,13 @@ const POS_HALF = 450;
 const VEL_HALF = 40;
 const BUDGET = 80;
 
+// `maxAccel` is set (finite-thrust-movement SESSION-03) so the shared
+// `thrustSchedule` builds a curved per-sub-step Δv sequence — the FR-29 veto
+// in `evaluateCandidate` runs over the SAME curved preview the ship will fly.
+// 200 units/s² sits well above the 80 per-beat Δv budget × dt=1 so no single
+// segment gets capped (`cap = maxAccel · segDur = 200`), keeping the schedule
+// a partial burn + coast (not a maxAccel-clipped rendering); the curvature is
+// visible without distorting the planner's chosen impulse.
 const PHYSICS: PhysicsConfig = {
   dt: 1,
   subStepMin: 4,
@@ -66,6 +80,7 @@ const PHYSICS: PhysicsConfig = {
   restitution: 0.15,
   collisionDamageCoefficient: 0.0012,
   arena: { center: of(0, 0, 0), radius: 800 },
+  maxAccel: 200,
 };
 
 // Same avalanche as prototypes/gate2/harnessRun.ts so different seed integers
@@ -343,7 +358,9 @@ describe('FR-29 boundary-safety regression (Gate-2 exit criterion promoted)', ()
       // If this trips, either (a) the cruise-velocity target regressed
       // (velocities now accumulate above the cruise cap), (b) the
       // previewPath boundary veto stopped rejecting unsafe candidates, or
-      // (c) preview and resolve diverged (architecture §9 broken).
+      // (c) preview and resolve diverged (architecture §9 / D-SHARED-SCHEDULE
+      // broken — the curved finite-thrust arc the veto sees no longer
+      // matches the curved arc the resolver flies).
       expect(t.unforced).toBe(0);
     });
   }
@@ -353,6 +370,24 @@ describe('FR-29 boundary-safety regression (Gate-2 exit criterion promoted)', ()
       // beatsRun should be > 0 for every tier — a zero beatsRun means the
       // setup handed the planner a scenario that early-exited on beat 0.
       expect(t.beatsRun).toBeGreaterThan(0);
+    }
+  });
+
+  it('plans emitted for boundary check carry a finite-thrust schedule (D-BOT-SAME-MODEL)', () => {
+    // Reprove that the regression above is running on the FINITE-THRUST code
+    // path — a silent regression back to impulsive plans (missing `segments`)
+    // would also satisfy unforced == 0 but defeat the fairness invariant. A
+    // single sample of every tier's emitted plans is enough — planShipMovement
+    // always attaches a single-segment schedule (movementPlanner.test.ts CP1).
+    const { bodies, fleetByBodyId } = buildSetup(1);
+    for (const tier of BOT_TIERS) {
+      const view = buildView(bodies, fleetByBodyId, 0);
+      const plans = planFleetMovement(view, tier, PHYSICS);
+      expect(plans.length).toBeGreaterThan(0);
+      for (const plan of plans) {
+        expect(plan.segments).toBeDefined();
+        expect(plan.segments!).toHaveLength(1);
+      }
     }
   });
 });

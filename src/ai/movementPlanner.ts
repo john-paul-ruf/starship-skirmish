@@ -215,11 +215,26 @@ const evaluateCandidate = (
   physics: PhysicsConfig,
   rank: number,
 ): Evaluated => {
-  const plan: MovementPlan = { bodyId: self.id, deltaV };
+  // D-BOT-SAME-MODEL / FR-29 (finite-thrust-movement SESSION-03): the veto MUST
+  // preview the SAME finite-thrust plan the bot will emit — a straight impulsive
+  // arc and a curved finite-thrust arc can exit differently, so feeding the
+  // impulsive shape here would let the ladder greenlight candidates the ship
+  // then flies out of. Single-segment plan matches `planShipMovement`'s emission.
+  // With `physics.maxAccel` unset (impulsive fallback in `thrustSchedule`) the
+  // preview stays byte-identical to the pre-SESSION-01 impulsive arc — the
+  // curve only appears when a caller supplies `maxAccel` (D-ADDITIVE-PLAN).
+  const plan: MovementPlan = {
+    bodyId: self.id,
+    deltaV,
+    segments: [{ deltaV }],
+  };
   const preview = previewPath(self, plan, physics);
   const inside = countInsidePositions(preview.positions, view.arena);
-  // Post-plan velocity is the ship's pre-plan velocity + deltaV (physics.applyPlan
-  // does exactly this before integrating). Preview reflects that already.
+  // Post-plan velocity is the ship's pre-plan velocity + deltaV: on the shared
+  // schedule, a single segment's total delivered impulse is `deltaV` (per-
+  // segment cap `maxAccel · dt` applies only if the caller under-provisions
+  // `maxAccel` — the domain/tuning propagation makes that the production
+  // no-op). The finite-thrust preview reflects this end-state already.
   const endVelocity = add(self.velocity, deltaV);
   const endPosition = preview.positions[preview.positions.length - 1]!;
   return {
