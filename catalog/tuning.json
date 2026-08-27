@@ -79,5 +79,11 @@
 
   "shields": {
     "regenTicksRegardlessOfDamage": true
+  },
+
+  "physics": {
+    "$comment": "Finite-thrust movement (feature: finite-thrust-movement). maxAccel is the engine's bounded acceleration in world-units per sim-second^2 — a waypoint burn fires at maxAccel for |deltaV|/maxAccel seconds, then coasts, so paths CURVE while thrusting (see src/sim/physics/thrust.ts). Baseline value taken from the Gate-1 prototype's MAX_DV_PER_TURN / dt relationship (prototypes/gate1/main.ts:107-112) — a full-beat burn still reaches the per-ship deltaVPerTurn budget for every catalog engine. S06 owns the balance re-tune of this value. movementModel is the version marker the determinism-fixture re-record keys on (D-VERSION-RERECORD / Custom Rule 3): 1 = the impulsive-only model the current hash-locked fixtures were recorded under; S06 bumps to 2 and appends the re-recorded generation once downstream sessions actually emit segments.",
+    "maxAccel": 25,
+    "movementModel": 1
   }
 }

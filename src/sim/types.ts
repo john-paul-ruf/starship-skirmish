@@ -58,16 +58,50 @@ export interface MissileBody extends BodyCommon {
 export type Body = ShipBody | DebrisBody | MissileBody;
 
 /**
- * One movement plan for one body. Emitted by a `Commander` (player or bot) and applied
- * by physics as a velocity delta at the start of a beat.
+ * One waypoint burn within a beat (finite-thrust movement — feature
+ * `finite-thrust-movement`, SESSION-01). `deltaV` is the total impulse the segment
+ * delivers, expressed in world-space (the UI/AI converts bearing/pitch → Vec3 via
+ * `mathx.dirFromBearingPitch`, so physics never sees an angle — the sim/physics
+ * transcendental ban stays intact, D-PHYSICS-VEC3-ONLY).
  *
- * Physics trusts the supplied delta. The caller (`domain.resolveFleet`) is responsible
- * for enforcing engine caps; putting that here would leak domain rules into the physics
- * layer.
+ * The burn fires at `PhysicsConfig.maxAccel` for `|deltaV|/maxAccel` sim-seconds
+ * from the start of the segment's time-slice (`dt / segments.length` seconds each),
+ * then coasts. That is what makes the flown path CURVE while thrusting — the
+ * shipping analogue of the Gate-1 prototype's `thrustAt`.
+ *
+ * Per-segment `deltaV` is capped upstream by the producer's per-ship Δv budget and
+ * again here inside `thrustSchedule` at `maxAccel · segDuration` so a segment can
+ * never deliver more impulse than the engine physically can in its slice.
+ */
+export interface WaypointBurn {
+  readonly deltaV: Vec3;
+}
+
+/**
+ * One movement plan for one body. Emitted by a `Commander` (player or bot) and applied
+ * by physics at the start of a beat.
+ *
+ * TWO SHAPES, ADDITIVELY (D-ADDITIVE-PLAN, load-bearing for the whole feature):
+ *   • `segments` ABSENT → impulsive fallback. The full `deltaV` is added to velocity
+ *     at sub-step 0 and the rest of the beat flies ballistically — byte-for-byte
+ *     identical to the pre-SESSION-01 resolver. This is what keeps missiles
+ *     (`sim/rules/missiles.ts` emits impulsive plans only, D-MISSILE-IMPULSIVE) and
+ *     every hash-locked determinism fixture green through S01–S05.
+ *   • `segments` PRESENT → finite-thrust. The impulse is distributed across the
+ *     segments' time-slices at bounded `maxAccel`; `deltaV` is IGNORED (segments
+ *     override it). Callers that emit segments should still set `deltaV = ZERO` for
+ *     shape-consistency, but the resolver reads only the schedule.
+ *
+ * Physics trusts the supplied delta. The caller (`domain.resolveFleet`) is
+ * responsible for enforcing engine caps; putting that here would leak domain rules
+ * into the physics layer.
  */
 export interface MovementPlan {
   readonly bodyId: BodyId;
+  /** Impulsive fallback — applied at start of beat when `segments` is absent. */
   readonly deltaV: Vec3;
+  /** Finite-thrust schedule. When present, `deltaV` is ignored (segments override). */
+  readonly segments?: readonly WaypointBurn[];
 }
 
 /**

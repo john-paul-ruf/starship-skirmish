@@ -20,4 +20,19 @@ export interface PhysicsConfig {
   readonly collisionDamageCoefficient: number;
   /** Arena shape and extent (tuning: `arena.radiusByBudget[<budget>]`). */
   readonly arena: Arena;
+  /**
+   * Engine's bounded acceleration in world-units per sim-second² — the peak an
+   * engine can push at (tuning: `physics.maxAccel`, added by feature
+   * `finite-thrust-movement`). A finite-thrust segment fires at `maxAccel` for
+   * `|Δv|/maxAccel` seconds, then coasts, which is what makes the flown path curve
+   * while thrusting (see `thrust.ts` and `types.ts::MovementPlan.segments`).
+   *
+   * OPTIONAL for D-ADDITIVE-PLAN: an impulsive-only plan (`segments` absent) never
+   * reads it, so every existing `PhysicsConfig` literal — the many in
+   * `tests/**` and `physicsConfigFromTuning` in `src/domain/` (out of this
+   * session's lease) — still compiles unchanged. A caller that emits
+   * `MovementPlan.segments` MUST set it; `thrustSchedule` treats absence as
+   * `Infinity` (equivalent to unbounded acceleration, i.e. an impulsive segment).
+   */
+  readonly maxAccel?: number;
 }
