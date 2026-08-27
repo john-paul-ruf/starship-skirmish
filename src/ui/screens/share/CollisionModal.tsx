@@ -24,7 +24,7 @@
 
 import { useState } from 'preact/hooks';
 
-import { Banner, Chip, Field, Modal } from '../../components/index.js';
+import { Banner, Chip, Modal } from '../../components/index.js';
 import type { CollisionChoice } from './model.js';
 
 export interface CollisionModalProps {
@@ -136,7 +136,9 @@ export function CollisionModal(props: CollisionModalProps) {
               <div class="t-meta" style="margin-bottom:var(--s2)">
                 Recommended. Both builds are kept. Edit the name if you want something clearer.
               </div>
-              <Field
+              <input
+                type="text"
+                class="field"
                 value={renameValue}
                 onInput={(e) => {
                   setRenameValue((e.currentTarget as HTMLInputElement).value);

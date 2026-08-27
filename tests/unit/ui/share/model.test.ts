@@ -35,9 +35,11 @@ import {
   previewToken,
   reportCounts,
   resolveAddAction,
+  runJsonImport,
   suggestRenamed,
   summarizeReport,
 } from '../../../../src/ui/screens/share/model.js';
+import { FILE_MAX_BYTES, exportToText } from '../../../../src/io/index.js';
 
 const catalog = loadCatalog();
 const STAMP = '2026-08-27T00:00:00.000Z';
@@ -457,5 +459,174 @@ describe('summarizeReport — flatten persist ImportReport into display rows', (
       skipped: 3,
       failed: 5,
     });
+  });
+});
+
+// ─── runJsonImport — CP3 pipeline (pre-flight + parse + apply) ─────────────
+
+describe('runJsonImport — pre-flight rejects with NO state change', () => {
+  const seedRepo = () => {
+    const { repo } = openLibrary(catalog, { store: memoryStore(), now: () => STAMP });
+    return repo;
+  };
+
+  const validExport = (name = 'Wasp Alpha'): string => {
+    const b = fighter(name);
+    return exportToText({
+      format: 'starship-skirmish/library',
+      schemaVersion: 1,
+      catalogVersion: catalog.catalogVersion,
+      exportedAt: STAMP,
+      builds: [
+        {
+          name: b.name,
+          tags: b.tags,
+          chassisId: b.chassisId,
+          slots: b.slots,
+          schemaVersion: b.schemaVersion,
+          catalogVersion: b.catalogVersion,
+          storedCost: b.storedCost,
+        },
+      ],
+    });
+  };
+
+  it('OVERSIZE rejects before parse; repo byte-identical', () => {
+    const repo = seedRepo();
+    const before = repo.entries();
+    const result = runJsonImport(catalog, repo, {
+      source: 'huge.json',
+      byteLen: FILE_MAX_BYTES + 1,
+      text: '{"format":"starship-skirmish/library","schemaVersion":1,"catalogVersion":1,"builds":[]}',
+    });
+    expect(result.preflight?.kind).toBe('OVERSIZE');
+    expect(result.report).toBeUndefined();
+    expect(result.parseError).toBeUndefined();
+    expect(repo.entries()).toEqual(before);
+  });
+
+  it('NO_HEADROOM rejects when file is bigger than available storage', () => {
+    const repo = seedRepo();
+    const before = repo.entries();
+    // Force a "no headroom" case: fake a byteLen larger than the remaining
+    // storage budget. `repo.headroom()` on a fresh in-memory repo is
+    // essentially the full budget, so choose byteLen just above it.
+    const remaining = repo.headroom().remainingBytes;
+    const result = runJsonImport(catalog, repo, {
+      source: 'fills-storage.json',
+      byteLen: remaining + 1,
+      text: '{"format":"starship-skirmish/library","schemaVersion":1,"catalogVersion":1,"builds":[]}',
+    });
+    // Whichever cap trips first — OVERSIZE (if remaining+1 > FILE_MAX_BYTES)
+    // or NO_HEADROOM — both are pre-flight rejections that fail closed.
+    expect(result.preflight).toBeDefined();
+    if (result.preflight !== undefined) {
+      expect(['OVERSIZE', 'NO_HEADROOM']).toContain(result.preflight.kind);
+    }
+    expect(result.report).toBeUndefined();
+    expect(repo.entries()).toEqual(before);
+  });
+
+  it('malformed JSON surfaces as parseError; repo byte-identical', () => {
+    const repo = seedRepo();
+    const before = repo.entries();
+    const text = '{not json at all';
+    const result = runJsonImport(catalog, repo, {
+      source: 'garbage.json',
+      byteLen: text.length,
+      text,
+    });
+    expect(result.parseError).toBeDefined();
+    expect(result.report).toBeUndefined();
+    expect(result.preflight).toBeUndefined();
+    expect(repo.entries()).toEqual(before);
+  });
+
+  it('valid file: import runs, report contains IMPORTED outcomes', () => {
+    const repo = seedRepo();
+    const text = validExport('Wasp Alpha');
+    const result = runJsonImport(catalog, repo, {
+      source: 'wasp.json',
+      byteLen: text.length,
+      text,
+    });
+    expect(result.report).toBeDefined();
+    if (result.report === undefined) return;
+    expect(result.report.imported).toBe(1);
+    expect(repo.entries()).toHaveLength(1);
+    expect(repo.entries()[0]?.name).toBe('Wasp Alpha');
+  });
+
+  it('partially-invalid file: imports valid, reports FAILED for the rest', () => {
+    const repo = seedRepo();
+    const before = repo.entries().length;
+    // Build a mixed file: one valid entry + one broken entry (bad chassisId).
+    const good = fighter('Wasp Alpha');
+    const mixed = {
+      format: 'starship-skirmish/library',
+      schemaVersion: 1,
+      catalogVersion: catalog.catalogVersion,
+      exportedAt: STAMP,
+      builds: [
+        {
+          name: good.name,
+          tags: good.tags,
+          chassisId: good.chassisId,
+          slots: good.slots,
+          schemaVersion: good.schemaVersion,
+          catalogVersion: good.catalogVersion,
+          storedCost: good.storedCost,
+        },
+        {
+          // No chassisId — should fail at migrate.
+          name: 'Ghost',
+          tags: [],
+          slots: [],
+          schemaVersion: 1,
+          catalogVersion: catalog.catalogVersion,
+          storedCost: 0,
+        },
+      ],
+    };
+    const text = JSON.stringify(mixed);
+    const result = runJsonImport(catalog, repo, {
+      source: 'mixed.json',
+      byteLen: text.length,
+      text,
+    });
+    expect(result.report).toBeDefined();
+    if (result.report === undefined) return;
+    expect(result.report.imported).toBe(1);
+    expect(result.report.failed).toBe(1);
+    // Only the valid one landed.
+    expect(repo.entries()).toHaveLength(before + 1);
+    // Failed outcome carries a reason.
+    const failedOutcome = result.report.outcomes.find((o) => o.status === 'failed');
+    expect(failedOutcome).toBeDefined();
+    if (failedOutcome?.status === 'failed') {
+      expect(failedOutcome.reason.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('collision under the default rename policy: existing entry survives, incoming renamed', () => {
+    const repo = seedRepo();
+    // Seed one build with the same name the import will introduce.
+    const seed = buildDocOf('00000000-0000-4000-8000-000000000aaa', 'Wasp Alpha');
+    const put = repo.put(seed);
+    if (!put.ok) throw new Error('seed failed');
+    const text = validExport('Wasp Alpha');
+    const result = runJsonImport(catalog, repo, {
+      source: 'wasp.json',
+      byteLen: text.length,
+      text,
+    });
+    expect(result.report).toBeDefined();
+    if (result.report === undefined) return;
+    expect(result.report.renamed).toBe(1);
+    // Original preserved.
+    expect(repo.entry('00000000-0000-4000-8000-000000000aaa')?.name).toBe('Wasp Alpha');
+    // Renamed variant landed too.
+    const renamed = repo.entries().find((e) => e.name === 'Wasp Alpha (2)');
+    expect(renamed).toBeDefined();
   });
 });

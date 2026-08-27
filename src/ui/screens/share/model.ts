@@ -30,9 +30,21 @@
 import type { Catalog, ChassisDef, ClassDef, SlotType } from '../../../catalog/index.js';
 import type { Build } from '../../../domain/index.js';
 import { pointCost } from '../../../domain/index.js';
-import { decodeShareToken, type DecodeError } from '../../../io/index.js';
-import type { ImportOutcome, ImportReport } from '../../../persist/index.js';
-import { mintUniqueName } from '../../../persist/index.js';
+import {
+  BUILDS_MAX,
+  FILE_MAX_BYTES,
+  decodeShareToken,
+  importLibrary,
+  type DecodeError,
+  type ImportParseReport,
+} from '../../../io/index.js';
+import type {
+  ImportCandidate,
+  ImportOutcome,
+  ImportReport,
+  LibraryRepo,
+} from '../../../persist/index.js';
+import { applyImport, mintUniqueName } from '../../../persist/index.js';
 import type { BuildDoc } from '../../../persist/index.js';
 import { nameKeyOf } from '../../../persist/rebuildIndex.js';
 
@@ -345,3 +357,138 @@ export const reportCounts = (report: ImportReport): ReportCounts => ({
   skipped: report.skipped,
   failed: report.failed,
 });
+
+// ---- JSON import pipeline (CP3) -------------------------------------------
+
+/**
+ * The pre-flight rejections the UI paints when a file NEVER reaches io or
+ * persist (§10 note 7: hard caps precede every allocation). Each carries a
+ * text-node message — no state has been touched at this point.
+ */
+export type PreflightRejection =
+  | { readonly kind: 'OVERSIZE'; readonly byteLen: number }
+  | { readonly kind: 'NO_HEADROOM'; readonly byteLen: number; readonly remaining: number }
+  | { readonly kind: 'WOULD_OVERFLOW_BUILDS'; readonly current: number; readonly incoming: number };
+
+/**
+ * Result of `runJsonImport`. Exactly one of `report` / `parseError` /
+ * `preflight` is populated. The `source` is a display label — the filename or
+ * a synthetic "(dropped file)" for a nameless drop.
+ */
+export interface RunJsonImportResult {
+  readonly source: string;
+  readonly report?: ImportReport;
+  readonly parseError?: string;
+  readonly preflight?: PreflightRejection;
+}
+
+/**
+ * The designed message for a pre-flight rejection (design §4.9 fail-closed
+ * copy). Pure function — inspectable by tests without a DOM.
+ */
+export const preflightMessage = (r: PreflightRejection): string => {
+  switch (r.kind) {
+    case 'OVERSIZE':
+      return `File is ${formatBytes(r.byteLen)}; the max import size is ${formatBytes(FILE_MAX_BYTES)}. No changes were made.`;
+    case 'NO_HEADROOM':
+      return `Import needs about ${formatBytes(r.byteLen)} but only ${formatBytes(r.remaining)} of storage is free. Export or delete some builds first. No changes were made.`;
+    case 'WOULD_OVERFLOW_BUILDS':
+      return `Your library holds ${String(r.current)} builds; the file adds ${String(r.incoming)}. That is more than the ${String(BUILDS_MAX)}-build limit. No changes were made.`;
+  }
+};
+
+const formatBytes = (n: number): string => {
+  if (n < 1024) return `${String(n)} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+/**
+ * The pipeline behind the JSON drop zone, pulled out as a pure function so
+ * every pre-flight gate is node-env unit-testable (no DOM, no `File`). The
+ * component just wraps this by reading the dropped `File` into memory.
+ *
+ * PURE except `repo.put` inside `applyImport`. On every pre-flight rejection
+ * AND on parse-error, `applyImport` is NEVER called and the repo is
+ * byte-identical.
+ */
+export const runJsonImport = (
+  catalog: Catalog,
+  repo: LibraryRepo,
+  input: { readonly source: string; readonly byteLen: number; readonly text: string },
+): RunJsonImportResult => {
+  const source = input.source;
+
+  // Cap 1 — FILE_MAX_BYTES.
+  if (input.byteLen > FILE_MAX_BYTES) {
+    return {
+      source,
+      preflight: { kind: 'OVERSIZE', byteLen: input.byteLen },
+    };
+  }
+  // Cap 2 — storage headroom BEFORE parse allocates.
+  const headroom = repo.headroom();
+  if (headroom.remainingBytes < input.byteLen) {
+    return {
+      source,
+      preflight: {
+        kind: 'NO_HEADROOM',
+        byteLen: input.byteLen,
+        remaining: headroom.remainingBytes,
+      },
+    };
+  }
+  // Parse.
+  const parsed = importLibrary(catalog, input.text);
+  if (!parsed.ok) {
+    return { source, parseError: parsed.error.message };
+  }
+  const parseReport: ImportParseReport = parsed.value;
+  const candidates: readonly ImportCandidate[] = parseReport.candidates.map(candidateFromParse);
+  // Cap 3 — LOCAL build count.
+  const current = repo.entries().length;
+  const incoming = candidates.filter((c) => c.status === 'valid').length;
+  if (current + incoming > BUILDS_MAX) {
+    return {
+      source,
+      preflight: { kind: 'WOULD_OVERFLOW_BUILDS', current, incoming },
+    };
+  }
+  const report: ImportReport = applyImport(repo, candidates, 'rename');
+  return { source, report };
+};
+
+/**
+ * Turn a parsed `ImportCandidate` from io into the shape persist expects. The
+ * two types are structurally similar but declared in different modules — this
+ * bridge keeps the boundary explicit.
+ */
+const candidateFromParse = (
+  c: ImportParseReport['candidates'][number],
+): ImportCandidate => {
+  if (c.status === 'valid') {
+    if (c.build === undefined) {
+      return { status: 'failed', reason: 'internal: valid candidate without build' };
+    }
+    return {
+      status: 'valid',
+      build: {
+        id: c.build.id,
+        name: c.build.name,
+        tags: c.build.tags,
+        chassisId: c.build.chassisId,
+        slots: c.build.slots,
+        storedCost: c.build.storedCost,
+        schemaVersion: c.build.schemaVersion,
+        catalogVersion: c.build.catalogVersion,
+        createdAt: c.build.createdAt,
+        updatedAt: c.build.updatedAt,
+      },
+    };
+  }
+  return {
+    status: 'failed',
+    reason: c.reason ?? `Build at index ${String(c.index)} failed validation.`,
+    sourceIndex: c.index,
+  };
+};

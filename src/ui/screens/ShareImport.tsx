@@ -28,8 +28,9 @@
 import { useMemo, useState } from 'preact/hooks';
 
 import { useApp } from '../appContext.js';
-import { Field, Tabs, type TabsOption } from '../components/index.js';
+import { Tabs, type TabsOption } from '../components/index.js';
 import { CollisionModal } from './share/CollisionModal.js';
+import { JsonDropZone } from './share/JsonDropZone.js';
 import { TokenPreviewError, TokenPreviewOk } from './share/TokenPreview.js';
 import {
   errorCopy,
@@ -194,7 +195,9 @@ export function ShareImport() {
                 PASTE A SHARE TOKEN OR OPEN A #/share?t=… LINK
               </label>
               <div style="margin-top:var(--s2)">
-                <Field
+                <input
+                  type="text"
+                  class="field"
                   id="share-token-input"
                   value={token}
                   onInput={(e) => {
@@ -238,11 +241,8 @@ export function ShareImport() {
             )}
           </div>
         ) : (
-          <div class="panel-in stack" data-testid="share-tab-json" style="padding:var(--s3)">
-            <p class="t-prose">
-              JSON fleet import lands in checkpoint 3 of this session. Drop-zone,
-              pre-flight caps, and the per-build report will render here.
-            </p>
+          <div data-testid="share-tab-json">
+            <JsonDropZone catalog={catalog} repo={repo} />
           </div>
         )}
       </div>
