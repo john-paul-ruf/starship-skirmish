@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import {
   aoeOverlapsFriendly,
   assignmentGate,
+  calledShotEquals,
   calledShotOptions,
   calledShotUnlocked,
   enemyShips,
@@ -191,6 +192,16 @@ describe('calledShotOptions', () => {
     expect(opts.find((o) => o.label === 'DECOY1')?.target).toEqual({ kind: 'special', index: 1 });
     // Generator hint verbatim (§4.5).
     expect(opts.find((o) => o.label === 'SHIELD GENERATOR')?.hint).toBe(GENERATOR_HINT);
+  });
+});
+
+describe('calledShotEquals', () => {
+  it('matches on kind + index; distinguishes indices and undefined', () => {
+    expect(calledShotEquals({ kind: 'weapon', index: 1 }, { kind: 'weapon', index: 1 })).toBe(true);
+    expect(calledShotEquals({ kind: 'weapon', index: 0 }, { kind: 'weapon', index: 1 })).toBe(false);
+    expect(calledShotEquals({ kind: 'engine' }, { kind: 'engine' })).toBe(true);
+    expect(calledShotEquals({ kind: 'engine' }, { kind: 'shield-generator' })).toBe(false);
+    expect(calledShotEquals(undefined, { kind: 'engine' })).toBe(false);
   });
 });
 

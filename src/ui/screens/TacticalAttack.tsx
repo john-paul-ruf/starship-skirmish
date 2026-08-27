@@ -15,6 +15,9 @@ import { useSignal } from '@preact/signals';
 
 import { useMatch } from '../matchContext.js';
 
+import type { CalledShotTarget } from '../../sim/index.js';
+
+import { CalledShotPicker } from './tacticalAttack/CalledShotPicker.js';
 import { WeaponBench } from './tacticalAttack/WeaponBench.js';
 import {
   assignmentGate,
@@ -56,6 +59,21 @@ export function TacticalAttack() {
     assignments.value = next;
   };
 
+  const onCalledShot = (slot: FireSlot, calledShot: CalledShotTarget | null) => {
+    const key = slotKey(slot);
+    const current = assignments.value.get(key);
+    if (current === undefined) return; // no target assigned → nothing to call
+    const next = new Map(assignments.value);
+    next.set(key, {
+      shooterId: current.shooterId,
+      targetId: current.targetId,
+      ...(current.weaponIndex !== undefined ? { weaponIndex: current.weaponIndex } : {}),
+      ...(current.missileIndex !== undefined ? { missileIndex: current.missileIndex } : {}),
+      ...(calledShot !== null ? { calledShot } : {}),
+    });
+    assignments.value = next;
+  };
+
   return (
     <div class="stack-lg" data-testid="screen-tactical-attack">
       <header class="panel-hd">
@@ -78,6 +96,13 @@ export function TacticalAttack() {
         assignments={assignments.value}
         onAssign={onAssign}
         hitChanceFor={match.hitChanceFor}
+        renderCalledShot={(slot, assignment, target) => (
+          <CalledShotPicker
+            target={target}
+            selected={assignment.calledShot}
+            onPick={(cs) => onCalledShot(slot, cs)}
+          />
+        )}
       />
 
       <div class="mono-xs" data-testid="assign-count">

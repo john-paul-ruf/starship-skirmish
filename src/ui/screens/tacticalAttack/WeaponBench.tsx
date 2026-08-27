@@ -172,7 +172,10 @@ function FireRow(props: FireRowProps) {
         </div>
       ) : null}
 
-      {renderCalledShot !== undefined && assignment !== undefined && targetView !== undefined
+      {!isMissile &&
+      renderCalledShot !== undefined &&
+      assignment !== undefined &&
+      targetView !== undefined
         ? renderCalledShot(slot, assignment, targetView)
         : null}
     </div>
