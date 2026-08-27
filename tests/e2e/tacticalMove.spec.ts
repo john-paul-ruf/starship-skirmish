@@ -1,6 +1,7 @@
-// tests/e2e/tacticalMove.spec.ts — Tactical Movement screen e2e (S05 CP4).
+// tests/e2e/tacticalMove.spec.ts — Tactical Movement screen e2e (S05 CP4 +
+// SESSION-03 CP4).
 //
-// Three chromium tests (UI smoke, like postMatch / skirmishBoot):
+// Chromium tests (UI smoke, like postMatch / skirmishBoot):
 //
 //   1. GUARD (served app): a bare deep-link to `#/skirmish/move` with no active
 //      match redirects to setup — the screen never renders cold.
@@ -19,10 +20,17 @@
 //      verified visually) and that COMMIT requires an explicit second
 //      confirmation before it hands off.
 //
+//   4. ALL-FLEETS ROSTER (setContent harness, SESSION-03) — the shared
+//      `FleetRoster` lists every fleet (player + bots) grouped by owner (FR-15);
+//      selecting a BOT ship shows the read-only inspector and NO plan form
+//      (FR-17); the marks-interval selector transitions Off / 1s / 2s / 4s; the
+//      camera HUD Reset / Focus buttons exist and are keyboard-reachable.
+//
 // The tactical viewport reaches render via a dynamic `import()` that cannot
 // resolve inside the bundled harness page, so the viewport DEGRADES to numeric
 // entry — exactly the accessibility fallback the screen guarantees. Every
-// assertion here is on the DOM channels, which stay fully functional.
+// assertion here is on the DOM channels, which stay fully functional (S01 focus
+// / trail / pixel channels are verified visually in a real match run).
 
 import { test, expect } from '@playwright/test';
 import * as esbuild from 'esbuild';
@@ -37,8 +45,10 @@ const APP_URL = 'http://localhost:8081/starship-skirmish/';
 
 // ---------------------------------------------------------------------------
 // Harness bundle — renders the real TacticalMove against a synthetic mid-plan
-// controller. `previewArc` reports a boundary exit once the Δv magnitude passes
-// a threshold, so a big arc trips the §4.1 signal deterministically.
+// controller with THREE fleets (one player, two bots) so the SESSION-03
+// all-fleets grouping is exercised (FR-15). `previewArc` reports a boundary
+// exit once the Δv magnitude passes a threshold so a big arc trips the §4.1
+// signal deterministically.
 // ---------------------------------------------------------------------------
 
 const buildHarness = async (): Promise<string> => {
@@ -51,18 +61,20 @@ const buildHarness = async (): Promise<string> => {
 
     globalThis.__navCalls = [];
 
-    const shipDef = (name, deltaVPerTurn) => ({
-      buildId: 'b-' + name, name, chassisClass: 'frigate', mass: 100, radius: 4,
+    const shipDef = (name, deltaVPerTurn, klass) => ({
+      buildId: 'b-' + name, name, chassisClass: klass || 'frigate', mass: 100, radius: 4,
       maxHull: 60, shieldCapacity: 20, shieldRegenPerTurn: 2, deltaVPerTurn,
       baseEvasion: 0.2, hullRepairPerTurn: 0, weapons: [], missiles: [], pointDefense: [], decoys: [],
     });
     const shipA = shipDef('WIDOWMAKER', 70);
     const shipB = shipDef('HARRIER-2', 40);
-    const shipC = shipDef('IRON VERDICT', 20);
+    const shipC = shipDef('IRON VERDICT', 20, 'cruiser');
+    const shipD = shipDef('THUNDERHEAD', 30, 'cruiser');
 
     const initialFleets = [
-      { fleetId: 0, ships: [shipA, shipB] }, // bodyIds 1, 2
-      { fleetId: 1, ships: [shipC] },        // bodyId 3
+      { fleetId: 0, ships: [shipA, shipB] }, // bodyIds 1, 2 — player
+      { fleetId: 1, ships: [shipC] },        // bodyId 3 — BOT-01
+      { fleetId: 2, ships: [shipD] },        // bodyId 4 — BOT-02
     ];
 
     const shipView = (bodyId, fleetId, s) => ({
@@ -71,15 +83,18 @@ const buildHarness = async (): Promise<string> => {
       shieldGenAlive: true, engineAlive: true, weaponAlive: [], missileAlive: [], missileAmmo: [],
       pdAlive: [], decoyAlive: [], decoyCharges: [], decoyActiveUntilTurn: 0, ship: s,
     });
-    const body = (id) => ({ id, kind: 'ship', position: { x: 0, y: 0, z: 0 }, velocity: { x: 40, y: 0, z: 0 }, mass: 100, radius: 4 });
+    const body = (id) => ({ id, kind: 'ship', position: { x: id * 10, y: 0, z: 0 }, velocity: { x: 40, y: 0, z: 0 }, mass: 100, radius: 4 });
 
     const arena = { center: { x: 0, y: 0, z: 0 }, radius: 5400 };
     const view = signal({
       turn: 1, arena, selfFleetId: 0,
-      bodies: [body(1), body(2), body(3)],
-      ships: [shipView(1, 0, shipA), shipView(2, 0, shipB), shipView(3, 1, shipC)],
+      bodies: [body(1), body(2), body(3), body(4)],
+      ships: [shipView(1, 0, shipA), shipView(2, 0, shipB), shipView(3, 1, shipC), shipView(4, 2, shipD)],
     });
-    const state = signal({ arena, physics: { dt: 8 }, turn: 1, ships: new Map(), bodies: new Map() });
+    const bodiesMap = new Map([
+      [1, body(1)], [2, body(2)], [3, body(3)], [4, body(4)],
+    ]);
+    const state = signal({ arena, physics: { dt: 8 }, turn: 1, ships: new Map(), bodies: bodiesMap });
 
     const phase = signal('movement-plan');
     const movementBeat = signal(null);
@@ -180,8 +195,8 @@ test.describe('tactical movement screen', () => {
     await page.getByLabel('Bearing in degrees, 0 to 360').fill('45');
     await expect(commit).toContainText('1/2 PLANNED');
 
-    // COAST the second ship.
-    await page.getByTestId('roster-row').filter({ hasText: 'HARRIER-2' }).click();
+    // COAST the second ship — select via the shared FleetRoster row (data-ship-id 2).
+    await page.locator('[data-testid="roster-ship"][data-ship-id="2"]').click();
     await page.getByRole('button', { name: /Set to Coast/ }).click();
 
     // Gate opens.
@@ -209,13 +224,13 @@ test.describe('tactical movement screen', () => {
     await expect(page.getByTestId('exit-callout')).toBeVisible();
     await expect(page.getByTestId('exit-callout')).toContainText('SHIP DESTROYED');
 
-    // Channel B — the roster tag reads ✕ EXIT (never color alone).
-    await expect(
-      page.getByTestId('roster-row').filter({ hasText: 'WIDOWMAKER' }),
-    ).toContainText('EXIT');
+    // Channel B — the FleetRoster plan badge reads ✕ EXIT ARC (never color alone).
+    const widowmakerBadge = page
+      .locator('[data-testid="roster-ship"][data-ship-id="1"] [data-testid="plan-badge"]');
+    await expect(widowmakerBadge).toContainText('EXIT');
 
     // COAST the second ship so the gate can open.
-    await page.getByTestId('roster-row').filter({ hasText: 'HARRIER-2' }).click();
+    await page.locator('[data-testid="roster-ship"][data-ship-id="2"]').click();
     await page.getByRole('button', { name: /Set to Coast/ }).click();
 
     // The commit button turns hostile (red) and explains itself.
@@ -237,6 +252,85 @@ test.describe('tactical movement screen', () => {
     await expect
       .poll(() => page.evaluate(() => (globalThis as Record<string, unknown>)['__navCalls']))
       .toContainEqual({ name: 'tactical-attack' });
+
+    expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
+  });
+
+  test('all fleets group in the roster; bot selection shows inspector but no plot form; marks + camera HUD wire up', async ({
+    page,
+  }) => {
+    const errors = await mount(page);
+
+    // FR-15: the shared roster lists player + BOT-01 + BOT-02 as three groups.
+    const groups = page.getByTestId('fleet-group');
+    await expect(groups).toHaveCount(3);
+    // Player group is first (D-SURFACE-SUFFICIENT: `groupByFleet` player-first).
+    await expect(groups.first()).toHaveAttribute('data-fleet-role', 'player');
+    // Bot ships appear in their own group rows.
+    await expect(page.locator('[data-testid="roster-ship"][data-ship-id="3"]')).toBeVisible();
+    await expect(page.locator('[data-testid="roster-ship"][data-ship-id="4"]')).toBeVisible();
+
+    // The plan-status badge lives ONLY on living player rows.
+    await expect(
+      page.locator('[data-testid="roster-ship"][data-ship-id="1"] [data-testid="plan-badge"]'),
+    ).toBeVisible();
+    await expect(
+      page.locator('[data-testid="roster-ship"][data-ship-id="3"] [data-testid="plan-badge"]'),
+    ).toHaveCount(0);
+
+    // Select the BOT-01 ship — the inspector shows its identity + NO plotter renders.
+    await page.locator('[data-testid="roster-ship"][data-ship-id="3"]').click();
+    const inspector = page.getByTestId('ship-inspector');
+    await expect(inspector).toBeVisible();
+    await expect(inspector).toHaveAttribute('data-ship-id', '3');
+    await expect(inspector).toContainText('IRON VERDICT');
+    // FR-17: no plot form for opponent selection.
+    await expect(page.getByTestId('arc-plotter-readonly')).toBeVisible();
+    await expect(page.getByTestId('arc-plotter')).toHaveCount(0);
+
+    // Camera HUD: real, focusable buttons.
+    const camReset = page.getByTestId('cam-reset');
+    const camFocus = page.getByTestId('cam-focus');
+    await expect(camReset).toBeVisible();
+    await expect(camFocus).toBeVisible();
+    await expect(camReset).toHaveAttribute('aria-keyshortcuts', 'R');
+    await expect(camFocus).toHaveAttribute('aria-keyshortcuts', 'F');
+    await camReset.focus();
+    await expect(camReset).toBeFocused();
+
+    // Selecting a bot still enables the Focus button (any selection is focusable).
+    await expect(camFocus).toBeEnabled();
+
+    // Marks-interval selector — Off / 1s / 2s / 4s.
+    const marks = page.getByTestId('marks-interval');
+    await expect(marks).toBeVisible();
+    const opts = page.getByTestId('marks-interval-option');
+    await expect(opts).toHaveCount(4);
+    // 1s is the default (data-value="1" is aria-pressed).
+    await expect(page.locator('[data-testid="marks-interval-option"][data-value="1"]')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    // Toggle to Off.
+    await page.locator('[data-testid="marks-interval-option"][data-value="0"]').click();
+    await expect(page.locator('[data-testid="marks-interval-option"][data-value="0"]')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(page.locator('[data-testid="marks-interval-option"][data-value="1"]')).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    // Toggle to 4s.
+    await page.locator('[data-testid="marks-interval-option"][data-value="4"]').click();
+    await expect(page.locator('[data-testid="marks-interval-option"][data-value="4"]')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    // Blind-commit contract preserved — no timer, blind commit visible.
+    await expect(page.getByTestId('no-timer')).toBeVisible();
+    await expect(page.getByTestId('blind-commit')).toBeVisible();
 
     expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
   });
