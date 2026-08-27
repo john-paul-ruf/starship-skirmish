@@ -50,3 +50,23 @@ export type {
   DeltaProps,
   DeltaSign,
 } from './primitives.js';
+
+// ---- Identity components (never-color-alone vocabulary) -------------------
+export {
+  FleetGlyph,
+  FLEET_META,
+  SlotTag,
+  SLOT_LETTER,
+  SlotPips,
+  SLOT_ORDER,
+  groupSlotPips,
+  BodyStateTag,
+} from './identity.js';
+export type {
+  FleetId,
+  FleetGlyphProps,
+  SlotTagProps,
+  SlotPipsProps,
+  BodyStateKind,
+  BodyStateTagProps,
+} from './identity.js';

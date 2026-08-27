@@ -10,7 +10,15 @@
 //
 // All class-name strings match `mocks/console.css` verbatim — that file is the
 // source of truth per `specs/design.md` §2 and the token layer S01 preserves.
+//
+// SHAPE NOTE: components use `h()` from `preact` rather than JSX syntax. Two
+// reasons: (1) it lets the whole component library live in `.ts` files, which
+// keeps `tsconfig.node.json` (M01's file, outside this session's lease) from
+// needing JSX settings for tests that pull these types in; (2) the test file
+// already inspects vnodes as plain objects, so the source form does not need
+// to be JSX to be idiomatic. Same vnode output either way.
 
+import { h } from 'preact';
 import type { ComponentChildren, JSX, VNode } from 'preact';
 
 import { clamp, cx } from './internal.js';
@@ -32,25 +40,18 @@ export interface PanelProps {
   readonly children?: ComponentChildren;
 }
 
-export function Panel(props: PanelProps): VNode {
-  const {
-    variant = 'default',
-    ticks = false,
-    role,
-    id,
-    class: extra,
+export function Panel(props: PanelProps) {
+  const { variant = 'default', ticks = false, role, id, class: extra, children } = props;
+  return h(
+    'div',
+    {
+      class: cx(variant === 'inset' ? 'panel-in' : 'panel', ticks && 'ticks', extra),
+      role,
+      id,
+      'aria-label': props['aria-label'],
+      'aria-labelledby': props['aria-labelledby'],
+    },
     children,
-  } = props;
-  return (
-    <div
-      class={cx(variant === 'inset' ? 'panel-in' : 'panel', ticks && 'ticks', extra)}
-      role={role}
-      id={id}
-      aria-label={props['aria-label']}
-      aria-labelledby={props['aria-labelledby']}
-    >
-      {children}
-    </div>
   );
 }
 
@@ -64,18 +65,14 @@ export interface PanelHeaderProps {
   readonly children?: ComponentChildren;
 }
 
-export function PanelHeader(props: PanelHeaderProps): VNode {
+export function PanelHeader(props: PanelHeaderProps) {
   const { title, titleId, class: extra, children } = props;
-  return (
-    <div class={cx('panel-hd', extra)}>
-      {title !== undefined && (
-        <span class="t-h2" id={titleId}>
-          {title}
-        </span>
-      )}
-      {children}
-    </div>
-  );
+  const kids: ComponentChildren[] = [];
+  if (title !== undefined) {
+    kids.push(h('span', { class: 't-h2', id: titleId }, title));
+  }
+  if (children !== undefined) kids.push(children);
+  return h('div', { class: cx('panel-hd', extra) }, kids);
 }
 
 // ---- Button (design §2 · .btn / .btn-primary / danger / warn / ghost) -----
@@ -113,7 +110,7 @@ export interface ButtonProps {
   readonly children?: ComponentChildren;
 }
 
-export function Button(props: ButtonProps): VNode {
+export function Button(props: ButtonProps) {
   const {
     variant = 'default',
     size = 'md',
@@ -127,26 +124,26 @@ export function Button(props: ButtonProps): VNode {
     class: extra,
     children,
   } = props;
-  return (
-    <button
-      type={type}
-      id={id}
-      name={name}
-      value={value}
-      class={cx('btn', BUTTON_VARIANT_CLASS[variant], size === 'sm' && 'btn-sm', extra)}
-      disabled={disabled || undefined}
-      onClick={onClick}
-      title={title}
-      aria-label={props['aria-label']}
-      aria-labelledby={props['aria-labelledby']}
-      aria-describedby={props['aria-describedby']}
-      aria-pressed={props['aria-pressed']}
-      aria-current={props['aria-current']}
-      aria-expanded={props['aria-expanded']}
-      aria-controls={props['aria-controls']}
-    >
-      {children}
-    </button>
+  return h(
+    'button',
+    {
+      type,
+      id,
+      name,
+      value,
+      class: cx('btn', BUTTON_VARIANT_CLASS[variant], size === 'sm' && 'btn-sm', extra),
+      disabled: disabled || undefined,
+      onClick,
+      title,
+      'aria-label': props['aria-label'],
+      'aria-labelledby': props['aria-labelledby'],
+      'aria-describedby': props['aria-describedby'],
+      'aria-pressed': props['aria-pressed'],
+      'aria-current': props['aria-current'],
+      'aria-expanded': props['aria-expanded'],
+      'aria-controls': props['aria-controls'],
+    },
+    children,
   );
 }
 
@@ -176,7 +173,7 @@ export interface FieldProps {
   readonly class?: string;
 }
 
-export function Field(props: FieldProps): VNode {
+export function Field(props: FieldProps) {
   const {
     value,
     onInput,
@@ -194,29 +191,27 @@ export function Field(props: FieldProps): VNode {
     inputMode,
     class: extra,
   } = props;
-  return (
-    <input
-      type={type}
-      class={cx('field', extra)}
-      value={value}
-      onInput={onInput}
-      onChange={onChange}
-      onKeyDown={onKeyDown}
-      placeholder={placeholder}
-      disabled={disabled || undefined}
-      readOnly={readOnly || undefined}
-      id={id}
-      name={name}
-      autocomplete={autoComplete}
-      spellcheck={spellcheck}
-      maxLength={maxLength}
-      inputMode={inputMode}
-      aria-label={props['aria-label']}
-      aria-labelledby={props['aria-labelledby']}
-      aria-describedby={props['aria-describedby']}
-      aria-invalid={props['aria-invalid']}
-    />
-  );
+  return h('input', {
+    type,
+    class: cx('field', extra),
+    value,
+    onInput,
+    onChange,
+    onKeyDown,
+    placeholder,
+    disabled: disabled || undefined,
+    readOnly: readOnly || undefined,
+    id,
+    name,
+    autocomplete: autoComplete,
+    spellcheck,
+    maxLength,
+    inputMode,
+    'aria-label': props['aria-label'],
+    'aria-labelledby': props['aria-labelledby'],
+    'aria-describedby': props['aria-describedby'],
+    'aria-invalid': props['aria-invalid'],
+  });
 }
 
 // ---- Select (design §2 · select.field dropdown) ---------------------------
@@ -240,34 +235,24 @@ export interface SelectProps {
   readonly 'aria-describedby'?: string;
 }
 
-export function Select(props: SelectProps): VNode {
-  const {
-    value,
-    options,
-    onChange,
-    disabled = false,
-    id,
-    name,
-    class: extra,
-  } = props;
-  return (
-    <select
-      class={cx('field', extra)}
-      value={value}
-      onChange={onChange}
-      disabled={disabled || undefined}
-      id={id}
-      name={name}
-      aria-label={props['aria-label']}
-      aria-labelledby={props['aria-labelledby']}
-      aria-describedby={props['aria-describedby']}
-    >
-      {options.map((o) => (
-        <option key={o.value} value={o.value} disabled={o.disabled || undefined}>
-          {o.label}
-        </option>
-      ))}
-    </select>
+export function Select(props: SelectProps) {
+  const { value, options, onChange, disabled = false, id, name, class: extra } = props;
+  return h(
+    'select',
+    {
+      class: cx('field', extra),
+      value,
+      onChange,
+      disabled: disabled || undefined,
+      id,
+      name,
+      'aria-label': props['aria-label'],
+      'aria-labelledby': props['aria-labelledby'],
+      'aria-describedby': props['aria-describedby'],
+    },
+    options.map((o) =>
+      h('option', { key: o.value, value: o.value, disabled: o.disabled || undefined }, o.label),
+    ),
   );
 }
 
@@ -288,22 +273,24 @@ export interface SegmentedProps<V extends string = string> {
   readonly class?: string;
 }
 
-export function Segmented<V extends string = string>(props: SegmentedProps<V>): VNode {
+export function Segmented<V extends string = string>(props: SegmentedProps<V>) {
   const { options, value, onChange, class: extra } = props;
-  return (
-    <div class={cx('seg', extra)} role="group" aria-label={props['aria-label']}>
-      {options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          aria-pressed={o.value === value}
-          disabled={o.disabled || undefined}
-          onClick={() => onChange(o.value)}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
+  return h(
+    'div',
+    { class: cx('seg', extra), role: 'group', 'aria-label': props['aria-label'] },
+    options.map((o) =>
+      h(
+        'button',
+        {
+          key: o.value,
+          type: 'button',
+          'aria-pressed': o.value === value,
+          disabled: o.disabled || undefined,
+          onClick: () => onChange(o.value),
+        },
+        o.label,
+      ),
+    ),
   );
 }
 
@@ -324,28 +311,28 @@ export interface TabsProps<Id extends string = string> {
   readonly class?: string;
 }
 
-export function Tabs<Id extends string = string>(props: TabsProps<Id>): VNode {
+export function Tabs<Id extends string = string>(props: TabsProps<Id>) {
   const { tabs, activeId, onChange, class: extra } = props;
-  return (
-    <div class={cx('tabs', extra)} role="tablist" aria-label={props['aria-label']}>
-      {tabs.map((t) => {
-        const active = t.id === activeId;
-        return (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            tabIndex={active ? 0 : -1}
-            disabled={t.disabled || undefined}
-            class={cx('tab', active && 'is-active')}
-            onClick={() => onChange(t.id)}
-          >
-            {t.label}
-          </button>
-        );
-      })}
-    </div>
+  return h(
+    'div',
+    { class: cx('tabs', extra), role: 'tablist', 'aria-label': props['aria-label'] },
+    tabs.map((t) => {
+      const active = t.id === activeId;
+      return h(
+        'button',
+        {
+          key: t.id,
+          type: 'button',
+          role: 'tab',
+          'aria-selected': active,
+          tabIndex: active ? 0 : -1,
+          disabled: t.disabled || undefined,
+          class: cx('tab', active && 'is-active'),
+          onClick: () => onChange(t.id),
+        },
+        t.label,
+      );
+    }),
   );
 }
 
@@ -364,23 +351,21 @@ export interface CheckboxProps {
   readonly class?: string;
 }
 
-export function Checkbox(props: CheckboxProps): VNode {
+export function Checkbox(props: CheckboxProps) {
   const { checked, onChange, disabled = false, id, name, value, class: extra } = props;
-  return (
-    <input
-      type="checkbox"
-      class={cx('chk', extra)}
-      checked={checked}
-      onChange={onChange}
-      disabled={disabled || undefined}
-      id={id}
-      name={name}
-      value={value}
-      aria-label={props['aria-label']}
-      aria-labelledby={props['aria-labelledby']}
-      aria-describedby={props['aria-describedby']}
-    />
-  );
+  return h('input', {
+    type: 'checkbox',
+    class: cx('chk', extra),
+    checked,
+    onChange,
+    disabled: disabled || undefined,
+    id,
+    name,
+    value,
+    'aria-label': props['aria-label'],
+    'aria-labelledby': props['aria-labelledby'],
+    'aria-describedby': props['aria-describedby'],
+  });
 }
 
 // ---- Chip (design §2 · .chip tag / status / version) ----------------------
@@ -402,12 +387,12 @@ export interface ChipProps {
   readonly children?: ComponentChildren;
 }
 
-export function Chip(props: ChipProps): VNode {
+export function Chip(props: ChipProps) {
   const { tone = 'neutral', title, class: extra, children } = props;
-  return (
-    <span class={cx('chip', CHIP_TONE_CLASS[tone], extra)} title={title}>
-      {children}
-    </span>
+  return h(
+    'span',
+    { class: cx('chip', CHIP_TONE_CLASS[tone], extra), title },
+    children,
   );
 }
 
@@ -435,23 +420,30 @@ export interface MeterProps {
   readonly 'aria-label'?: string;
 }
 
-export function Meter(props: MeterProps): VNode {
+export function Meter(props: MeterProps) {
   const { value, max, fill = 'ok', notches, compact = false, class: extra } = props;
   const safeMax = max > 0 ? max : 0;
   const safeValue = safeMax === 0 ? 0 : clamp(value, 0, safeMax);
   const pct = safeMax === 0 ? 0 : (safeValue / safeMax) * 100;
-  return (
-    <div
-      class={cx('meter', compact && 'meter-sm', extra)}
-      role={props['aria-label'] !== undefined ? 'img' : undefined}
-      aria-label={props['aria-label']}
-    >
-      <span class={cx('meter-fill', `f-${fill}`)} style={`width: ${pct}%`} />
-      {notches?.map((n, idx) => {
-        const clamped = safeMax === 0 ? 0 : (clamp(n, 0, safeMax) / safeMax) * 100;
-        return <span key={idx} class="meter-notch" style={`left: ${clamped}%`} />;
-      })}
-    </div>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Preact's VNode<P> is contravariant on props; VNode<any> is the accepted "vnode of anything" type in the preact typings and matches `JSX.Element` extends VNode<any>.
+  const kids: VNode<any>[] = [
+    h('span', { class: cx('meter-fill', `f-${fill}`), style: `width: ${pct}%` }),
+  ];
+  if (notches !== undefined) {
+    for (let i = 0; i < notches.length; i++) {
+      const n = notches[i]!;
+      const clamped = safeMax === 0 ? 0 : (clamp(n, 0, safeMax) / safeMax) * 100;
+      kids.push(h('span', { key: i, class: 'meter-notch', style: `left: ${clamped}%` }));
+    }
+  }
+  return h(
+    'div',
+    {
+      class: cx('meter', compact && 'meter-sm', extra),
+      role: props['aria-label'] !== undefined ? 'img' : undefined,
+      'aria-label': props['aria-label'],
+    },
+    kids,
   );
 }
 
@@ -463,14 +455,12 @@ export interface StatRowProps {
   readonly class?: string;
 }
 
-export function StatRow(props: StatRowProps): VNode {
+export function StatRow(props: StatRowProps) {
   const { label, value, class: extra } = props;
-  return (
-    <div class={cx('stat', extra)}>
-      <span class="stat-k">{label}</span>
-      <span class="stat-v">{value}</span>
-    </div>
-  );
+  return h('div', { class: cx('stat', extra) }, [
+    h('span', { class: 'stat-k' }, label),
+    h('span', { class: 'stat-v' }, value),
+  ]);
 }
 
 // ---- Delta (design §2 · .delta signed change indicator) -------------------
@@ -502,7 +492,7 @@ export interface DeltaProps {
  * text follows as `+N` / `−N` / `0`. Uses the U+2212 minus so the sign lines
  * up under a tabular-nums stat column.
  */
-export function Delta(props: DeltaProps): VNode {
+export function Delta(props: DeltaProps) {
   const { from, to, unit = '', precision = 0, title, class: extra } = props;
   const diff = to - from;
   const sign = deltaSign(diff);
@@ -511,9 +501,5 @@ export function Delta(props: DeltaProps): VNode {
   if (sign === 'up') text = `▲ +${magnitude}${unit}`;
   else if (sign === 'down') text = `▼ −${magnitude}${unit}`;
   else text = `— 0${unit}`;
-  return (
-    <span class={cx('delta', `delta-${sign}`, extra)} title={title}>
-      {text}
-    </span>
-  );
+  return h('span', { class: cx('delta', `delta-${sign}`, extra), title }, text);
 }
