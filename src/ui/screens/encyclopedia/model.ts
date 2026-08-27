@@ -321,6 +321,22 @@ export const isViewFiltered = (view: EncyclopediaView): boolean =>
   view.classId !== null ||
   view.needsRefitOnly;
 
+// ---- Export helpers -------------------------------------------------------
+
+/**
+ * Compose the download filename for a JSON export. Deterministic given a
+ * timestamp — a caller-supplied date string reads as `YYYY-MM-DD` in the file
+ * name so a user's downloads folder sorts sensibly. Kept in `model.ts` so the
+ * test can pin the format without spinning a browser.
+ */
+export const exportFilename = (
+  isoTimestamp: string,
+  scope: 'all' | 'selected',
+): string => {
+  const day = isoTimestamp.length >= 10 ? isoTimestamp.slice(0, 10) : 'unknown';
+  return `starship-skirmish-library-${scope}-${day}.json`;
+};
+
 // ---- Class human names ---------------------------------------------------
 
 /**

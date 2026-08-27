@@ -36,6 +36,15 @@ export interface BuildCardProps {
   readonly onOpen: (id: string) => void;
   readonly onDuplicate: (id: string) => void;
   readonly onDelete: (id: string) => void;
+  readonly onExport: (id: string) => void;
+  readonly onRefit: (id: string) => void;
+  readonly onKeepAsIs: (id: string) => void;
+  /**
+   * Session-scoped: user chose KEEP AS IS this visit. The receipt banner
+   * collapses to a compact meta line; the amber left border on the card
+   * stays (design §4.7 — the badge is a receipt, not a lock).
+   */
+  readonly refitDismissed: boolean;
 }
 
 export function BuildCard({
@@ -46,6 +55,10 @@ export function BuildCard({
   onOpen,
   onDuplicate,
   onDelete,
+  onExport,
+  onRefit,
+  onKeepAsIs,
+  refitDismissed,
 }: BuildCardProps) {
   const failed = entry.status === 'failed';
   const chassis = catalog.chassis(entry.chassisId);
@@ -120,7 +133,47 @@ export function BuildCard({
               </div>
             </div>
           </div>
-        ) : entry.needsRefit ? (
+        ) : entry.needsRefit && !refitDismissed ? (
+          <div class="banner enc-refit-banner" data-testid="refit-banner">
+            <span class="c-amber" aria-hidden="true">
+              ⚠
+            </span>
+            <div class="grow">
+              <div class="mono-xs c-hi" data-testid="refit-receipt">
+                {refitReceiptText(
+                  entry.catalogVersion,
+                  entry.pricedAtCatalogVersion,
+                  entry.storedCost,
+                  entry.currentCost,
+                )}
+              </div>
+              <div class="enc-refit-acts">
+                <button
+                  type="button"
+                  class="btn btn-sm btn-warn"
+                  onClick={() => {
+                    onRefit(entry.id);
+                  }}
+                  data-testid="refit-refit"
+                  title="Open in the Shipyard so the new totals take effect."
+                >
+                  ⟳ RE-FIT
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-ghost"
+                  onClick={() => {
+                    onKeepAsIs(entry.id);
+                  }}
+                  data-testid="refit-keep"
+                  title="Dismiss until the next visit — the badge remains a receipt, not a lock."
+                >
+                  KEEP AS IS
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : entry.needsRefit && refitDismissed ? (
           <div class="mono-xs c-amber" data-testid="refit-receipt">
             {refitReceiptText(
               entry.catalogVersion,
@@ -189,6 +242,18 @@ export function BuildCard({
           data-testid="card-duplicate"
         >
           ⧉ DUPLICATE
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm"
+          disabled={failed || undefined}
+          onClick={() => {
+            onExport(entry.id);
+          }}
+          title={failed ? 'Failed builds cannot be exported.' : 'Download as JSON.'}
+          data-testid="card-export"
+        >
+          ⭱ EXPORT
         </button>
         <div class="grow" />
         <button

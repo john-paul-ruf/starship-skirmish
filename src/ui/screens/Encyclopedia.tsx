@@ -21,12 +21,14 @@ import { useEffect, useMemo } from 'preact/hooks';
 import { useApp } from '../appContext.js';
 import { Button, Chip, Meter, type MeterFill } from '../components/index.js';
 
+import { BackupBanner } from './encyclopedia/BackupBanner.js';
 import { BuildCard } from './encyclopedia/BuildCard.js';
 import { DeleteModal } from './encyclopedia/DeleteModal.js';
 import { FilterBar } from './encyclopedia/FilterBar.js';
 import {
   collectAvailableTags,
   duplicateIdentity,
+  exportFilename,
   filterByText,
   pruneSelection,
   summariseSelectedCost,
@@ -36,7 +38,14 @@ import {
   applyViewToPrefs,
   type EncyclopediaView,
 } from './encyclopedia/model.js';
-import { mintUniqueName, STORAGE_BUDGET_BYTES, type UsageLevel } from '../../persist/index.js';
+import {
+  mintUniqueName,
+  STORAGE_BUDGET_BYTES,
+  type IndexEntry,
+  type UsageLevel,
+} from '../../persist/index.js';
+import { exportLibrary, exportToText } from '../../io/index.js';
+import type { Build } from '../../domain/index.js';
 
 // Warn / critical are UI-band ratios (§3.7). The absolute values live in
 // `persist/quota.ts`; we recompute them locally for a MeterNotch position
@@ -53,6 +62,11 @@ export function Encyclopedia() {
   const view = useSignal<EncyclopediaView>(viewFromPrefs(repo.loadPrefs()));
   const selection = useSignal<readonly string[]>([]);
   const pendingDeleteId = useSignal<string | null>(null);
+  // Session-scoped dismissals — §4.8: the backup nudge is dismissible-but-
+  // recurring (never persisted). Same for per-build refit-receipts ("KEEP AS
+  // IS"): they hide inside this tab only; a fresh visit re-surfaces the badge.
+  const backupNudgeDismissed = useSignal(false);
+  const refitDismissed = useSignal<ReadonlySet<string>>(new Set());
   // A tick to force re-materialisation of `repo.list(query)` after mutations
   // land (delete, duplicate). Every mutation site bumps this after its repo
   // call — the repo is not a signal, so the screen needs a change trigger.
@@ -169,10 +183,103 @@ export function Encyclopedia() {
   const pendingDelete =
     pendingDeleteId.value !== null ? repo.entry(pendingDeleteId.value) ?? null : null;
 
+  // ---- Export --------------------------------------------------------------
+
+  /** Snapshot every `Build` for an id list — failed / missing entries drop silently. */
+  const collectBuilds = (ids: readonly string[]): readonly Build[] => {
+    const out: Build[] = [];
+    for (const id of ids) {
+      const loaded = repo.get(id);
+      if (loaded !== null) out.push(loaded.build);
+    }
+    return out;
+  };
+
+  const triggerDownload = (filename: string, text: string): void => {
+    // Browser-only path: the screen NEVER runs in Node (App.tsx mounts under
+    // DesktopGate which gates on matchMedia). Guarded anyway so a unit test
+    // that stumbles in doesn't crash.
+    const g = globalThis as {
+      URL?: typeof URL;
+      Blob?: typeof Blob;
+      document?: {
+        createElement: (tag: string) => {
+          href: string;
+          download: string;
+          click: () => void;
+        };
+      };
+    };
+    if (g.URL === undefined || g.Blob === undefined || g.document === undefined) return;
+    const blob = new g.Blob([text], { type: 'application/json' });
+    const url = g.URL.createObjectURL(blob);
+    const a = g.document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    // Revoke on the next tick so the download has a chance to start.
+    setTimeout(() => {
+      g.URL?.revokeObjectURL(url);
+    }, 1000);
+  };
+
+  const exportBuilds = (
+    scope: 'all' | 'selected',
+    builds: readonly Build[],
+  ): void => {
+    if (builds.length === 0) {
+      services.toast('Nothing to export.', 'warn');
+      return;
+    }
+    const nowIso = new Date().toISOString();
+    const envelope = exportLibrary(catalog, builds, nowIso);
+    const text = exportToText(envelope);
+    const filename = exportFilename(nowIso, scope);
+    triggerDownload(filename, text);
+    repo.markExported(nowIso);
+    refreshTick.value += 1;
+    services.toast(
+      `Exported ${String(builds.length)} build${builds.length === 1 ? '' : 's'} as ${filename}.`,
+    );
+  };
+
+  const onExportSelected = () => {
+    exportBuilds('selected', collectBuilds(selection.value));
+  };
+
+  const onExportAll = () => {
+    exportBuilds(
+      'all',
+      collectBuilds(allEntries.value.filter((e) => e.status === 'ok').map((e) => e.id)),
+    );
+  };
+
+  const onExportOne = (id: string) => {
+    exportBuilds('selected', collectBuilds([id]));
+  };
+
+  // ---- Refit resolve -------------------------------------------------------
+
+  const onRefit = (id: string) => {
+    navigate({ name: 'shipyard', buildId: id });
+  };
+
+  const onKeepAsIs = (id: string) => {
+    const next = new Set(refitDismissed.value);
+    next.add(id);
+    refitDismissed.value = next;
+  };
+
+  const isRefitDismissed = (entry: IndexEntry): boolean => refitDismissed.value.has(entry.id);
+
   const totalCount = allEntries.value.length;
   const shownCount = visibleEntries.value.length;
   const selCount = selection.value.length;
   const selCost = summariseSelectedCost(selection.value, allEntries.value);
+  const lastExportAt = repo.lastExportAt();
+  void refreshTick.value; // subscribe — markExported changes lastExportAt
+  const showBackupNudge =
+    !backupNudgeDismissed.value && services.durable && totalCount > 0;
 
   return (
     <div class="enc-wrap" data-testid="screen-encyclopedia">
@@ -201,12 +308,24 @@ export function Encyclopedia() {
         </Button>
       </div>
 
+      {showBackupNudge ? (
+        <BackupBanner
+          totalCount={totalCount}
+          lastExportAt={lastExportAt}
+          nowMs={Date.now()}
+          onExport={onExportAll}
+          onDismiss={() => {
+            backupNudgeDismissed.value = true;
+          }}
+        />
+      ) : null}
+
       <StorageRail
         used={headroom.value.usedBytes}
         remaining={headroom.value.remainingBytes}
         level={headroom.value.level}
         totalCount={totalCount}
-        lastExportAt={repo.lastExportAt()}
+        lastExportAt={lastExportAt}
       />
 
       <FilterBar
@@ -226,6 +345,7 @@ export function Encyclopedia() {
           onClear={() => {
             selection.value = [];
           }}
+          onExportSelected={onExportSelected}
         />
       ) : null}
 
@@ -243,6 +363,10 @@ export function Encyclopedia() {
               onOpen={onOpen}
               onDuplicate={onDuplicate}
               onDelete={onDelete}
+              onExport={onExportOne}
+              onRefit={onRefit}
+              onKeepAsIs={onKeepAsIs}
+              refitDismissed={isRefitDismissed(entry)}
             />
           ))}
         </div>
@@ -256,6 +380,9 @@ export function Encyclopedia() {
             pendingDeleteId.value = null;
           }}
           onConfirm={onConfirmDelete}
+          onExport={() => {
+            onExportOne(pendingDelete.id);
+          }}
         />
       ) : null}
     </div>
@@ -383,14 +510,28 @@ interface SelectionBarProps {
   readonly count: number;
   readonly totalCost: number;
   readonly onClear: () => void;
+  readonly onExportSelected: () => void;
 }
 
-function SelectionBar({ count, totalCost, onClear }: SelectionBarProps) {
+function SelectionBar({
+  count,
+  totalCost,
+  onClear,
+  onExportSelected,
+}: SelectionBarProps) {
   return (
     <div class="enc-selbar" data-testid="selection-bar">
       <strong class="c-hi">{`${String(count)} SELECTED`}</strong>
       <span class="mono-xs">{`${String(totalCost)} PTS COMBINED`}</span>
       <div class="grow" />
+      <button
+        type="button"
+        class="btn btn-sm"
+        onClick={onExportSelected}
+        data-testid="selection-export"
+      >
+        ⭱ EXPORT SELECTED (JSON)
+      </button>
       <Button size="sm" variant="ghost" onClick={onClear}>
         CLEAR SELECTION
       </Button>
@@ -492,6 +633,11 @@ const ENC_STYLES = `
 
   .enc-modal-preview { padding: var(--s3); display: flex; flex-direction: column; gap: 4px; }
   .enc-modal-ft { display: flex; align-items: center; gap: var(--s2); width: 100%; }
+
+  .enc-refit-banner { align-items: flex-start; }
+  .enc-refit-acts { display: flex; gap: 4px; margin-top: 6px; }
+
+  .enc-backup-banner { display: block; }
 `;
 
 function EncyclopediaStyles() {
