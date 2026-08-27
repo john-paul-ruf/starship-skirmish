@@ -442,3 +442,56 @@ that covers it (FR-33 / architecture §7.5), mirroring `sim-combat` S05.
 recorded manifest entry` failed with the exact SHA mismatch message;
 restore from backup returned all 88 determinism tests green; the recorder
 run against the tampered file rejected with the append-only error.
+
+<!-- finite-thrust-movement / SESSION-06 -->
+# finite-thrust-movement / SESSION-06 — architecture delta (M17 · movement-model generation dispatch + M19 · append-only re-record)
+
+### M17 Balance Harness — S06 additions (movement-model generation dispatch)
+
+Extends the S05 match runner with a version marker so the pre-S06 bot-vs-bot
+harness fixtures stay pinned to their impulsive-fallback generation and a new
+generation captures the finite-thrust model (D-VERSION-RERECORD, Custom Rule
+3 / FR-2, `catalog/tuning.json::physics.movementModel`). Additive:
+`MatchScenario`, `runMatchScenario`, `seedToMatch`, and the CLI keep their
+pre-S06 signatures — every new field is optional, and a missing field
+means "impulsive fallback" (byte-identical to pre-S06 outcomes).
+
+- `MatchScenario.movementModel?: number` (absent/1 = impulsive-fallback; >=2 = finite-thrust).
+- `runMatchScenario` dispatches on `movementModel`: absent/1 → PhysicsConfig omits `maxAccel` → `thrustSchedule` impulsive-fallback; >=2 → PhysicsConfig gains `maxAccel = tuning.physics.maxAccel` (locally widened cast — `Tuning` still doesn't declare `.physics`; missing/invalid → fail loud).
+- `SeedToMatchOpts.movementModel?` passthrough; CLI `--movement-model N` (match mode; omitting == `1`, byte-equivalent to pre-S06).
+
+#### In-lease injection (documented deviation)
+
+`src/domain/resolveFleet.ts::physicsConfigFromTuning` still does NOT propagate
+`tuning.physics.maxAccel` to `PhysicsConfig` (S01/S02/S03 all flagged; owned by
+no session). `runMatchScenario` is the ONLY place `maxAccel` reaches
+`resolveMovement` — the harness widens the config out-of-band (Envelope
+explicitly permitted this in-lease injection). **The production match code path
+(`src/app/match/**` → `physicsConfigFromTuning`) is UNCHANGED; the production
+runtime still coasts on the impulsive-fallback branch.** The domain propagation
+is the single remaining gap for finite-thrust to reach the game runtime.
+
+### M19 Determinism — S06 additions (append-only harness re-record)
+
+- `HarnessFixtureFile.movementModel?` (absent = model 1); `loadFixture` threads it only when present (model-1 fixtures reconstruct byte-equivalent to pre-S06).
+- `recordMatches.ts`: `RecipeSpec.movementModel?`; serialization spreads it only when present (model-1 recipes write files without the field — append-only bytes match pre-S06).
+- New fixtures appended (old 3 byte-untouched, Custom Rule 3):
+  - `seed-1-rookie-vs-ace-m2.json` — model 2; winner unchanged (fleet 0), 6 turns vs 8 (finite-thrust converges faster).
+  - `seed-2-mixed-tier-m2.json` — model 2; winner + turn count unchanged (fleet 2, 8 turns) but EVERY per-turn digest differs (curved arc changes play, not outcome).
+  - `seed-3-ace-vs-ace-m2.json` — model 2; byte-identical `turnDigests` + outcome (point-blank ace-vs-ace decides before finite-thrust divergence surfaces); only on-disk diff is `"movementModel": 2`.
+- `manifest.json` — 6 entries (3 old SHAs preserved byte-for-byte, 3 new appended). `test:determinism` 94 pass (was 88; +6). `test:fixtures` 6, `test:catalog-lock` 36 — all green.
+
+#### Balance re-validation (S06 CP3, FR-33)
+
+Small-sample bot-vs-bot `--movement-model 1` vs `2` at fixed budget/tiers. No
+aggregate divergence: at budget=50 ace-vs-ace the aggregates are IDENTICAL
+(matchCount=3, victories=3, avgTurns=10.33, winRate/usage maps literally
+identical); at budget=25 rookie-vs-ace, model 2 slightly IMPROVES convergence
+(8→6 turns; one previously-runaway match → 2 turns). **Verdict: keep
+`tuning.physics.maxAccel = 25` as authored. No re-tune.** (Owner decision.)
+
+### Deviations / hazards flagged this session (for Forge)
+
+- **`src/domain/resolveFleet.ts::physicsConfigFromTuning` propagation remains un-owned** — 4th session to flag it (S01/S02/S03/S06). Concrete impact: finite-thrust reaches the harness lease, but a Skirmish game session still runs impulsive-fallback → **the feature ships behaviorally impulsive to the end user until this one-line domain patch lands.** Recommended: a follow-up feature owning `physicsConfigFromTuning` maxAccel propagation + the `src/catalog/types.ts::Tuning.physics` block in one lease.
+- **Pre-existing 10000-turn runaway guard hits under BOTH models** on some seeds (not S06-induced; finite-thrust actually resolved one previously-runaway match). Deferred bot-planning concern.
+- **`Tuning` in `src/catalog/types.ts` still doesn't declare `.physics`** (S01 punted) — worked around with a local widening cast; should land with the propagation fix.
