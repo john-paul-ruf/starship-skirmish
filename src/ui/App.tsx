@@ -21,9 +21,12 @@ import { useEffect } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
 
 import { useApp } from './appContext.js';
+import { MatchProvider, useMatch } from './matchContext.js';
 import {
   Banner,
+  Button,
   DesktopGate,
+  Modal,
   Toast,
   Topbar,
   type TopbarRoute,
@@ -122,14 +125,141 @@ const Outlet = () => {
     case 'share':
       return <ShareImport />;
     case 'skirmish-setup':
+      // Setup CREATES a match (via `startMatch`); it is not inside a match, so
+      // it renders plainly — no MatchProvider, no match-chrome.
       return <SkirmishSetup />;
+    case 'tactical-move':
+    case 'tactical-attack':
+    case 'post-match':
+      // The three in-match routes share one `MatchRouteShell` instance, so the
+      // MatchProvider + CONCEDE chrome survive phase transitions (move → attack
+      // → result) without re-mounting (S01 CP5).
+      return <MatchRouteShell />;
+  }
+};
+
+// ---- Match route shell (provider + chrome + redirect) --------------------
+
+/**
+ * Mounts the active `MatchController` for the three in-match routes. With no
+ * active match (deep-link, reload) it redirects to setup and renders a
+ * fallback meanwhile — the active match lives on `AppServices.activeMatch`, not
+ * the URL, so a cold match route has nothing to show.
+ */
+const MatchRouteShell = () => {
+  const { activeMatch, navigate } = useApp();
+  const controller = activeMatch.value;
+
+  useEffect(() => {
+    if (controller === null) navigate({ name: 'skirmish-setup' });
+  }, [controller, navigate]);
+
+  if (controller === null) {
+    return (
+      <section class="panel" data-testid="match-no-active">
+        NO ACTIVE MATCH — RETURN TO SETUP
+      </section>
+    );
+  }
+
+  return (
+    <MatchProvider controller={controller}>
+      <MatchChrome />
+      <MatchRouteScreen />
+    </MatchProvider>
+  );
+};
+
+/** The current in-match screen, switched by route (inside the provider). */
+const MatchRouteScreen = () => {
+  const { route } = useApp();
+  switch (route.value.name) {
     case 'tactical-move':
       return <TacticalMove />;
     case 'tactical-attack':
       return <TacticalAttack />;
     case 'post-match':
       return <PostMatch />;
+    default:
+      return null;
   }
+};
+
+// ---- Match chrome (owns CONCEDE — Flow 6, Ruling D) ----------------------
+
+/**
+ * The persistent match-chrome header: turn counter, seed label, and the single
+ * CONCEDE affordance (behind a confirm Modal). Present in every in-progress
+ * phase; hidden once the match is `complete` (the post-match screen is
+ * CONCEDE's destination, not its home). Bots never concede; there is no draw
+ * (Custom Rule 5). Kept here — not per-screen — so it survives move↔attack
+ * transitions without re-mounting.
+ */
+const MatchChrome = () => {
+  const match = useMatch();
+  const confirmOpen = useSignal(false);
+
+  if (match.phase.value === 'complete') return null;
+
+  return (
+    <header
+      class="match-chrome"
+      data-testid="match-chrome"
+      style="display:flex;align-items:center;gap:12px;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--panel)"
+    >
+      <span class="mono-xs" data-testid="match-turn">
+        TURN {match.turn.value}
+      </span>
+      <span class="mono-xs c-dim" data-testid="match-seed">
+        {match.seedLabel}
+      </span>
+      <span class="grow" style="flex:1 1 auto" />
+      <button
+        type="button"
+        class="btn btn-danger"
+        data-testid="concede-btn"
+        onClick={() => {
+          confirmOpen.value = true;
+        }}
+      >
+        CONCEDE
+      </button>
+      {confirmOpen.value ? (
+        <Modal
+          title="CONCEDE MATCH?"
+          role="alertdialog"
+          onClose={() => {
+            confirmOpen.value = false;
+          }}
+          footer={
+            <>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  confirmOpen.value = false;
+                }}
+              >
+                CANCEL
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  match.concede();
+                  confirmOpen.value = false;
+                }}
+              >
+                CONFIRM CONCEDE
+              </Button>
+            </>
+          }
+        >
+          <p class="t-prose">
+            Conceding is an immediate loss — there is no draw (Custom Rule 5).
+          </p>
+        </Modal>
+      ) : null}
+    </header>
+  );
 };
 
 // ---- Toast host -----------------------------------------------------------

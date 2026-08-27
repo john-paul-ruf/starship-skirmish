@@ -19,3 +19,10 @@ export {
   type ToastKind,
   type ToastItem,
 } from './appContext.js';
+export {
+  MatchProvider,
+  useMatch,
+  type BotSpec,
+  type MatchController,
+  type MatchPhase,
+} from './matchContext.js';
