@@ -1,40 +1,55 @@
-// M14 UI — Tactical Movement screen (S05 body over the S01 placeholder).
+// M14 UI — Tactical Movement screen (S05 body; SESSION-03 rewires to the
+// shared all-fleets roster + ship inspector — camera focus, marks-interval,
+// and the flown trail land in later checkpoints).
 //
 // The blind arc-plotting screen — the tension engine (design §4.1–§4.3). For
 // each living player ship the player plots a thrust arc (numeric bearing / pitch
 // / magnitude, Δv clamped to budget) against a live ghost that CANNOT lie (it
 // draws `sim/physics.previewPath` through `controller.previewArc`, D-PREVIEW-
 // SEAM — `ui` never value-imports `sim/physics`); commits per-ship as PLANNED
-// or COAST; the fleet commit gate (§4.3) blocks until every living ship is
-// decided; COMMIT resolves the player's movement promise → the controller
+// or COAST; the fleet commit gate (§4.3) blocks until every living player ship
+// is decided; COMMIT resolves the player's movement promise → the controller
 // resolves + hands back the beat to animate → attack. Opponent plans are NOT
 // observable — the blind view has no plans field (structural, FR-17).
 //
-// D-PLACEHOLDER: this REPLACES the S01 placeholder body. The `TacticalMove`
-// export name + `data-testid="screen-tactical-move"` root are contracted — the
-// screens barrel + `App.tsx` outlet import them and MUST NOT be re-edited.
-// CONCEDE lives in the S01 shell match-chrome; this screen never renders one.
+// SESSION-03 CP1:
+//   • Roster is the shared FleetRoster (S02) fed by `groupByFleet(view.ships,
+//     playerFleetId)` — ALL fleets, no fog (FR-15). Selecting a bot ship shows
+//     the inspector; NO plan form and NO opponent plan surface (FR-17 stays
+//     intact — the plotter renders only when the selection is a living player
+//     ship, else a read-only "opponent ship — view only" note).
+//   • Ship inspector (S02) sits above the plotter in the right column.
+//   • The plan-status badge is now the FleetRoster `annotate` slot fed by the
+//     model's `planBadgeFor` — LIVING PLAYER rows only, exactly the previous
+//     PLANNED ✓ / COAST ✓ / ● UNPLANNED (or ✕ EXIT ARC) vocabulary.
+//
+// D-PLACEHOLDER: the `TacticalMove` export name + `data-testid="screen-tactical-
+// move"` root are contracted — the screens barrel + `App.tsx` outlet import
+// them and MUST NOT be re-edited. CONCEDE lives in the S01 shell match-chrome;
+// this screen never renders one.
 
 import { useSignal } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
 
 import { useApp } from '../appContext.js';
 import { useMatch } from '../matchContext.js';
+import { FleetRoster, ShipInspector, groupByFleet } from '../components/roster/index.js';
 
 import { ArcPlotter } from './tacticalMove/ArcPlotter.js';
 import { CommitBar } from './tacticalMove/CommitBar.js';
-import { Roster } from './tacticalMove/Roster.js';
 import { Viewport, type GhostArc } from './tacticalMove/Viewport.js';
 import {
   deltaVMag,
   fleetGateStatus,
   initialDraft,
-  playerRoster,
+  planBadgeFor,
+  playerRosterRows,
   plotArc,
   setCoast,
   toDeltaV,
   toMovementPlans,
   type PlanDraft,
+  type RosterShip,
 } from './tacticalMove/model.js';
 import type { Body, BodyId, Vec3 } from '../../sim/index.js';
 
@@ -50,19 +65,20 @@ export function TacticalMove() {
   const planTurn = useRef<number | null>(null);
 
   const isPlan = phase === 'movement-plan';
-  const rows = view === null ? [] : playerRoster(match.initialFleets, view, match.playerFleetId);
+  const playerRows: RosterShip[] = view === null ? [] : playerRosterRows(view, match.playerFleetId);
 
   // (Re)initialize the drafts + selection whenever a new plan turn begins.
   // Engine-dead ships start on COAST (initialDraft); every other living ship
-  // starts UNPLANNED and must be decided before the gate opens.
+  // starts UNPLANNED and must be decided before the gate opens. Selection
+  // defaults to the first living player ship so the plotter has a target on
+  // entry (roster clicks can then move selection to any fleet).
   useEffect(() => {
     if (view === null) return;
     if (planTurn.current === view.turn) return;
     planTurn.current = view.turn;
     const next = new Map<BodyId, PlanDraft>();
     let first: BodyId | null = null;
-    for (const row of rows) {
-      if (!row.alive) continue;
+    for (const row of playerRows) {
       next.set(row.bodyId, initialDraft(row));
       if (first === null) first = row.bodyId;
     }
@@ -72,7 +88,7 @@ export function TacticalMove() {
 
   // ---- Derivations ---------------------------------------------------------
   const budgetById = new Map<BodyId, number>();
-  for (const row of rows) if (row.alive) budgetById.set(row.bodyId, row.budget);
+  for (const row of playerRows) budgetById.set(row.bodyId, row.budget);
   const budgetOf = (id: BodyId): number => budgetById.get(id) ?? 0;
 
   const draftList = [...drafts.value.values()];
@@ -89,33 +105,46 @@ export function TacticalMove() {
     }
   }
 
-  // Selected ship → its live ghost arc + velocity readout.
+  // Selected ship — may be ANY fleet (FR-15). The plotter shows only when the
+  // selection is a living player ship; a bot ship shows the inspector only and
+  // reads a "view only" note in the plot column (FR-17 stays intact: no plan
+  // form for opponents).
   const selId = selected.value;
-  const selRow = selId === null ? null : (rows.find((r) => r.bodyId === selId && r.alive) ?? null);
+  const selPlayerRow = selId === null ? null : (playerRows.find((r) => r.bodyId === selId) ?? null);
   const selDraft = selId === null ? null : (drafts.value.get(selId) ?? null);
   const selBody: Body | null =
     view === null || selId === null ? null : (view.bodies.find((b) => b.id === selId) ?? null);
   const selVelocity: Vec3 | null = selBody === null ? null : selBody.velocity;
+  const selShipView = view === null || selId === null
+    ? null
+    : (view.ships.find((s) => s.bodyId === selId) ?? null);
 
   let ghostArc: GhostArc | null = null;
   let ghostKey = 'none';
-  if (isPlan && selRow !== null && selDraft !== null && selId !== null) {
-    const preview = match.previewArc(selId, toDeltaV(selDraft, selRow.budget));
+  if (isPlan && selPlayerRow !== null && selDraft !== null && selId !== null) {
+    const preview = match.previewArc(selId, toDeltaV(selDraft, selPlayerRow.budget));
     ghostArc = {
       positions: preview.positions,
       endsOutsideArena: preview.endsOutsideArena,
-      deltaVMag: deltaVMag(selDraft, selRow.budget),
+      deltaVMag: deltaVMag(selDraft, selPlayerRow.budget),
       beatSeconds: state.physics.dt,
-      hullRadius: selBody === null ? selRow.budget : selBody.radius,
+      hullRadius: selBody === null ? selPlayerRow.budget : selBody.radius,
     };
     ghostKey = `${String(selId)}:${selDraft.status}:${Math.round(selDraft.bearing)}:${Math.round(
       selDraft.pitch,
     )}:${Math.round(selDraft.magnitude)}:${String(view === null ? 0 : view.turn)}`;
   }
 
-  const doomedNames = rows.filter((r) => r.alive && exitIds.has(r.bodyId)).map((r) => r.name);
+  const doomedNames = playerRows.filter((r) => exitIds.has(r.bodyId)).map((r) => r.name);
+
+  // Shared all-fleets roster groups (FR-15) — no fog, player fleet first.
+  const groups = view === null ? [] : groupByFleet(view.ships, match.playerFleetId);
 
   // ---- Handlers ------------------------------------------------------------
+  const selectShip = (id: BodyId): void => {
+    selected.value = id;
+  };
+
   const editSelected = (fn: (d: PlanDraft) => PlanDraft): void => {
     if (selId === null) return;
     const current = drafts.value.get(selId);
@@ -139,16 +168,31 @@ export function TacticalMove() {
       <TacticalMoveStyles />
 
       <div class="tm-layout">
-        {/* ---- LEFT: roster (plan) / resolving notice ---- */}
+        {/* ---- LEFT: shared all-fleets roster (plan) / resolving notice ---- */}
         {isPlan ? (
-          <Roster
-            rows={rows}
-            drafts={drafts.value}
-            exitIds={exitIds}
+          <FleetRoster
+            groups={groups}
             selectedId={selId}
-            onSelect={(id) => {
-              selected.value = id;
+            onSelect={selectShip}
+            annotate={(entry) => {
+              const badge = planBadgeFor(entry, {
+                drafts: drafts.value,
+                exitIds,
+                playerFleetId: match.playerFleetId,
+              });
+              if (badge === null) return null;
+              return (
+                <span
+                  class={`mono-xs ${badge.cls}`}
+                  data-testid="plan-badge"
+                  data-plan-status={badge.text}
+                  style="letter-spacing:.14em"
+                >
+                  {badge.text}
+                </span>
+              );
             }}
+            aria-label="Fleet roster · movement"
           />
         ) : (
           <aside class="tm-roster panel tm-resolving-side" aria-label="Fleet roster">
@@ -174,18 +218,29 @@ export function TacticalMove() {
           />
         </main>
 
-        {/* ---- RIGHT: arc plotter + commit dock ---- */}
+        {/* ---- RIGHT: ship inspector + arc plotter + commit dock ---- */}
         <aside class="tm-plan panel" aria-label="Movement plan">
           <div class="tm-plan-body">
+            <ShipInspector ship={selShipView} velocity={selVelocity} />
+
             {isPlan ? (
-              <ArcPlotter
-                ship={selRow}
-                draft={selDraft}
-                velocity={selVelocity}
-                exiting={selId !== null && exitIds.has(selId)}
-                onPlot={(patch) => editSelected((d) => plotArc(d, patch))}
-                onCoast={() => editSelected(setCoast)}
-              />
+              selPlayerRow !== null && selDraft !== null ? (
+                <ArcPlotter
+                  ship={selPlayerRow}
+                  draft={selDraft}
+                  velocity={selVelocity}
+                  exiting={selId !== null && exitIds.has(selId)}
+                  onPlot={(patch) => editSelected((d) => plotArc(d, patch))}
+                  onCoast={() => editSelected(setCoast)}
+                />
+              ) : (
+                <section class="tm-plotter panel-bd" data-testid="arc-plotter-readonly">
+                  <div class="t-label">Opponent Ship</div>
+                  <p class="t-prose">
+                    View only — opponent plans are not observable until resolution (§4.2).
+                  </p>
+                </section>
+              )
             ) : (
               <div class="tm-plotter panel-bd">
                 <div class="t-label c-cyan">RESOLVING MOVEMENT…</div>
@@ -219,27 +274,14 @@ export function TacticalMove() {
 const TM_STYLES = `
   .tm-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 
-  .tm-layout { display: grid; grid-template-columns: 280px minmax(0, 1fr) 340px;
+  .tm-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr) 360px;
                gap: var(--s3); padding: var(--s3); flex: 1 1 auto; min-height: 0; align-items: stretch; }
 
   .tm-roster, .tm-plan { display: flex; flex-direction: column; min-height: 0; }
   .tm-side-hd { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3);
                 border-bottom: 1px solid var(--line);
                 background: linear-gradient(180deg, rgba(34,227,255,.05), transparent); }
-  .tm-roster-note { border: 0; border-bottom: 1px solid var(--line); padding: 5px var(--s3); }
-  .tm-roster-list { overflow-y: auto; overflow-x: hidden; flex: 1 1 auto; min-height: 0; }
-  .tm-roster-gate { border: 0; border-top: 1px solid var(--line-hot); padding: 6px var(--s3);
-                    letter-spacing: .12em; }
-
-  .tm-row { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left;
-            padding: 7px var(--s3); border: 0; border-bottom: 1px solid rgba(30,44,60,.6);
-            background: transparent; color: inherit; font: inherit; cursor: pointer;
-            -webkit-appearance: none; appearance: none; }
-  button.tm-row:hover { background: var(--panel-hi); }
-  .tm-row.is-selected { background: rgba(34,227,255,.10); box-shadow: inset 2px 0 0 var(--cyan); }
-  .tm-row.is-dead { cursor: default; }
-  .tm-row-status { flex: none; }
-  .tm-row-dead { text-decoration: line-through; color: var(--ink-dim); }
+  .tm-resolving-side { padding: 0; }
 
   .tm-stage { position: relative; display: flex; min-width: 0; min-height: 0; overflow: hidden;
               padding: 0; }
@@ -249,7 +291,8 @@ const TM_STYLES = `
                           align-items: flex-start; justify-content: center; }
   .tm-skip { position: absolute; right: var(--s3); top: var(--s3); z-index: 4; }
 
-  .tm-plan-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+  .tm-plan-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
+                  display: flex; flex-direction: column; gap: var(--s3); padding: var(--s3); }
 
   .tm-plotter { display: flex; flex-direction: column; gap: var(--s3); }
   .tm-plotter-hd { display: flex; align-items: baseline; gap: var(--s2); }

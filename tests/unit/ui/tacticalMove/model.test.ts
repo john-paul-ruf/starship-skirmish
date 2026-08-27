@@ -1,7 +1,8 @@
-// M14 UI — Tactical Movement model (S05). Node-only (no JSX, no DOM):
+// M14 UI — Tactical Movement model (S05 + S03). Node-only (no JSX, no DOM):
 // Δv derivation (bearing/pitch → vector, budget clamp, coast → zero), the
-// fleet-gate truth table, `toMovementPlans` shape, and player-roster derivation
-// (dead ships excluded, engine-dead budget 0).
+// fleet-gate truth table, `toMovementPlans` shape, `playerRosterRows` (living
+// player ships only — the sim culls destroyed ones from `view.ships`), and the
+// SESSION-03 `planBadgeFor` annotate deriver (LIVING PLAYER rows only).
 
 import { describe, expect, it } from 'vitest';
 
@@ -11,7 +12,8 @@ import {
   deltaVMag,
   fleetGateStatus,
   initialDraft,
-  playerRoster,
+  planBadgeFor,
+  playerRosterRows,
   plotArc,
   setCoast,
   toDeltaV,
@@ -24,7 +26,6 @@ import type {
   BlindMatchView,
   BlindShipView,
   BodyId,
-  SimFleet,
   SimShip,
 } from '../../../../src/sim/index.js';
 
@@ -214,31 +215,92 @@ describe('toMovementPlans', () => {
   });
 });
 
-// ---- playerRoster ---------------------------------------------------------
+// ---- playerRosterRows -----------------------------------------------------
 
-describe('playerRoster', () => {
+describe('playerRosterRows', () => {
   const shipA = ship('WIDOWMAKER', { deltaVPerTurn: 70 });
   const shipB = ship('HARRIER-2', { deltaVPerTurn: 40 });
   const shipC = ship('IRON VERDICT', { deltaVPerTurn: 20 });
-  // bodyId assignment: 1..N in (fleet-order, shipIndex) order.
-  const initialFleets: readonly SimFleet[] = [
-    { fleetId: 0, ships: [shipA, shipB] }, // bodyIds 1, 2
-    { fleetId: 1, ships: [shipC] }, // bodyId 3
-  ];
 
-  it('includes only the player fleet; destroyed ships kept but marked dead', () => {
-    // Ship 2 (HARRIER-2) is destroyed → absent from view.ships.
+  it('returns only living ships from the player fleet — destroyed player ships are absent from view.ships', () => {
+    // Ship 2 (HARRIER-2) is destroyed → absent from view.ships (the sim culls it).
     const view = viewOf([shipView(1, 0, shipA), shipView(3, 1, shipC)]);
-    const rows = playerRoster(initialFleets, view, 0);
-    expect(rows.map((r) => r.bodyId)).toEqual([1, 2]);
-    expect(rows[0]).toMatchObject({ bodyId: 1, name: 'WIDOWMAKER', budget: 70, alive: true });
-    expect(rows[1]).toMatchObject({ bodyId: 2, name: 'HARRIER-2', budget: 0, alive: false });
+    const rows = playerRosterRows(view, 0);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      bodyId: 1,
+      name: 'WIDOWMAKER',
+      budget: 70,
+      alive: true,
+      engineAlive: true,
+    });
   });
 
-  it('an engine-dead living ship has zero budget (coasts automatically)', () => {
+  it('engine-dead living ships carry zero budget (coasts automatically, §4.3)', () => {
     const view = viewOf([shipView(1, 0, shipA, { engineAlive: false }), shipView(2, 0, shipB)]);
-    const rows = playerRoster(initialFleets, view, 0);
+    const rows = playerRosterRows(view, 0);
     expect(rows[0]).toMatchObject({ bodyId: 1, alive: true, engineAlive: false, budget: 0 });
     expect(rows[1]).toMatchObject({ bodyId: 2, alive: true, budget: 40 });
+  });
+
+  it('ignores other fleets entirely', () => {
+    const view = viewOf([shipView(1, 0, shipA), shipView(3, 1, shipC)]);
+    const rows = playerRosterRows(view, 1);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.bodyId).toBe(3);
+  });
+});
+
+// ---- planBadgeFor ---------------------------------------------------------
+
+describe('planBadgeFor', () => {
+  const inputs = (over: {
+    drafts?: ReadonlyMap<BodyId, PlanDraft>;
+    exitIds?: ReadonlySet<BodyId>;
+    playerFleetId?: number;
+  } = {}) => ({
+    drafts: over.drafts ?? new Map<BodyId, PlanDraft>(),
+    exitIds: over.exitIds ?? new Set<BodyId>(),
+    playerFleetId: over.playerFleetId ?? 0,
+  });
+
+  const entry = (bodyId: BodyId, fleetId: number, alive = true) => ({ bodyId, fleetId, alive });
+
+  it('living player ship with no draft reads UNPLANNED', () => {
+    expect(planBadgeFor(entry(1, 0), inputs())).toEqual({ text: '● UNPLANNED', cls: 'c-amber' });
+  });
+
+  it('living player ship with a planned draft reads PLANNED', () => {
+    const drafts = new Map<BodyId, PlanDraft>([[1, draft({ bodyId: 1, status: 'planned' })]]);
+    expect(planBadgeFor(entry(1, 0), inputs({ drafts }))).toEqual({
+      text: 'PLANNED ✓',
+      cls: 'c-green',
+    });
+  });
+
+  it('living player ship on coast reads COAST', () => {
+    const drafts = new Map<BodyId, PlanDraft>([[1, draft({ bodyId: 1, status: 'coast' })]]);
+    expect(planBadgeFor(entry(1, 0), inputs({ drafts }))).toEqual({
+      text: 'COAST ✓',
+      cls: 'c-cyan',
+    });
+  });
+
+  it('living player ship whose plotted arc leaves the arena reads ✕ EXIT ARC (over any status)', () => {
+    const drafts = new Map<BodyId, PlanDraft>([[1, draft({ bodyId: 1, status: 'planned' })]]);
+    const exitIds = new Set<BodyId>([1]);
+    expect(planBadgeFor(entry(1, 0), inputs({ drafts, exitIds }))).toEqual({
+      text: '✕ EXIT ARC',
+      cls: 'c-red',
+    });
+  });
+
+  it('bot ships never get a badge (FR-17 — no opponent plan surface)', () => {
+    const drafts = new Map<BodyId, PlanDraft>([[2, draft({ bodyId: 2, status: 'planned' })]]);
+    expect(planBadgeFor(entry(2, 1), inputs({ drafts }))).toBeNull();
+  });
+
+  it('destroyed ships never get a badge (excluded from the gate)', () => {
+    expect(planBadgeFor(entry(1, 0, false), inputs())).toBeNull();
   });
 });

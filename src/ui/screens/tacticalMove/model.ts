@@ -1,4 +1,4 @@
-// M14 UI — Tactical Movement pure plotting logic (S05, node-testable).
+// M14 UI — Tactical Movement pure plotting logic (S05, extended by S03).
 //
 // The blind arc-plotting math, reduced to plain data the sibling `.tsx` panels
 // render and the controller seams consume. Deliberately `.ts` (no JSX): the
@@ -16,16 +16,19 @@
 //     the slider `max` is the other half),
 //   • `fleetGateStatus` — the §4.3 commit gate truth (N/M planned-or-coast),
 //   • `toMovementPlans` — drafts → the `MovementPlan[]` the controller commits,
-//   • `playerRoster` — the player fleet's living + destroyed ships, derived from
-//     the blind view + the immutable initial rosters (dead ships struck through,
-//     auto-excluded from the gate).
+//   • `playerRosterRows` — the player fleet's LIVING ships as plottable rows;
+//     destroyed player ships never appear in `view.ships` (the sim culls them),
+//     so the previous initial-fleet flatten is no longer needed (the shared
+//     FleetRoster owns the visual, S02),
+//   • `planBadgeFor` — the plan-status annotate slot for the shared FleetRoster.
+//     Living player ships get PLANNED / COAST / UNPLANNED (or ✕ EXIT ARC when
+//     the plotted arc leaves the arena); bot ships and dead ships get nothing.
 
 import type {
   BlindMatchView,
   BodyId,
   ChassisClass,
   MovementPlan,
-  SimFleet,
   Vec3,
 } from '../../../sim/index.js';
 import { dirFromBearingPitch, length, scale } from '../../../sim/mathx/index.js';
@@ -186,76 +189,70 @@ export const toMovementPlans = (
 
 // ---- Roster derivation ----------------------------------------------------
 
-interface FlatShip {
-  readonly bodyId: BodyId;
-  readonly name: string;
-  readonly chassisClass: ChassisClass;
-  readonly deltaVPerTurn: number;
-  readonly fleetId: number;
-}
-
 /**
- * Flatten the immutable initial rosters, assigning each ship its BodyId the
- * same way the sim does (`createMatch.buildInitialState`: ids `1..N` in
- * `(fleet-array-order, shipIndex)` order). This is the sole source of a
- * destroyed ship's identity — `view.ships` holds only survivors.
+ * The player fleet's LIVING ships as plottable rows. `view.ships` is the sole
+ * source — the sim culls destroyed ships from the view (the shared FleetRoster
+ * shows survivors only, structural), so no `initialFleets` walk is needed here.
+ * Engine-dead ships carry `budget: 0` (§4.3 — coasts automatically).
  */
-const flattenInitialRoster = (initialFleets: readonly SimFleet[]): FlatShip[] => {
-  const out: FlatShip[] = [];
-  let nextId = 1;
-  for (const fleet of initialFleets) {
-    for (const ship of fleet.ships) {
-      out.push({
-        bodyId: nextId,
-        name: ship.name,
-        chassisClass: ship.chassisClass,
-        deltaVPerTurn: ship.deltaVPerTurn,
-        fleetId: fleet.fleetId,
-      });
-      nextId += 1;
-    }
-  }
-  return out;
-};
-
-/**
- * The player fleet's roster for the plotting panel: every ship the player
- * STARTED with, each flagged alive/dead. Living ships take their engine state
- * (and thus budget) from the blind view; destroyed ships come through as
- * `alive:false` with zero budget — struck through in the UI, excluded from the
- * gate by never receiving a draft.
- */
-export const playerRoster = (
-  initialFleets: readonly SimFleet[],
+export const playerRosterRows = (
   view: BlindMatchView,
   playerFleetId: number,
 ): RosterShip[] => {
-  const living = new Map(
-    view.ships.filter((s) => s.fleetId === playerFleetId).map((s) => [s.bodyId, s] as const),
-  );
   const rows: RosterShip[] = [];
-  for (const flat of flattenInitialRoster(initialFleets)) {
-    if (flat.fleetId !== playerFleetId) continue;
-    const alive = living.get(flat.bodyId);
-    if (alive !== undefined) {
-      rows.push({
-        bodyId: flat.bodyId,
-        name: alive.name,
-        chassisClass: alive.chassisClass,
-        budget: alive.engineAlive ? alive.ship.deltaVPerTurn : 0,
-        engineAlive: alive.engineAlive,
-        alive: true,
-      });
-    } else {
-      rows.push({
-        bodyId: flat.bodyId,
-        name: flat.name,
-        chassisClass: flat.chassisClass,
-        budget: 0,
-        engineAlive: false,
-        alive: false,
-      });
-    }
+  for (const s of view.ships) {
+    if (s.fleetId !== playerFleetId) continue;
+    rows.push({
+      bodyId: s.bodyId,
+      name: s.name,
+      chassisClass: s.chassisClass,
+      budget: s.engineAlive ? s.ship.deltaVPerTurn : 0,
+      engineAlive: s.engineAlive,
+      alive: true,
+    });
   }
   return rows;
+};
+
+// ---- Plan-status badge (annotate for FleetRoster) -------------------------
+
+/** One roster row's plan-status badge — text + token class, never color alone. */
+export interface PlanBadge {
+  readonly text: string;
+  readonly cls: string;
+}
+
+/** The minimum entry shape `planBadgeFor` reads — matches the S02 `RosterEntry`
+ *  without pulling the entire type through (`ui` avoids depending on siblings
+ *  from a `.ts` model that vitest's node env exercises). */
+export interface PlanBadgeEntry {
+  readonly bodyId: BodyId;
+  readonly fleetId: number;
+  readonly alive: boolean;
+}
+
+export interface PlanBadgeInputs {
+  readonly drafts: ReadonlyMap<BodyId, PlanDraft>;
+  readonly exitIds: ReadonlySet<BodyId>;
+  readonly playerFleetId: number;
+}
+
+/**
+ * The FleetRoster `annotate(entry)` slot for the movement screen (SESSION-03).
+ * Living PLAYER ships → PLANNED ✓ / COAST ✓ / ● UNPLANNED (or ✕ EXIT ARC when
+ * the plotted arc leaves the arena, §4.1). Bot ships and dead ships → `null`
+ * (the roster row gets no badge). Text-first, tokenized color class second —
+ * a colorblind player still reads the state (design §1.1).
+ */
+export const planBadgeFor = (
+  entry: PlanBadgeEntry,
+  inputs: PlanBadgeInputs,
+): PlanBadge | null => {
+  if (!entry.alive) return null;
+  if (entry.fleetId !== inputs.playerFleetId) return null;
+  if (inputs.exitIds.has(entry.bodyId)) return { text: '✕ EXIT ARC', cls: 'c-red' };
+  const status = inputs.drafts.get(entry.bodyId)?.status ?? 'unplanned';
+  if (status === 'planned') return { text: 'PLANNED ✓', cls: 'c-green' };
+  if (status === 'coast') return { text: 'COAST ✓', cls: 'c-cyan' };
+  return { text: '● UNPLANNED', cls: 'c-amber' };
 };
