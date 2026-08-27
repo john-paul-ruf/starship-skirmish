@@ -160,20 +160,39 @@ export function Viewport({
   }, [ghostKey]);
 
   // ---- Play the resolved movement beat (CP3) ------------------------------
+  //
+  // If the render layer is unavailable (degraded / WebGL absent) the beat cannot
+  // animate — but the resolve MUST still complete, or the match stalls. So the
+  // no-view path advances immediately (the state is already final; only the
+  // interpolation is skipped). Reduced motion skips to the final frame the same
+  // way.
   useEffect(() => {
-    const view = viewRef.current;
-    if (view === null || movementBeat === null) return;
-    // Clear any plotting ghost before the beat animates.
+    if (movementBeat === null) return;
+    let cancelled = false;
     ghostRef.current?.clear();
     void (async () => {
-      const mod = await import('../../../render/index.js');
-      if (viewRef.current === null) return;
-      const player = mod.attachTracePlayer(view);
-      const playback = player.playMovement(movementBeat, { onDone: onResolveDone });
-      playbackRef.current = playback;
-      if (reducedMotion) playback.skip();
+      const view = viewRef.current;
+      if (view !== null) {
+        try {
+          const mod = await import('../../../render/index.js');
+          if (cancelled || viewRef.current === null) return;
+          const player = mod.attachTracePlayer(view);
+          const playback = player.playMovement(movementBeat, {
+            onDone: () => {
+              if (!cancelled) onResolveDone();
+            },
+          });
+          playbackRef.current = playback;
+          if (reducedMotion) playback.skip();
+          return;
+        } catch {
+          /* fall through to the degraded advance */
+        }
+      }
+      if (!cancelled) onResolveDone();
     })();
     return () => {
+      cancelled = true;
       playbackRef.current?.dispose();
       playbackRef.current = null;
     };
