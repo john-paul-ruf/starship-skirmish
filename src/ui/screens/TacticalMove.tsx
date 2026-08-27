@@ -18,26 +18,36 @@
 import { useSignal } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
 
+import { useApp } from '../appContext.js';
 import { useMatch } from '../matchContext.js';
 
+import { ArcPlotter } from './tacticalMove/ArcPlotter.js';
 import { Roster } from './tacticalMove/Roster.js';
+import { Viewport, type GhostArc } from './tacticalMove/Viewport.js';
 import {
+  deltaVMag,
   fleetGateStatus,
   initialDraft,
   playerRoster,
+  plotArc,
+  setCoast,
+  toDeltaV,
   type PlanDraft,
 } from './tacticalMove/model.js';
-import type { BodyId } from '../../sim/index.js';
+import type { Body, BodyId, Vec3 } from '../../sim/index.js';
 
 export function TacticalMove() {
   const match = useMatch();
+  const services = useApp();
   const view = match.view.value;
   const phase = match.phase.value;
+  const state = match.state.value;
 
   const drafts = useSignal<Map<BodyId, PlanDraft>>(new Map());
   const selected = useSignal<BodyId | null>(null);
   const planTurn = useRef<number | null>(null);
 
+  const isPlan = phase === 'movement-plan';
   const rows = view === null ? [] : playerRoster(match.initialFleets, view, match.playerFleetId);
 
   // (Re)initialize the drafts + selection whenever a new plan turn begins.
@@ -58,59 +68,141 @@ export function TacticalMove() {
     selected.value = first;
   }, [view === null ? -1 : view.turn]);
 
-  const gate = fleetGateStatus([...drafts.value.values()]);
+  // ---- Derivations ---------------------------------------------------------
+  const budgetById = new Map<BodyId, number>();
+  for (const row of rows) if (row.alive) budgetById.set(row.bodyId, row.budget);
+  const budgetOf = (id: BodyId): number => budgetById.get(id) ?? 0;
+
+  const draftList = [...drafts.value.values()];
+  const gate = fleetGateStatus(draftList);
+
+  // Boundary-exit detection (§4.1) — the ghost cannot lie, so exit truth comes
+  // straight from the sim integrator via `previewArc` for EVERY plotted arc.
+  const exitIds = new Set<BodyId>();
+  if (isPlan) {
+    for (const d of draftList) {
+      if (match.previewArc(d.bodyId, toDeltaV(d, budgetOf(d.bodyId))).endsOutsideArena) {
+        exitIds.add(d.bodyId);
+      }
+    }
+  }
+
+  // Selected ship → its live ghost arc + velocity readout.
+  const selId = selected.value;
+  const selRow = selId === null ? null : (rows.find((r) => r.bodyId === selId && r.alive) ?? null);
+  const selDraft = selId === null ? null : (drafts.value.get(selId) ?? null);
+  const selBody: Body | null =
+    view === null || selId === null ? null : (view.bodies.find((b) => b.id === selId) ?? null);
+  const selVelocity: Vec3 | null = selBody === null ? null : selBody.velocity;
+
+  let ghostArc: GhostArc | null = null;
+  let ghostKey = 'none';
+  if (isPlan && selRow !== null && selDraft !== null && selId !== null) {
+    const preview = match.previewArc(selId, toDeltaV(selDraft, selRow.budget));
+    ghostArc = {
+      positions: preview.positions,
+      endsOutsideArena: preview.endsOutsideArena,
+      deltaVMag: deltaVMag(selDraft, selRow.budget),
+      beatSeconds: state.physics.dt,
+      hullRadius: selBody === null ? selRow.budget : selBody.radius,
+    };
+    ghostKey = `${String(selId)}:${selDraft.status}:${Math.round(selDraft.bearing)}:${Math.round(
+      selDraft.pitch,
+    )}:${Math.round(selDraft.magnitude)}:${String(view === null ? 0 : view.turn)}`;
+  }
+
+  // ---- Handlers ------------------------------------------------------------
+  const editSelected = (fn: (d: PlanDraft) => PlanDraft): void => {
+    if (selId === null) return;
+    const current = drafts.value.get(selId);
+    if (current === undefined) return;
+    const next = new Map(drafts.value);
+    next.set(selId, fn(current));
+    drafts.value = next;
+  };
 
   return (
     <section class="tm-shell" data-testid="screen-tactical-move">
       <TacticalMoveStyles />
 
-      {phase === 'movement-resolve' ? (
-        <div class="tm-resolving panel" data-testid="tm-resolving">
-          <div class="t-h2 c-cyan">RESOLVING MOVEMENT…</div>
-          <p class="t-prose">The committed beat is animating — plans are locked for this beat.</p>
-        </div>
-      ) : (
-        <div class="tm-layout">
+      <div class="tm-layout">
+        {/* ---- LEFT: roster (plan) / resolving notice ---- */}
+        {isPlan ? (
           <Roster
             rows={rows}
             drafts={drafts.value}
-            exitIds={EMPTY_EXIT}
-            selectedId={selected.value}
+            exitIds={exitIds}
+            selectedId={selId}
             onSelect={(id) => {
               selected.value = id;
             }}
           />
-
-          <main class="tm-stage panel" aria-label="Tactical display · movement plan">
-            <div class="tm-stage-note mono-xs c-dim">TACTICAL VIEWPORT</div>
-          </main>
-
-          <aside class="tm-plan panel" aria-label="Movement plan">
-            <div class="tm-plan-body" />
-
-            <div class="tm-commit-dock panel-ft" data-testid="commit-dock">
-              <div class="tm-gate mono-xs" data-testid="commit-gate">
-                COMMIT MOVEMENT · <span class="c-hi">{String(gate.plannedCount)}</span>/
-                {String(gate.total)} PLANNED
-              </div>
-              <div class="tm-blind-contract mono-xs">
-                <span class="tm-no-timer" data-testid="no-timer">
-                  <span class="tm-no-timer-dot" aria-hidden="true" />
-                  NO TIMER
-                </span>
-                <span class="tm-blind-line" data-testid="blind-commit">
-                  OPPONENT PLANS ARE NOT OBSERVABLE UNTIL RESOLUTION.
-                </span>
-              </div>
+        ) : (
+          <aside class="tm-roster panel tm-resolving-side" aria-label="Fleet roster">
+            <div class="side-hd">
+              <span class="t-label">Roster</span>
+            </div>
+            <div class="mono-xs c-dim" style="padding:var(--s3)">
+              MOVEMENT RESOLVING — PLANS LOCKED
             </div>
           </aside>
-        </div>
-      )}
+        )}
+
+        {/* ---- CENTER: the tactical viewport (persists across plan↔resolve) ---- */}
+        <main class="tm-stage panel" aria-label="Tactical display · movement">
+          <Viewport
+            state={state}
+            arenaRadius={state.arena.radius}
+            ghostArc={ghostArc}
+            ghostKey={ghostKey}
+            movementBeat={phase === 'movement-resolve' ? match.movementBeat.value : null}
+            reducedMotion={services.reducedMotion.value}
+            onResolveDone={() => match.resolveAnimationDone()}
+          />
+        </main>
+
+        {/* ---- RIGHT: arc plotter + commit dock ---- */}
+        <aside class="tm-plan panel" aria-label="Movement plan">
+          <div class="tm-plan-body">
+            {isPlan ? (
+              <ArcPlotter
+                ship={selRow}
+                draft={selDraft}
+                velocity={selVelocity}
+                exiting={selId !== null && exitIds.has(selId)}
+                onPlot={(patch) => editSelected((d) => plotArc(d, patch))}
+                onCoast={() => editSelected(setCoast)}
+              />
+            ) : (
+              <div class="tm-plotter panel-bd">
+                <div class="t-label c-cyan">RESOLVING MOVEMENT…</div>
+                <p class="t-prose">
+                  The committed beat is animating — plans are locked for this beat.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div class="tm-commit-dock panel-ft" data-testid="commit-dock">
+            <div class="tm-gate mono-xs" data-testid="commit-gate">
+              COMMIT MOVEMENT · <span class="c-hi">{String(gate.plannedCount)}</span>/
+              {String(gate.total)} PLANNED
+            </div>
+            <div class="tm-blind-contract mono-xs">
+              <span class="tm-no-timer" data-testid="no-timer">
+                <span class="tm-no-timer-dot" aria-hidden="true" />
+                NO TIMER
+              </span>
+              <span class="tm-blind-line" data-testid="blind-commit">
+                OPPONENT PLANS ARE NOT OBSERVABLE UNTIL RESOLUTION.
+              </span>
+            </div>
+          </div>
+        </aside>
+      </div>
     </section>
   );
 }
-
-const EMPTY_EXIT: ReadonlySet<BodyId> = new Set<BodyId>();
 
 // ---- Page-scoped styles ---------------------------------------------------
 //
@@ -134,11 +226,44 @@ const TM_STYLES = `
   .tm-row-status { flex: none; }
   .tm-row-dead { text-decoration: line-through; color: var(--ink-dim); }
 
-  .tm-stage { position: relative; display: flex; min-width: 0; min-height: 0; overflow: hidden; }
-  .tm-stage-note { position: absolute; left: var(--s3); top: var(--s2); letter-spacing: .16em;
-                   pointer-events: none; }
+  .tm-stage { position: relative; display: flex; min-width: 0; min-height: 0; overflow: hidden;
+              padding: 0; }
+  .tm-viewport { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; }
+  .tm-canvas { display: block; width: 100%; height: 100%; }
+  .tm-viewport-degraded { flex-direction: column; gap: var(--s2); padding: var(--s5);
+                          align-items: flex-start; justify-content: center; }
 
   .tm-plan-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+
+  .tm-plotter { display: flex; flex-direction: column; gap: var(--s3); }
+  .tm-plotter-hd { display: flex; align-items: baseline; gap: var(--s2); }
+  .tm-engine-dead { border-left: 2px solid var(--amber); padding: 4px var(--s2);
+                    background: rgba(255,176,32,.07); letter-spacing: .1em; }
+  .tm-budget, .tm-velocity, .tm-mag { display: flex; flex-direction: column; gap: 5px; }
+  .tm-budget-row { display: flex; align-items: baseline; }
+  .tm-hint { color: var(--ink-dim); line-height: 1.5; }
+  .tm-arc-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+  .tm-input { display: flex; flex-direction: column; gap: 3px; }
+  .tm-input .stat-k { display: block; }
+  .tm-num { width: 100%; }
+
+  .tm-range { -webkit-appearance: none; appearance: none; width: 100%; height: 20px;
+              background: transparent; cursor: pointer; }
+  .tm-range::-webkit-slider-runnable-track { height: 6px; background: var(--panel-in);
+              border: 1px solid var(--line); border-radius: var(--r-sm); }
+  .tm-range::-webkit-slider-thumb { -webkit-appearance: none; width: 10px; height: 18px;
+              margin-top: -7px; background: var(--cyan); border: 0; border-radius: var(--r-sm); }
+  .tm-range::-moz-range-track { height: 6px; background: var(--panel-in); border: 1px solid var(--line); }
+  .tm-range::-moz-range-thumb { width: 10px; height: 18px; background: var(--cyan); border: 0;
+              border-radius: var(--r-sm); }
+  .tm-range:disabled { cursor: not-allowed; opacity: .5; }
+  .tm-range-scale { display: flex; justify-content: space-between; }
+  .tm-coast-btn { align-self: flex-start; }
+
+  .tm-exit-callout { border: 1px solid var(--red); border-left: 3px solid var(--red);
+                     border-radius: var(--r); padding: var(--s2) var(--s3);
+                     background: rgba(24,3,11,.6); display: flex; flex-direction: column; gap: 3px; }
+  .tm-exit-headline { font-size: 12px; font-weight: 700; letter-spacing: .06em; color: #FFD7E1; }
 
   .tm-commit-dock { border-top: 1px solid var(--line-hot); background: var(--panel);
                     padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
@@ -150,9 +275,6 @@ const TM_STYLES = `
   .tm-no-timer-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-ghost);
                      display: inline-block; }
   .tm-blind-line { opacity: .72; letter-spacing: .1em; }
-
-  .tm-resolving { margin: var(--s3); padding: var(--s5); display: flex; flex-direction: column;
-                  gap: var(--s2); align-items: center; text-align: center; }
 `;
 
 function TacticalMoveStyles() {
