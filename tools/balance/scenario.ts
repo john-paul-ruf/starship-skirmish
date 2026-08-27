@@ -204,10 +204,14 @@ const STREAM_MATCH_FLEET_KEY = 0xf1eec0de;
 
 /**
  * Runaway-test safety valve — NOT a game rule. FR-27 / Custom Rule 5 forbid a
- * turn cap; this bound only exists so a test bug (infinite match) fails fast
- * instead of hanging CI. Sized well above any plausible match length.
+ * turn cap; this bound only exists so an infinite-loop bug (e.g. a rules
+ * regression where nothing ever damages anything) fails fast instead of
+ * hanging CI. Sized well above any plausible bot-vs-bot match length; real
+ * matches at budget=75 have been observed past 500 turns in stalemate-prone
+ * fleet compositions, so 10 000 is comfortable headroom over the realistic
+ * upper tail. A match hitting this guard is a bug worth surfacing.
  */
-const MATCH_RUNAWAY_GUARD = 500;
+const MATCH_RUNAWAY_GUARD = 10000;
 
 /**
  * Run one match scenario end-to-end. Regenerates fleets from the seed +
