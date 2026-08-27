@@ -11,6 +11,15 @@
 // deterministically in the node env; the three.js buffer pushes are screen-e2e.
 
 import { Color, Group, Sprite, SpriteMaterial } from 'three';
+import { Line2 } from 'three/examples/jsm/lines/Line2.js';
+import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
+import type {
+  AttackBeatRecord,
+  CombatLogEntry,
+  CombatLogResult,
+  DestructionEvent,
+} from '../sim/index.js';
 import type { MovementBeatRecord } from '../sim/index.js';
 import { bodyKindToGlyph, type HazardInput } from './hazards.js';
 import { easeInOutQuad, lerpBodyAt, type LerpedBody } from './interp.js';
@@ -27,9 +36,33 @@ export const MS_PER_SUBSTEP = 48;
 /** Floor so a 1-sub-step beat still reads as motion, not a jump-cut. */
 export const MIN_MOVEMENT_MS = 120;
 
+/** Attack beats sequence one shot at a time; per-shot dwell + a floor. */
+export const MS_PER_SHOT = 90;
+export const MIN_ATTACK_MS = 160;
+
 /** Default movement duration from keyframe count (`keyframes.length = subStepCount + 1`). */
 export const defaultMovementDurationMs = (keyframeCount: number): number =>
   Math.max(MIN_MOVEMENT_MS, Math.max(0, keyframeCount - 1) * MS_PER_SUBSTEP);
+
+/** Default attack duration from shot count. */
+export const defaultAttackDurationMs = (shotCount: number): number =>
+  Math.max(MIN_ATTACK_MS, shotCount * MS_PER_SHOT);
+
+/** Shot-beam color keyed to the resolution (Gate 1 palette; secondary to motion). */
+export const beamColorFor = (result: CombatLogResult): number => {
+  switch (result) {
+    case 'crit':
+      return 0xffef6b;
+    case 'kill':
+      return 0xff2d2d;
+    case 'hit':
+      return 0xff6b6b;
+    case 'intercept':
+      return 0x6bd7ff;
+    default:
+      return 0x51637a; // miss / boundary-exit — muted
+  }
+};
 
 /** Options for one playback. Duration defaults from the record; clock/raf default real. */
 export interface PlaybackOpts {
@@ -55,6 +88,7 @@ export interface Playback {
 /** The playback surface `attachTracePlayer` returns. */
 export interface TracePlayer {
   playMovement(record: MovementBeatRecord, opts?: PlaybackOpts): Playback;
+  playAttack(record: AttackBeatRecord, opts?: PlaybackOpts): Playback;
   dispose(): void;
 }
 
@@ -214,10 +248,139 @@ export const attachTracePlayer = (view: TacticalView): TracePlayer => {
     });
   };
 
+  const playAttack = (record: AttackBeatRecord, opts: PlaybackOpts = {}): Playback => {
+    const shots = record.log;
+    const durationMs = opts.durationMs ?? defaultAttackDurationMs(shots.length);
+
+    // Shot beams (shooter→target, colored by result) sequence over the beat; AoE rings
+    // for in-arena detonations + kill flashes land at the end.
+    const group = new Group();
+    const beams: FxHandle[] = [];
+    for (const entry of shots) {
+      const beam = makeBeam(view, entry);
+      if (beam !== null) beams.push(beam);
+    }
+    const finale: FxHandle[] = [];
+    for (const dead of record.destroyed) {
+      finale.push(makeKillFlash(dead));
+      if (dead.detonates) finale.push(makeAoeRing(dead));
+    }
+    for (const fx of beams) group.add(fx.object);
+    for (const fx of finale) group.add(fx.object);
+    if (group.children.length > 0) scene.add(group);
+
+    const disposeFx = (): void => {
+      scene.remove(group);
+      for (const fx of beams) fx.dispose();
+      for (const fx of finale) fx.dispose();
+      group.clear();
+    };
+
+    return createPlayback({
+      durationMs,
+      clock: opts.clock ?? nowDefault,
+      raf: opts.raf ?? rafDefault,
+      cancelRaf: opts.cancelRaf ?? cancelDefault,
+      renderAt: (tNorm) => {
+        // Reveal beams in order; finale FX appear in the last fifth of the beat.
+        const revealed = Math.floor(tNorm * beams.length + 1e-6);
+        for (let i = 0; i < beams.length; i += 1) {
+          beams[i]!.object.visible = tNorm >= 1 || i < revealed;
+        }
+        const finaleShown = tNorm >= 0.8;
+        for (const fx of finale) fx.object.visible = finaleShown;
+        view.scene.render();
+      },
+      cleanup: disposeFx,
+      ...(opts.onDone !== undefined ? { onDone: opts.onDone } : {}),
+    });
+  };
+
   return {
     playMovement,
+    playAttack,
     dispose: () => {
       /* transient FX are owned per-Playback; nothing persistent to tear down here. */
+    },
+  };
+};
+
+/** A transient scene object plus its geometry/material disposer. */
+interface FxHandle {
+  readonly object: Line2 | Sprite;
+  dispose(): void;
+}
+
+const KILL_FLASH_COLOR = 0xffd0a0;
+const AOE_RING_COLOR = 0xff8a3d;
+/** Nominal AoE ring radius per class (world units). True per-class AoE radius lives in
+ *  `CombatConfig`, which the record does not carry, so playback draws a class-scaled
+ *  legibility ring — bigger hull ⇒ bigger blast read. */
+const AOE_RING_RADIUS: Readonly<Record<DestructionEvent['chassisClass'], number>> = {
+  fighter: 30,
+  frigate: 50,
+  cruiser: 80,
+  'mega-destroyer': 120,
+};
+const RING_SEGMENTS = 48;
+
+/** Build one shot beam shooter→target, or `null` if either endpoint is already gone. */
+const makeBeam = (view: TacticalView, entry: CombatLogEntry): FxHandle | null => {
+  const from = view.scene.ships.positionOf(entry.sourceId);
+  const to = view.scene.ships.positionOf(entry.targetId);
+  if (from === null || to === null) return null;
+  return buildLine(
+    [from.x, from.y, from.z, to.x, to.y, to.z],
+    beamColorFor(entry.result),
+    1.6,
+  );
+};
+
+/** A brief flash sprite at a death position. */
+const makeKillFlash = (dead: DestructionEvent): FxHandle => {
+  const material = new SpriteMaterial({
+    color: new Color(KILL_FLASH_COLOR),
+    transparent: true,
+    depthWrite: false,
+  });
+  const sprite = new Sprite(material);
+  sprite.position.set(dead.position.x, dead.position.y, dead.position.z);
+  sprite.visible = false;
+  return { object: sprite, dispose: () => material.dispose() };
+};
+
+/** A horizontal AoE ring at an in-arena detonation. */
+const makeAoeRing = (dead: DestructionEvent): FxHandle => {
+  const radius = AOE_RING_RADIUS[dead.chassisClass];
+  const pts: number[] = [];
+  for (let i = 0; i <= RING_SEGMENTS; i += 1) {
+    const a = (i / RING_SEGMENTS) * Math.PI * 2;
+    pts.push(
+      dead.position.x + Math.cos(a) * radius,
+      dead.position.y,
+      dead.position.z + Math.sin(a) * radius,
+    );
+  }
+  return buildLine(pts, AOE_RING_COLOR, 1.4);
+};
+
+const buildLine = (positions: readonly number[], color: number, linewidth: number): FxHandle => {
+  const geometry = new LineGeometry();
+  geometry.setPositions(positions as number[]);
+  const material = new LineMaterial({
+    color,
+    linewidth,
+    transparent: true,
+    opacity: 0.9,
+    depthTest: true,
+  });
+  const line = new Line2(geometry, material);
+  line.visible = false;
+  return {
+    object: line,
+    dispose: () => {
+      geometry.dispose();
+      material.dispose();
     },
   };
 };
