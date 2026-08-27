@@ -1,0 +1,75 @@
+/* =============================================================
+   STARSHIP SKIRMISH — tokens.css
+   Design-system tokens, promoted from mocks/console.css §1.
+   Every surface, ink, signal, fleet, body-class, spacing, radius,
+   and glow value the app renders. Values are the design contract
+   (design §1.1) — do not retune here; retune the spec first.
+   Font-family tokens live in fonts.css.
+   ============================================================= */
+
+:root {
+  /* -- Surfaces — near-black, cool-shifted.
+        Never pure #000 except inside the tactical viewport. */
+  --void:      #05070A;   /* page background */
+  --deep:      #000205;   /* tactical viewport only */
+  --panel:     #0A0F16;   /* primary panel */
+  --panel-hi:  #101822;   /* raised / hover panel */
+  --panel-in:  #070B11;   /* inset well, list rows, fields */
+  --grid:      #16212E;   /* grid lines, dividers */
+  --line:      #1E2C3C;   /* borders */
+  --line-hot:  #2C4155;   /* border hover/focus base */
+
+  /* -- Ink */
+  --ink:       #C7D6E5;   /* body text */
+  --ink-hi:    #E8F4FF;   /* headings, key numbers */
+  --ink-dim:   #6B8299;   /* labels, meta */
+  --ink-ghost: #33475A;   /* disabled, empty-slot placeholder */
+
+  /* -- Signal colors — each has exactly one meaning (design §1.1).
+        Do not reuse these decoratively. */
+  --cyan:      #22E3FF;   /* PRIMARY. Player fleet, primary action, focus, shields */
+  --cyan-deep: #0B8FA8;   /* meter-fill dark stop (shield gradient) */
+  --amber:     #FFB020;   /* caution, needs-refit, delta-V spend, unsaved, point cost */
+  --red:       #FF2E63;   /* lethal, boundary breach, destroy, hostile-primary */
+  --green:     #3DFF9E;   /* valid, in-budget, hit, committed */
+  --violet:    #A45BFF;   /* slot: SPECIAL */
+  --lime:      #7CFF4F;   /* legacy alias; fleet-4 */
+
+  /* -- Fleet identity — five fleets max (Decision 2).
+        color + glyph + hatch, NEVER color alone.
+        ⛓ LOAD-BEARING for FR-13 / NFR-Accessibility. */
+  --fleet-0:   #22E3FF;   /* YOU      glyph ▲ */
+  --fleet-1:   #FF3D7F;   /* BOT-01   glyph ● */
+  --fleet-2:   #FFB020;   /* BOT-02   glyph ■ */
+  --fleet-3:   #A45BFF;   /* BOT-03   glyph ◆ */
+  --fleet-4:   #7CFF4F;   /* BOT-04   glyph ✚ */
+
+  /* -- Body classes — ship / debris / live missile / spent missile
+        must be distinguishable at a glance (FR-13, FR-24). ⛓ LOAD-BEARING. */
+  --hazard:    #FF7A1A;   /* debris          glyph ✳ */
+  --missile:   #FF2E63;   /* tracking missile glyph ➤ */
+  --spent:     #8A6A4F;   /* fuel-out missile glyph ◇ */
+
+  /* -- Geometry — sharp. This is a CRT, not a phone (design §1.4). */
+  --r-sm: 1px;
+  --r:    2px;
+  --r-lg: 3px;
+
+  /* -- Spacing scale — 4px base (design §1.3). */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+  --s8: 64px;
+
+  /* -- Glow — depth from emitted light, not cast shadow (design §1.5). */
+  --glow-0: none;
+  --glow-1: 0 0 0 1px rgba(34, 227, 255, 0.18);
+  --glow-2: 0 0 0 1px rgba(34, 227, 255, 0.40), 0 0 18px -8px rgba(34, 227, 255, 0.55);
+  --glow-3: 0 0 0 1px rgba(34, 227, 255, 0.70), 0 0 28px -6px rgba(34, 227, 255, 0.75);
+  --glow-red:   0 0 0 1px rgba(255, 46, 99, 0.65), 0 0 28px -6px rgba(255, 46, 99, 0.70);
+  --glow-amber: 0 0 0 1px rgba(255, 176, 32, 0.60), 0 0 24px -8px rgba(255, 176, 32, 0.60);
+}

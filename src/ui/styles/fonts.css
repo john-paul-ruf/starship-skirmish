@@ -1,0 +1,54 @@
+/* =============================================================
+   STARSHIP SKIRMISH — fonts.css
+   Self-hosted font faces + font-family tokens.
+
+   Why self-hosted: NFR-Platform (offline after first load) and
+   the app's CSP (`font-src 'self'`, index.html §CSP) both forbid
+   CDN font URLs — the mocks' Google Fonts `@import` cannot survive
+   into src/. Binaries land under /public/fonts/ per the drop
+   documented in public/fonts/README.md; the fallback stack below
+   keeps the app fully functional until they land.
+
+   font-display: swap — render text with the fallback immediately,
+   swap to the woff2 when it arrives. Never a FOIT.
+   ============================================================= */
+
+/* --- JetBrains Mono — display / h1 / h2 / label / body / numeric --- */
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/JetBrainsMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/JetBrainsMono-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/JetBrainsMono-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* --- Inter — prose only (design §1.2, .t-prose) --- */
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* --- Family stacks. Named --font-mono / --font-ui per session spec.
+       Fallbacks chosen so the app reads correctly if the woff2 drop is
+       missing (fresh clone) or delayed (slow first paint). */
+:root {
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-ui:   'Inter', system-ui, sans-serif;
+}

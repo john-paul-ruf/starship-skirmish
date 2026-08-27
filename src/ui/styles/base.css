@@ -1,0 +1,168 @@
+/* =============================================================
+   STARSHIP SKIRMISH — base.css
+   Reset, document defaults, ambient chrome (grid + vignette +
+   scanline), scrollbars, typography utility classes, focus ring.
+
+   The scanline overlay is decorative and is gated so it is inert
+   under both `prefers-reduced-motion: reduce` and the manual
+   `body.rm` toggle (design §1.6, NFR-Accessibility). The ambient
+   grid + vignette are static — no motion — and stay.
+   ============================================================= */
+
+/* ---------- Reset --------------------------------------------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--void);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  /* tabular-nums globally so point totals do not jitter (design §1.2). */
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Ambient decorative chrome ------------------------- */
+/* Grid + vignette — decorative, purely behind everything.
+   No motion, no information; stays in reduced-motion mode. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(34, 227, 255, 0.030) 1px, transparent 1px) 0 0 / 100% 32px,
+    linear-gradient(90deg, rgba(34, 227, 255, 0.030) 1px, transparent 1px) 0 0 / 32px 100%,
+    radial-gradient(ellipse at 50% 0%, rgba(34, 227, 255, 0.055), transparent 60%);
+}
+
+/* Scanline — decorative, opt-out. Gated with the modern
+   `no-preference` wrapper (applied only when RM is NOT preferred),
+   and separately killed under the manual `body.rm` toggle. */
+@media (prefers-reduced-motion: no-preference) {
+  body:not(.rm)::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0) 0 2px,
+      rgba(0, 0, 0, 0.22) 2px 3px
+    );
+    mix-blend-mode: multiply;
+    opacity: 0.5;
+  }
+}
+
+/* App root sits above the ambient layer. */
+#app,
+.layer {
+  position: relative;
+  z-index: 1;
+}
+
+::selection {
+  background: rgba(34, 227, 255, 0.28);
+  color: var(--ink-hi);
+}
+
+/* ---------- Scrollbars (WebKit) ------------------------------- */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: var(--panel-in);
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border: 2px solid var(--panel-in);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--line-hot);
+}
+
+/* ---------- Typography utility classes (design §1.2) ---------- */
+/* All uppercase tracked type is ≥10px and ≥.12em tracked. */
+.t-display {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-hi);
+}
+.t-h1 {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-hi);
+}
+.t-h2 {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-hi);
+}
+.t-label {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.t-meta {
+  font-size: 11px;
+  color: var(--ink-dim);
+}
+.t-num {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink-hi);
+  font-variant-numeric: tabular-nums;
+}
+.t-num-xl {
+  font-size: 34px;
+  font-weight: 700;
+  color: var(--ink-hi);
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+/* Prose — sentences read as sentences. Inter, only where needed. */
+.t-prose {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--ink);
+}
+
+/* Color utilities — signal ink used inline. Each signal has one
+   meaning (design §1.1); do not use these decoratively. */
+.c-hi { color: var(--ink-hi); }
+.c-dim { color: var(--ink-dim); }
+.c-cyan { color: var(--cyan); }
+.c-amber { color: var(--amber); }
+.c-red { color: var(--red); }
+.c-green { color: var(--green); }
+
+/* ---------- Global focus ring (design §2, keyboard access) ---- */
+/* :focus-visible is the default keyboard-focus signal repo-wide.
+   Component-specific focus rings override with --glow-3 in components.css. */
+:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
