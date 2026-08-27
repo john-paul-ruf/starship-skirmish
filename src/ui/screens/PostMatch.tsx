@@ -13,7 +13,8 @@ import { useMatch } from '../matchContext.js';
 
 import { OutcomeBanner } from './postMatch/OutcomeBanner.js';
 import { FleetsAndFates } from './postMatch/FleetsAndFates.js';
-import { perShipFates } from './postMatch/model.js';
+import { CombatLog } from './postMatch/CombatLog.js';
+import { flattenCombatLog, nameByBodyId, perShipFates } from './postMatch/model.js';
 
 export function PostMatch() {
   const match = useMatch();
@@ -25,7 +26,11 @@ export function PostMatch() {
     return <section class="panel" data-testid="screen-post-match" />;
   }
 
-  const fates = perShipFates(match.state.value, match.trace.value, match.initialFleets);
+  const trace = match.trace.value;
+  const fates = perShipFates(match.state.value, trace, match.initialFleets);
+  const logRows = flattenCombatLog(trace);
+  const names = nameByBodyId(match.initialFleets);
+  const nameOf = (id: number): string => names.get(id) ?? `BODY ${String(id)}`;
 
   return (
     <div class="stack-lg" data-testid="screen-post-match">
@@ -35,6 +40,7 @@ export function PostMatch() {
         seedLabel={match.seedLabel}
       />
       <FleetsAndFates fleets={fates} />
+      <CombatLog rows={logRows} nameOf={nameOf} />
     </div>
   );
 }
