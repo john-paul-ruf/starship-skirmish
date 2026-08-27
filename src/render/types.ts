@@ -14,6 +14,10 @@
 import type { PerspectiveCamera } from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { Body, BodyId, MatchState } from '../sim/index.js';
+import type { BoundaryShell } from './boundary.js';
+import type { HazardInstances } from './hazards.js';
+import type { SceneContext } from './scene.js';
+import type { ShipInstances } from './wireframes.js';
 
 /** The five fleet colors (design §1.1, `mocks/console.css` `--fleet-0..4`). */
 export type FleetColor = 0 | 1 | 2 | 3 | 4;
@@ -52,6 +56,23 @@ export interface TacticalCamera {
 }
 
 /**
+ * The scene-handle seam SESSION-03 (playback + ghost) drives. Playback pushes
+ * interpolated transforms into `ships` / `hazards`, adds its own ghost `Line` /
+ * time-marks to `context.scene`, and calls `render()` in its own RAF — all without
+ * re-editing the CP1–CP5 files. `camera.focus` slides during focus-follow. This is
+ * additive to the minimal `TacticalView` surface; the screens only need `TacticalView`.
+ */
+export interface SceneHandles {
+  readonly context: SceneContext;
+  readonly ships: ShipInstances;
+  readonly hazards: HazardInstances;
+  readonly boundary: BoundaryShell;
+  readonly camera: TacticalCamera;
+  /** Render one frame of the tactical scene through the camera. */
+  render(): void;
+}
+
+/**
  * The public face of the render module (arch §4). `createTacticalView(canvas)`
  * returns this; the screens hold it across a whole match and call `setState` after
  * every beat resolve. `setState` **reads** `MatchState` and never mutates it.
@@ -60,6 +81,8 @@ export interface TacticalView {
   /** Diff a frozen `MatchState` into ship / hazard instances + labels. Never mutates. */
   setState(state: MatchState): void;
   readonly camera: TacticalCamera;
+  /** Extension seam for SESSION-03 playback — the live scene handles. */
+  readonly scene: SceneHandles;
   pick(x: number, y: number): PickResult | null;
   resize(width: number, height: number, dpr?: number): void;
   dispose(): void;
