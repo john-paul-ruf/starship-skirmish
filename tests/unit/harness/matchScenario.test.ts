@@ -17,10 +17,14 @@ import {
   runMatchScenario,
   type MatchScenario,
 } from '../../../tools/balance/scenario.js';
+import { seedToMatch, deriveMatchSeed } from '../../../tools/balance/harnessMatches.js';
 import { seedOf } from '../../../src/sim/mathx/index.js';
+import type { BotTier } from '../../../src/ai/index.js';
 
 const catalog = loadCatalog();
 const LEGAL_BUDGETS = catalog.tuning.match.legalBudgets;
+const MIN_FLEETS = catalog.tuning.match.minFleets;
+const MAX_FLEETS = catalog.tuning.match.maxFleets;
 
 // A minimal, legal 2-fleet match — the cheapest budget so tests stay fast.
 const twoFleetScenario = (): MatchScenario => ({
@@ -51,6 +55,84 @@ describe('runMatchScenario — CP1 smoke: end-to-end pipeline reaches an outcome
     for (const d of result.turnDigests) {
       expect(d).toMatch(/^[0-9a-f]{8}$/);
     }
+  });
+});
+
+describe('seedToMatch — deterministic factory over integer n', () => {
+  it('is deterministic in n (same n => same scenario)', () => {
+    const a = seedToMatch(7, catalog);
+    const b = seedToMatch(7, catalog);
+    expect(a).toEqual(b);
+  });
+
+  it('name is stable in n (match-${n})', () => {
+    expect(seedToMatch(0, catalog).name).toBe('match-0');
+    expect(seedToMatch(42, catalog).name).toBe('match-42');
+  });
+
+  it('seed derives independently in n across a small sweep', () => {
+    // The two-hash derivation prevents the aliasing that a naive
+    // `seedOf(n, ~n ^ c)` shows across n and n+4 — every n gives distinct
+    // (hi, lo). Assert the seeds are all unique across a 32-key sweep.
+    const seenHi = new Set<number>();
+    const seenLo = new Set<number>();
+    for (let n = 0; n < 32; n += 1) {
+      const s = deriveMatchSeed(n);
+      seenHi.add(s.hi);
+      seenLo.add(s.lo);
+    }
+    expect(seenHi.size).toBe(32);
+    expect(seenLo.size).toBe(32);
+  });
+
+  it('default fleetTiers length is in [minFleets, maxFleets]', () => {
+    for (let n = 0; n < 24; n += 1) {
+      const s = seedToMatch(n, catalog);
+      expect(s.fleetTiers.length).toBeGreaterThanOrEqual(MIN_FLEETS);
+      expect(s.fleetTiers.length).toBeLessThanOrEqual(MAX_FLEETS);
+      for (const t of s.fleetTiers) {
+        expect(['rookie', 'veteran', 'ace']).toContain(t);
+      }
+    }
+  });
+
+  it('default budget is drawn from tuning.match.legalBudgets', () => {
+    for (let n = 0; n < 24; n += 1) {
+      const s = seedToMatch(n, catalog);
+      expect(LEGAL_BUDGETS).toContain(s.budget);
+    }
+  });
+
+  it('honours opts.budget and opts.fleetTiers when provided', () => {
+    const s = seedToMatch(3, catalog, {
+      budget: LEGAL_BUDGETS[1]!,
+      fleetTiers: ['veteran', 'ace'],
+    });
+    expect(s.budget).toBe(LEGAL_BUDGETS[1]);
+    expect(s.fleetTiers).toEqual(['veteran', 'ace']);
+    expect(s.name).toBe('match-3');
+    // Seed still comes from n (opts do not perturb the seed derivation —
+    // that would make golden replay depend on run-time flag order).
+    expect(s.seed).toEqual(deriveMatchSeed(3));
+  });
+
+  it('rejects opts.budget outside tuning.match.legalBudgets', () => {
+    const illegal = Math.max(...LEGAL_BUDGETS) + 1;
+    expect(() => seedToMatch(0, catalog, { budget: illegal })).toThrow(
+      /not in tuning.match.legalBudgets/,
+    );
+  });
+
+  it('rejects opts.fleetTiers length outside [minFleets, maxFleets]', () => {
+    // One fleet is below minFleets (v1 = 2); one too many is above maxFleets.
+    expect(() => seedToMatch(0, catalog, { fleetTiers: ['rookie'] })).toThrow(
+      /fleetTiers length/,
+    );
+    const tooMany: BotTier[] = [];
+    for (let i = 0; i <= MAX_FLEETS; i += 1) tooMany.push('rookie');
+    expect(() => seedToMatch(0, catalog, { fleetTiers: tooMany })).toThrow(
+      /fleetTiers length/,
+    );
   });
 });
 
