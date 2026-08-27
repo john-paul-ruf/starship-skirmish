@@ -326,6 +326,9 @@ export const createMatchController = (
     trace,
     seedLabel,
     playerFleetId,
+    // The rosters every fleet started with (names/buildIds for post-match
+    // fates). `initialConfig` never changes — `rematch` swaps only the seed.
+    initialFleets: initialConfig.fleets,
     commitMovement,
     commitAttack,
     resolveAnimationDone,

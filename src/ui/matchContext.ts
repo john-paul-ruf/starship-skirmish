@@ -31,6 +31,7 @@ import type {
   MovementBeatRecord,
   MovementPlan,
   ResolutionTrace,
+  SimFleet,
   Vec3,
 } from '../sim/index.js';
 
@@ -106,6 +107,15 @@ export interface MatchController {
   readonly trace: ReadonlySignal<ResolutionTrace>;
   readonly seedLabel: string; // 'SK-7F3A-9C21-D4E8' formatting (§4.11)
   readonly playerFleetId: number;
+  /**
+   * The immutable rosters every fleet STARTED with (post-`resolveFleet`), keyed
+   * by `fleetId`. Post-match fates (S07) need this to name a destroyed ship:
+   * `state` holds only survivors and a `DestructionEvent` carries no name /
+   * buildId, so the initial `SimShip` profiles are the sole source of a dead
+   * ship's identity. Stable across `rematch` (the fleets never change; only the
+   * seed does).
+   */
+  readonly initialFleets: readonly SimFleet[];
 
   /** Resolve the player's movement promise → controller advances into resolve+animate. */
   commitMovement(plans: readonly MovementPlan[]): void;
