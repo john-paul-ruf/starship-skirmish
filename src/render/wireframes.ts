@@ -180,6 +180,12 @@ export interface ShipInstances {
   sync(ships: readonly ShipInput[]): void;
   /** Playback (SESSION-03): move one ship without a full re-sync. */
   setPosition(id: BodyId, x: number, y: number, z: number): void;
+  /**
+   * Playback (S01): set one ship instance's presence alpha (0 = gone, 1 = solid).
+   * Multiplied against `SHIP_DEFAULT_OPACITY` so `alpha = 1` matches a freshly-synced
+   * ship exactly; `alpha = 0` renders it invisible. No-op for unknown ids.
+   */
+  setOpacity(id: BodyId, alpha: number): void;
   /** Current world position of a ship, or `null` if absent (used by `F` focus). */
   positionOf(id: BodyId): Vector3 | null;
   /** Update fat-line pixel resolution on resize (LineMaterial needs viewport size). */
@@ -190,12 +196,15 @@ export interface ShipInstances {
 
 interface ShipHandle {
   readonly object: LineSegments2;
+  material: LineMaterial;
   chassisClass: ChassisClass;
   fleet: FleetColor;
 }
 
 const LINE_WIDTH_HIGH = 2.4;
 const LINE_WIDTH_REDUCED = 1.2;
+/** Default silhouette opacity — the "solid" ship look; playback fades multiply against it. */
+export const SHIP_DEFAULT_OPACITY = 0.95;
 
 /** Build the ship-instance manager. Shared geometry per class + material per fleet. */
 export const createShipInstances = (): ShipInstances => {
@@ -212,19 +221,18 @@ export const createShipInstances = (): ShipInstances => {
   };
 
   const resolution = new Vector2(1, 1);
-  const materials = new Map<FleetColor, LineMaterial>();
-  const materialFor = (fleet: FleetColor): LineMaterial => {
-    const cached = materials.get(fleet);
-    if (cached !== undefined) return cached;
+  let currentLineWidth = LINE_WIDTH_HIGH;
+  // Per-instance materials — one clone per ship — so `setOpacity` fades one ship
+  // without touching its fleetmates (LineMaterial has no per-instance opacity path).
+  const buildMaterial = (fleet: FleetColor): LineMaterial => {
     const m = new LineMaterial({
       color: FLEET_PALETTE[fleet],
-      linewidth: LINE_WIDTH_HIGH,
+      linewidth: currentLineWidth,
       transparent: true,
-      opacity: 0.95,
+      opacity: SHIP_DEFAULT_OPACITY,
       depthTest: true,
     });
     m.resolution.copy(resolution);
-    materials.set(fleet, m);
     return m;
   };
 
@@ -236,10 +244,11 @@ export const createShipInstances = (): ShipInstances => {
       seen.add(input.id);
       let handle = ships.get(input.id);
       if (handle === undefined) {
-        const object = new LineSegments2(geometryFor(input.chassisClass), materialFor(input.fleet));
+        const material = buildMaterial(input.fleet);
+        const object = new LineSegments2(geometryFor(input.chassisClass), material);
         object.userData['bodyId'] = input.id;
         group.add(object);
-        handle = { object, chassisClass: input.chassisClass, fleet: input.fleet };
+        handle = { object, material, chassisClass: input.chassisClass, fleet: input.fleet };
         ships.set(input.id, handle);
       } else {
         if (handle.chassisClass !== input.chassisClass) {
@@ -247,8 +256,13 @@ export const createShipInstances = (): ShipInstances => {
           handle.chassisClass = input.chassisClass;
         }
         if (handle.fleet !== input.fleet) {
-          handle.object.material = materialFor(input.fleet);
+          handle.material.dispose();
+          handle.material = buildMaterial(input.fleet);
+          handle.object.material = handle.material;
           handle.fleet = input.fleet;
+        } else {
+          // Re-sync a live ship → back to solid (any mid-beat fade is cleared).
+          handle.material.opacity = SHIP_DEFAULT_OPACITY;
         }
       }
       const [x, y, z] = input.position;
@@ -258,6 +272,7 @@ export const createShipInstances = (): ShipInstances => {
     for (const [id, handle] of ships) {
       if (!seen.has(id)) {
         group.remove(handle.object);
+        handle.material.dispose();
         ships.delete(id);
       }
     }
@@ -268,6 +283,13 @@ export const createShipInstances = (): ShipInstances => {
     if (handle !== undefined) handle.object.position.set(x, y, z);
   };
 
+  const setOpacity = (id: BodyId, alpha: number): void => {
+    const handle = ships.get(id);
+    if (handle === undefined) return;
+    const clamped = alpha < 0 ? 0 : alpha > 1 ? 1 : alpha;
+    handle.material.opacity = clamped * SHIP_DEFAULT_OPACITY;
+  };
+
   const positionOf = (id: BodyId): Vector3 | null => {
     const handle = ships.get(id);
     return handle === undefined ? null : handle.object.position.clone();
@@ -275,27 +297,29 @@ export const createShipInstances = (): ShipInstances => {
 
   const setResolution = (width: number, height: number): void => {
     resolution.set(width, height);
-    for (const m of materials.values()) m.resolution.copy(resolution);
+    for (const handle of ships.values()) handle.material.resolution.copy(resolution);
   };
 
   const setQuality = (quality: RenderQuality): void => {
-    const width = quality === 'reduced' ? LINE_WIDTH_REDUCED : LINE_WIDTH_HIGH;
-    for (const m of materials.values()) m.linewidth = width;
+    currentLineWidth = quality === 'reduced' ? LINE_WIDTH_REDUCED : LINE_WIDTH_HIGH;
+    for (const handle of ships.values()) handle.material.linewidth = currentLineWidth;
   };
 
   const dispose = (): void => {
-    for (const handle of ships.values()) group.remove(handle.object);
+    for (const handle of ships.values()) {
+      group.remove(handle.object);
+      handle.material.dispose();
+    }
     ships.clear();
     for (const g of geometries.values()) g.dispose();
     geometries.clear();
-    for (const m of materials.values()) m.dispose();
-    materials.clear();
   };
 
   return {
     group,
     sync,
     setPosition,
+    setOpacity,
     positionOf,
     setResolution,
     setQuality,

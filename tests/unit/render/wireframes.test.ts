@@ -3,12 +3,17 @@
 // checks only; the fat-line rendering is a screen-e2e concern.
 
 import { describe, expect, it } from 'vitest';
+import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import {
   FLEET_PALETTE,
+  SHIP_DEFAULT_OPACITY,
   SHIP_GEOMETRY,
   boundingExtent,
+  createShipInstances,
   expandSegments,
   fleetColorOf,
+  type ShipInput,
 } from '../../../src/render/wireframes.js';
 import type { ChassisClass } from '../../../src/sim/index.js';
 
@@ -89,5 +94,78 @@ describe('fleetColorOf / FLEET_PALETTE', () => {
   it('exposes five distinct palette colors', () => {
     const hexes = [0, 1, 2, 3, 4].map((f) => FLEET_PALETTE[f as 0 | 1 | 2 | 3 | 4]);
     expect(new Set(hexes).size).toBe(5);
+  });
+});
+
+// Per-instance opacity: playback fades ONE ship without touching its fleetmates.
+// The manager instantiates plain three objects (no WebGL touched) — safe in node.
+describe('ShipInstances.setOpacity (S01 mid-beat fade)', () => {
+  const shipInput = (id: number, fleet: 0 | 1 = 0): ShipInput => ({
+    id,
+    chassisClass: 'fighter',
+    fleet,
+    position: [0, 0, 0],
+    radius: 5,
+  });
+
+  const materialOf = (ships: ReturnType<typeof createShipInstances>, index = 0): LineMaterial => {
+    const object = ships.group.children[index] as LineSegments2;
+    return object.material as LineMaterial;
+  };
+
+  it('a freshly-synced ship sits at the default silhouette opacity', () => {
+    const ships = createShipInstances();
+    ships.sync([shipInput(1)]);
+    expect(materialOf(ships).opacity).toBeCloseTo(SHIP_DEFAULT_OPACITY, 6);
+    ships.dispose();
+  });
+
+  it('setOpacity(id, alpha) scales the material opacity by alpha', () => {
+    const ships = createShipInstances();
+    ships.sync([shipInput(1)]);
+    ships.setOpacity(1, 0.5);
+    expect(materialOf(ships).opacity).toBeCloseTo(0.5 * SHIP_DEFAULT_OPACITY, 6);
+    ships.setOpacity(1, 0);
+    expect(materialOf(ships).opacity).toBe(0);
+    ships.setOpacity(1, 1);
+    expect(materialOf(ships).opacity).toBeCloseTo(SHIP_DEFAULT_OPACITY, 6);
+    ships.dispose();
+  });
+
+  it('setOpacity clamps out-of-range alpha into [0,1]', () => {
+    const ships = createShipInstances();
+    ships.sync([shipInput(1)]);
+    ships.setOpacity(1, -0.5);
+    expect(materialOf(ships).opacity).toBe(0);
+    ships.setOpacity(1, 2);
+    expect(materialOf(ships).opacity).toBeCloseTo(SHIP_DEFAULT_OPACITY, 6);
+    ships.dispose();
+  });
+
+  it('sync() resets a previously-faded ship back to the solid default', () => {
+    const ships = createShipInstances();
+    ships.sync([shipInput(1)]);
+    ships.setOpacity(1, 0.25);
+    expect(materialOf(ships).opacity).toBeCloseTo(0.25 * SHIP_DEFAULT_OPACITY, 6);
+    ships.sync([shipInput(1)]);
+    expect(materialOf(ships).opacity).toBeCloseTo(SHIP_DEFAULT_OPACITY, 6);
+    ships.dispose();
+  });
+
+  it('setOpacity is a no-op for an unknown id', () => {
+    const ships = createShipInstances();
+    ships.sync([shipInput(1)]);
+    expect(() => ships.setOpacity(999, 0.5)).not.toThrow();
+    expect(materialOf(ships).opacity).toBeCloseTo(SHIP_DEFAULT_OPACITY, 6);
+    ships.dispose();
+  });
+
+  it('fading one ship does not touch a fleetmate at the same fleet color', () => {
+    const ships = createShipInstances();
+    ships.sync([shipInput(1), shipInput(2)]);
+    ships.setOpacity(1, 0.2);
+    expect(materialOf(ships, 0).opacity).toBeCloseTo(0.2 * SHIP_DEFAULT_OPACITY, 6);
+    expect(materialOf(ships, 1).opacity).toBeCloseTo(SHIP_DEFAULT_OPACITY, 6);
+    ships.dispose();
   });
 });

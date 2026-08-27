@@ -61,12 +61,14 @@ class FakeScheduler {
 interface FakeView {
   readonly view: TacticalView;
   readonly positions: Map<number, { x: number; y: number; z: number }>;
+  readonly opacities: Map<number, number>;
   readonly hazardSyncs: number[];
   renderCount: number;
 }
 
 const makeFakeView = (): FakeView => {
   const positions = new Map<number, { x: number; y: number; z: number }>();
+  const opacities = new Map<number, number>();
   const hazardSyncs: number[] = [];
   const state = { renderCount: 0 };
   const view = {
@@ -75,6 +77,9 @@ const makeFakeView = (): FakeView => {
       ships: {
         setPosition: (id: number, x: number, y: number, z: number) => {
           positions.set(id, { x, y, z });
+        },
+        setOpacity: (id: number, alpha: number) => {
+          opacities.set(id, alpha);
         },
         positionOf: () => null,
       },
@@ -91,6 +96,7 @@ const makeFakeView = (): FakeView => {
   return {
     view,
     positions,
+    opacities,
     hazardSyncs,
     get renderCount() {
       return state.renderCount;
@@ -252,6 +258,44 @@ describe('playMovement state machine', () => {
     const late = vi.fn();
     playback.onDone(late);
     expect(late).toHaveBeenCalledTimes(1);
+  });
+
+  it('a ship destroyed mid-beat fades at its last position (S01 opacity seam)', () => {
+    // Ship 1 present in both keyframes; ship 2 present in frame 0 only (destroyed by hi).
+    const rec: MovementBeatRecord = {
+      subStepCount: 1,
+      keyframes: [
+        [ship(1, 0), ship(2, 100)],
+        [ship(1, 10)],
+      ],
+      contacts: [],
+      log: [],
+      destroyed: [],
+      removedHazardIds: [],
+    };
+    const sched = new FakeScheduler();
+    const fake = makeFakeView();
+    attachTracePlayer(fake.view).playMovement(rec, {
+      durationMs: 100,
+      clock: sched.clock,
+      raf: sched.raf,
+      cancelRaf: sched.cancel,
+    });
+
+    // Advance one intermediate frame — inside the beat, `alpha < 1` for ship 2.
+    sched.tick(50);
+    expect(fake.opacities.get(2)).toBeGreaterThan(0);
+    expect(fake.opacities.get(2)).toBeLessThan(1);
+    expect(fake.opacities.get(1)).toBe(1); // live all beat → solid
+
+    // Final frame lands on the last keyframe; ship 2 is gone entirely.
+    sched.runToEnd(20);
+    expect(fake.opacities.has(2)).toBe(true); // last-seen fade was written…
+    // …but the last recorded position for ship 2 stays at its last-seen keyframe.
+    expect(fake.positions.get(2)).toEqual({ x: 100, y: 0, z: 0 });
+    // Ship 1 lands solid at the final keyframe.
+    expect(fake.opacities.get(1)).toBe(1);
+    expect(fake.positions.get(1)).toEqual({ x: 10, y: 0, z: 0 });
   });
 
   it('dispose() cancels the loop without firing onDone', () => {

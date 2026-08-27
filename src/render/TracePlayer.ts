@@ -190,11 +190,14 @@ export const attachTracePlayer = (view: TacticalView): TracePlayer => {
 
   // Push one interpolated instant into the ship / hazard buffers. Ships move in place;
   // hazards re-sync (they have no per-instance seam) from the beat's live hazard set.
+  // The interp `alpha` drives per-ship presence (S01 mid-beat fade) — a ship gone by
+  // `hi` fades at its last position instead of freezing.
   const pushFrame = (bodies: readonly LerpedBody[]): void => {
     const hazardInputs: HazardInput[] = [];
     for (const b of bodies) {
       if (b.kind === 'ship') {
         view.scene.ships.setPosition(b.id, b.position.x, b.position.y, b.position.z);
+        view.scene.ships.setOpacity(b.id, b.alpha);
       } else {
         hazardInputs.push({
           id: b.id,
