@@ -31,11 +31,15 @@ export interface ArcPlotterProps {
   readonly totalSpent: number;
   /** Per-segment magnitude cap for the ACTIVE waypoint's slider (SESSION-05). */
   readonly magnitudeMax: number;
+  /** Sim-seconds per waypoint segment — labels the selector as `t=0 s · launch`,
+   *  `t=Ns`, `t=2Ns`, … (Gate 1 prototype cadence). */
+  readonly sliceSeconds: number;
   /** Current velocity of the selected body (Newtonian carry-over), for the readout. */
   readonly velocity: Vec3 | null;
   /** True when the plotted arc ends outside the arena (§4.1). */
   readonly exiting: boolean;
   readonly onPlot: (patch: { bearing?: number; pitch?: number; magnitude?: number }) => void;
+  readonly onSelectWaypoint: (index: number) => void;
   readonly onCoast: () => void;
 }
 
@@ -46,14 +50,25 @@ const activeWaypoint = (draft: PlanDraft): WaypointDraft | null => {
   return draft.waypoints[idx] ?? draft.waypoints[0] ?? null;
 };
 
+/** Label the ith waypoint on the selector — matches the Gate 1 prototype's
+ *  `t=0 s · launch`, `t=Ns`, `t=2Ns`, … cadence. */
+const waypointLabel = (i: number, sliceSeconds: number): string => {
+  if (i === 0) return 't=0s · LAUNCH';
+  const t = i * sliceSeconds;
+  const rounded = Number.isInteger(t) ? String(t) : t.toFixed(1);
+  return `t=${rounded}s`;
+};
+
 export function ArcPlotter({
   ship,
   draft,
   totalSpent,
   magnitudeMax,
+  sliceSeconds,
   velocity,
   exiting,
   onPlot,
+  onSelectWaypoint,
   onCoast,
 }: ArcPlotterProps) {
   if (ship === null || draft === null) {
@@ -117,6 +132,40 @@ export function ArcPlotter({
             : `VX ${round(velocity.x)} · VY ${round(velocity.y)} · VZ ${round(velocity.z)}`}
         </div>
       </div>
+
+      {/* ---- waypoint selector (SESSION-05 CP2) — hidden for single-burn plans ---- */}
+      {draft.waypoints.length > 1 ? (
+        <div
+          class="tm-waypoint-selector"
+          role="group"
+          aria-label="Waypoint selector"
+          data-testid="waypoint-selector"
+        >
+          <span class="t-label" style="letter-spacing:.14em">WAYPOINT</span>
+          <span class="tm-waypoint-buttons">
+            {draft.waypoints.map((_wp, i) => {
+              const active = i === draft.activeIndex;
+              const label = waypointLabel(i, sliceSeconds);
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  class="tm-waypoint-btn mono-xs"
+                  data-testid="waypoint-option"
+                  data-index={String(i)}
+                  aria-pressed={active}
+                  aria-label={`Edit waypoint ${label}`}
+                  onClick={() => {
+                    if (!active) onSelectWaypoint(i);
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </span>
+        </div>
+      ) : null}
 
       {/* ---- arc inputs (bind to the ACTIVE waypoint) ---- */}
       <div class="tm-arc-inputs">

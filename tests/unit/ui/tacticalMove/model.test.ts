@@ -352,6 +352,25 @@ describe('draft transitions', () => {
     expect(next.waypoints[1]!.magnitude).toBe(40);
   });
 
+  it('active-waypoint binding: setActiveIndex + plotWaypoint edit only the current slot (CP2)', () => {
+    // Start with 4 waypoints, all zeroed; simulate the CP2 UI flow — select
+    // waypoint 2, plot it, then select waypoint 0 and plot it. Every other
+    // waypoint must remain untouched throughout ("editing k leaves others intact").
+    let d = draft({ waypoints: [wp(), wp(), wp(), wp()] });
+    d = setActiveIndex(d, 2);
+    d = plotWaypoint(d, { bearing: 90, pitch: 15, magnitude: 12 });
+    d = setActiveIndex(d, 0);
+    d = plotWaypoint(d, { bearing: 45, pitch: 0, magnitude: 30 });
+    expect(d.waypoints[0]).toEqual({ bearing: 45, pitch: 0, magnitude: 30 });
+    expect(d.waypoints[1]).toEqual({ bearing: 0, pitch: 0, magnitude: 0 });
+    expect(d.waypoints[2]).toEqual({ bearing: 90, pitch: 15, magnitude: 12 });
+    expect(d.waypoints[3]).toEqual({ bearing: 0, pitch: 0, magnitude: 0 });
+    // Any plotWaypoint call keeps status planned.
+    expect(d.status).toBe('planned');
+    // activeIndex tracks the last selection.
+    expect(d.activeIndex).toBe(0);
+  });
+
   it('setActiveIndex clamps into range; status unchanged', () => {
     const d = draft({
       waypoints: [wp(), wp(), wp()],

@@ -53,6 +53,7 @@ import {
   plannedDeltaVMag,
   playerRosterRows,
   plotWaypoint,
+  setActiveIndex,
   setCoast,
   sliceSecondsFor,
   toMovementPlans,
@@ -296,9 +297,11 @@ export function TacticalMove() {
                   draft={selDraft}
                   totalSpent={selTotalSpent}
                   magnitudeMax={selMagnitudeMax}
+                  sliceSeconds={sliceSeconds}
                   velocity={selVelocity}
                   exiting={selId !== null && exitIds.has(selId)}
                   onPlot={(patch) => editSelected((d) => plotWaypoint(d, patch))}
+                  onSelectWaypoint={(i) => editSelected((d) => setActiveIndex(d, i))}
                   onCoast={() => editSelected(setCoast)}
                 />
               ) : (
