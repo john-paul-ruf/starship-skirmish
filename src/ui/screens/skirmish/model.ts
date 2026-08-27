@@ -173,6 +173,21 @@ export const removeBot = (state: SetupState, catalog: Catalog): SetupState => {
   return { ...state, bots: state.bots.slice(0, -1) };
 };
 
+/**
+ * Grow or shrink the opponent list to `count` (clamped to `[minBots, maxBots]`),
+ * appending ROOKIE opponents or dropping trailing ones. Existing opponents keep
+ * their tier + `rngKey` — the segmented count control never re-rolls the fleets
+ * it leaves in place.
+ */
+export const setBotCount = (state: SetupState, catalog: Catalog, count: number): SetupState => {
+  const { minBots, maxBots } = catalog.tuning.match;
+  const target = Math.max(minBots, Math.min(maxBots, Math.trunc(count)));
+  let next = state;
+  while (next.bots.length < target) next = addBot(next, catalog);
+  while (next.bots.length > target) next = removeBot(next, catalog);
+  return next;
+};
+
 /** Set opponent `index`'s difficulty tier. No-op if out of range. */
 export const setBotTier = (state: SetupState, index: number, tier: BotTier): SetupState => {
   const spec = state.bots[index];

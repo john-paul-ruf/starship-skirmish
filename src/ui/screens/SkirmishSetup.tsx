@@ -22,15 +22,20 @@ import { useApp } from '../appContext.js';
 
 import { BudgetPicker } from './skirmish/BudgetPicker.js';
 import { FleetDraft } from './skirmish/FleetDraft.js';
+import { Opposition } from './skirmish/Opposition.js';
 import {
   addToDraft,
   eligibleForDraft,
   initialSetupState,
   legalBudgets,
   removeFromDraft,
+  rerollBot,
+  setBotCount,
+  setBotTier,
   setBudget,
   type SetupState,
 } from './skirmish/model.js';
+import type { BotTier } from '../../ai/index.js';
 
 /** Mint a 48-bit preview seed (§4.11). UI-only randomness — the determinism
  *  ban-list scopes to `sim`/`ai`, not `ui`. Falls back to 0 with no crypto. */
@@ -70,7 +75,20 @@ export function SkirmishSetup() {
     state.value = removeFromDraft(state.value, index);
   };
 
+  const onSetCount = (count: number): void => {
+    state.value = setBotCount(state.value, catalog, count);
+  };
+
+  const onSetTier = (index: number, tier: BotTier): void => {
+    state.value = setBotTier(state.value, index, tier);
+  };
+
+  const onReroll = (index: number): void => {
+    state.value = rerollBot(state.value, index);
+  };
+
   const current = state.value;
+  const match = catalog.tuning.match;
 
   return (
     <div class="skm-wrap" data-testid="screen-skirmish-setup">
@@ -87,13 +105,26 @@ export function SkirmishSetup() {
         </div>
       </section>
 
-      <FleetDraft
-        catalog={catalog}
-        state={current}
-        entries={entries}
-        onAddEntry={onAddEntry}
-        onRemove={onRemove}
-      />
+      <div class="skm-layout">
+        <FleetDraft
+          catalog={catalog}
+          state={current}
+          entries={entries}
+          onAddEntry={onAddEntry}
+          onRemove={onRemove}
+        />
+
+        <Opposition
+          catalog={catalog}
+          bots={current.bots}
+          budget={current.budget}
+          minBots={match.minBots}
+          maxBots={match.maxBots}
+          onSetCount={onSetCount}
+          onSetTier={onSetTier}
+          onReroll={onReroll}
+        />
+      </div>
     </div>
   );
 }
@@ -113,8 +144,21 @@ const SKM_STYLES = `
 
   .skm-strip { flex: none; }
 
+  .skm-layout { display: grid; grid-template-columns: minmax(0,2fr) minmax(0,1fr);
+                gap: var(--s3); align-items: start; }
+
   .skm-draft { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr);
                gap: var(--s3); align-items: start; }
+
+  .skm-opposition { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; }
+  .skm-count-row { display: flex; align-items: center; gap: var(--s3); }
+  .skm-fairness { border-left: 3px solid var(--cyan); }
+  .skm-fairness-lead { font-size: 11px; font-weight: 700; letter-spacing: .10em;
+                       color: var(--ink-hi); line-height: 1.6; }
+  .skm-fairness-table { line-height: 1.8; margin-top: var(--s2); }
+  .skm-bot-card .panel-hd { flex-wrap: wrap; gap: var(--s2); }
+  .skm-bot-fleet { border-top: 1px solid var(--line); }
+  .skm-bot-ft { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
 
   .skm-source-list, .skm-fleet-list { display: flex; flex-direction: column; }
   .skm-row-name { display: block; font-size: 12px; font-weight: 700;

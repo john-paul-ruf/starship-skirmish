@@ -38,6 +38,7 @@ import {
   removeBot,
   removeFromDraft,
   rerollBot,
+  setBotCount,
   setBotTier,
   setBudget,
   tierBrief,
@@ -222,6 +223,20 @@ describe('opposition list — clamps to [minBots, maxBots] (S04 CP2)', () => {
     state = setBotTier(state, 1, 'ace');
     expect(state.bots[0]?.tier).toBe('rookie');
     expect(state.bots[1]?.tier).toBe('ace');
+  });
+
+  it('setBotCount grows/shrinks to the target and preserves existing tiers', () => {
+    let state = setBotCount(initialSetupState(catalog), catalog, 3);
+    expect(state.bots).toHaveLength(3);
+    state = setBotTier(state, 0, 'ace');
+    state = setBotCount(state, catalog, 2);
+    expect(state.bots).toHaveLength(2);
+    expect(state.bots[0]?.tier).toBe('ace'); // preserved through the shrink
+  });
+
+  it('setBotCount clamps out-of-range requests to [minBots, maxBots]', () => {
+    expect(setBotCount(initialSetupState(catalog), catalog, 99).bots).toHaveLength(4);
+    expect(setBotCount(initialSetupState(catalog), catalog, 0).bots).toHaveLength(1);
   });
 });
 
