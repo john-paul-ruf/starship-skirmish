@@ -17,6 +17,7 @@ import {
   hitChance,
   length,
   previewPath,
+  runMovementBeat,
   seedOf,
   type MovementPlan,
 } from '../../../../src/sim/index.js';
@@ -204,5 +205,73 @@ describe('createMatchController — previewArc accepts a segmented arc (D-SHARED
     const seam = controller.previewArc(999999, { segments: [{ deltaV: of(1, 0, 0) }] });
     expect(seam.positions).toEqual([]);
     expect(seam.endsOutsideArena).toBe(false);
+  });
+});
+
+// ---- commitMovement carries segments through to the beat -------------------
+//
+// SESSION-02 proved `runMovementBeat` forwards `MovementPlan.segments`
+// OPAQUELY (the beat never reads them); this test locks in that the
+// controller's `commitMovement` → collectMovementPlans → runMovementBeat
+// chain preserves that opacity. If a future refactor accidentally normalised
+// or stripped segments in `commitMovement`, `collectMovementPlans`, or the
+// player commander's `resolveMovement`, the ship's post-movement position
+// would diverge from a direct `runMovementBeat(s0, [segmentedPlan])` call.
+//
+// Blind commit (FR-17 / §6.3) stays intact by CONSTRUCTION: the plans are a
+// `const` local inside `driveTurn`; they never touch a signal, `MatchState`,
+// or `BlindMatchView`. This test doesn't need to re-prove that invariant
+// (it's structural, not runtime), only that the seam does not divert the
+// segmented plan on the way to the resolver.
+describe('createMatchController — commitMovement carries segments to runMovementBeat', () => {
+  it('a segmented player plan drives the ship to the finite-thrust position', async () => {
+    const player = generateBotFleet(catalog, BUDGET, 'ace', 13);
+    const config = assembleMatchConfig(
+      catalog,
+      catalog.tuning,
+      BUDGET,
+      seedOf(0x0d0d, 0x0e0e),
+      player,
+      [],
+    );
+    const { services } = captureRoutes();
+    const controller = createMatchController(services, config, []);
+    await flush();
+    expect(controller.phase.value).toBe('movement-plan');
+
+    // Snapshot pre-beat state — commitMovement resolves the player promise;
+    // the controller then runs `runMovementBeat(state.value, plans)` where
+    // `state.value` is still this snapshot (nothing else has mutated it).
+    const s0 = controller.state.value;
+    const shipId = Array.from(s0.ships.keys()).sort((a, b) => a - b)[0]!;
+    const segments = [{ deltaV: of(0, 4, 0) }, { deltaV: of(2, 0, 0) }] as const;
+    const segmentedPlan: MovementPlan = {
+      bodyId: shipId,
+      deltaV: of(0, 0, 0),
+      segments,
+    };
+
+    controller.commitMovement([segmentedPlan]);
+    await flush();
+    expect(controller.phase.value).toBe('movement-resolve');
+
+    // The controller must have driven `runMovementBeat` with the SAME plan
+    // (segments preserved, not stripped). Compare final ship position against
+    // a direct call on the pre-beat snapshot — deterministic and byte-stable.
+    const direct = runMovementBeat(s0, [segmentedPlan]);
+    const directPos = direct.state.bodies.get(shipId)!.position;
+    const drivenPos = controller.state.value.bodies.get(shipId)!.position;
+    expect(drivenPos).toEqual(directPos);
+
+    // The recorded MovementBeatRecord must be the SAME record `runMovementBeat`
+    // would have produced — same sub-step count, same terminal keyframe. If
+    // commitMovement or the player commander normalised the plan (e.g.
+    // dropped segments), sub-step derivation would diverge and this would
+    // fail loudly (S02's tripwire property, restated at the seam).
+    const record = controller.movementBeat.value!;
+    expect(record.subStepCount).toBe(direct.record.subStepCount);
+    const lastKeyframe = record.keyframes[record.keyframes.length - 1]!;
+    const directLast = direct.record.keyframes[direct.record.keyframes.length - 1]!;
+    expect(lastKeyframe).toEqual(directLast);
   });
 });

@@ -51,6 +51,30 @@ describe('makePlayerCommander — the promise resolves on commit', () => {
     expect(got).toEqual([{ shooterId: 1, targetId: 2, weaponIndex: 0 }]);
   });
 
+  // finite-thrust-movement / SESSION-04 CP2 — the player commander must
+  // forward `MovementPlan.segments` UNCHANGED through the `.slice()` copy;
+  // stripping segments would silently drop finite-thrust burns on the way to
+  // the beat resolver, and the seam test in controller.test.ts would fail
+  // instead of this focused unit. Locking it here catches a bug at the source.
+  it('planMovement forwards segments verbatim (finite-thrust plans are not stripped)', async () => {
+    const handle = makePlayerCommander(0);
+    const pending = Promise.resolve(handle.commander.planMovement(FAKE_VIEW));
+    const segments = [{ deltaV: { x: 0, y: 2, z: 0 } }, { deltaV: { x: 3, y: 0, z: 0 } }];
+    const plan: MovementPlan = {
+      bodyId: 1,
+      deltaV: { x: 0, y: 0, z: 0 },
+      segments,
+    };
+    handle.resolveMovement([plan]);
+    const got = await pending;
+    expect(got).toHaveLength(1);
+    // Structural equality — the received plan carries the same segments
+    // array shape as the input (shallow-copied by `.slice()` at the plans
+    // level; segment items are readonly and shared by reference).
+    expect(got[0]).toEqual(plan);
+    expect(got[0]!.segments).toEqual(segments);
+  });
+
   it('a stray resolve with no plan awaited is a no-op (does not throw)', () => {
     const handle = makePlayerCommander(0);
     expect(() => handle.resolveMovement([])).not.toThrow();
