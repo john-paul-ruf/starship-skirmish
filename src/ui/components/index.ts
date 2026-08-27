@@ -67,6 +67,27 @@ export type {
   FleetGlyphProps,
   SlotTagProps,
   SlotPipsProps,
+  SlotPipsGroup,
   BodyStateKind,
   BodyStateTagProps,
 } from './identity.js';
+
+// ---- Overlays & notices ---------------------------------------------------
+export { Modal, Toast, Banner } from './overlays.js';
+export type {
+  ModalProps,
+  ModalRole,
+  ToastProps,
+  ToastTone,
+  BannerProps,
+  BannerTone,
+} from './overlays.js';
+
+// ---- App chrome -----------------------------------------------------------
+export { Topbar, DesktopGate, ErrorFallback } from './chrome.js';
+export type {
+  TopbarProps,
+  TopbarRoute,
+  DesktopGateProps,
+  ErrorFallbackProps,
+} from './chrome.js';
