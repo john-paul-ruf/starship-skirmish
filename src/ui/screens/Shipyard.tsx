@@ -17,21 +17,27 @@ import { useEffect, useMemo } from 'preact/hooks';
 
 import { useApp } from '../appContext.js';
 import type { ComponentDef, SlotType } from '../../catalog/index.js';
-import type { Build } from '../../domain/index.js';
+import type { Build, DerivedStats, RefitDiff } from '../../domain/index.js';
 import { pointCost } from '../../domain/index.js';
 import { Tabs } from '../components/index.js';
 
 import { ChassisPicker } from './shipyard/ChassisPicker.js';
 import { ComponentPicker } from './shipyard/ComponentPicker.js';
+import { LedgerPanel } from './shipyard/LedgerPanel.js';
+import { SaveBar } from './shipyard/SaveBar.js';
 import { SlotBench } from './shipyard/SlotBench.js';
+import { StatsPanel } from './shipyard/StatsPanel.js';
 import {
   applySlot,
   buildLayout,
+  buildShareLink,
   chassisByClass,
   createFreshBuild,
   fitErrorLabel,
+  prepareSave,
   slotLabels,
   snapshot,
+  statsDelta,
   type FitSnapshot,
 } from './shipyard/model.js';
 
@@ -54,7 +60,7 @@ const CATALOG_TABS = [
 ] as const;
 
 export function Shipyard() {
-  const { catalog, route } = useApp();
+  const { catalog, route, repo, navigate, toast } = useApp();
 
   const groups = useMemo(() => chassisByClass(catalog), [catalog]);
 
@@ -63,29 +69,65 @@ export function Shipyard() {
   const workingBuild = useSignal<Build | null>(null);
   const selectedBay = useSignal<number | null>(null);
   const catalogTab = useSignal<CatalogTab>('chassis');
+  /** The previous fit's derived stats — the `Delta` primitive's `from`. */
+  const previousStats = useSignal<DerivedStats | null>(null);
+  /** Optional player-set reference budget; not a save gate (§4.4 corollary). */
+  const budget = useSignal<number | null>(null);
+  /** Editable name draft — kept separate from `Build.name` so save-time NFC
+   * normalisation is the single point that stamps the name into the record. */
+  const nameDraft = useSignal<string>('');
+  /** Working tag list under edit. Committed to Build only at save time. */
+  const tagsDraft = useSignal<readonly string[]>([]);
+  const tagDraft = useSignal<string>('');
+  /** Refit receipt on edit-existing entry (design §4.7). */
+  const refitReceipt = useSignal<RefitDiff | null>(null);
 
-  // Route-arriving buildId is not yet wired (edit-existing lands in CP4).
+  // Route-arriving buildId → edit an existing build. Loading is idempotent
+  // per buildId (StrictMode-safe): we skip if the working build already
+  // matches the requested id.
   const currentRoute = route.value;
   const routeBuildId =
     currentRoute.name === 'shipyard' ? currentRoute.buildId : undefined;
 
   useEffect(() => {
     if (routeBuildId === undefined) return;
-    // Edit-existing path lands in CP4.
+    if (workingBuild.value?.id === routeBuildId) return;
+    const loaded = repo.get(routeBuildId);
+    if (loaded === null) {
+      toast(`BUILD ${routeBuildId.slice(0, 8)} NOT FOUND`, 'warn');
+      return;
+    }
+    workingBuild.value = loaded.build;
+    nameDraft.value = loaded.build.name;
+    tagsDraft.value = [...loaded.build.tags];
+    tagDraft.value = '';
+    previousStats.value = null;
+    refitReceipt.value = loaded.refit;
+    selectedBay.value = null;
+    catalogTab.value = 'chassis';
+    // signals never change identity — the effect only re-runs on routeBuildId
   }, [routeBuildId]);
 
   const pickChassis = (chassisId: string, chassisName: string) => {
+    const defaultName = `NEW ${chassisName.toUpperCase()}`;
     const result = createFreshBuild(
       catalog,
       chassisId,
-      `NEW ${chassisName.toUpperCase()}`,
+      defaultName,
       AUTHORING_SCHEMA_VERSION,
     );
     if (result.ok) {
+      // Snapshot the outgoing build's stats as "previous" so the first fit's
+      // Delta reads meaningfully (chassis→chassis switch shows Δ vs old ship).
+      const prev = workingBuild.value;
+      previousStats.value =
+        prev === null ? null : (snapshot(catalog, prev).stats ?? null);
       workingBuild.value = result.value;
+      nameDraft.value = defaultName;
+      tagsDraft.value = [];
+      tagDraft.value = '';
+      refitReceipt.value = null;
       selectedBay.value = null;
-      // After chassis pick, stay on the catalog tab so the player sees their
-      // chosen chassis highlighted; the tab will auto-switch on bay select.
       catalogTab.value = 'chassis';
     }
   };
@@ -100,9 +142,15 @@ export function Shipyard() {
     if (type !== undefined) catalogTab.value = type;
   };
 
+  /** Snapshot the OUTGOING fit's stats before every mutation — the `Delta.from`. */
+  const snapshotPrevious = (b: Build) => {
+    previousStats.value = snapshot(catalog, b).stats ?? null;
+  };
+
   const clearBay = (index: number) => {
     const b = workingBuild.value;
     if (b === null) return;
+    snapshotPrevious(b);
     workingBuild.value = applySlot(b, index, null);
   };
 
@@ -110,10 +158,9 @@ export function Shipyard() {
     const b = workingBuild.value;
     const bay = selectedBay.value;
     if (b === null || bay === null) return;
-    // Guard against a type/bay mismatch — the picker disables non-matches at
-    // input time, but if the tab was switched via keyboard we validate here.
     const layout = buildLayout(catalog, b);
     if (layout[bay] !== component.slotType) return;
+    snapshotPrevious(b);
     workingBuild.value = applySlot(b, bay, component.id);
   };
 
@@ -124,6 +171,83 @@ export function Shipyard() {
     if (b === null) return null;
     return snapshot(catalog, b);
   });
+
+  // ---- Save / share ------------------------------------------------------
+
+  /** Add the current tag draft to the list — dedupes on save (io.normalizeTags). */
+  const addTag = () => {
+    const trimmed = tagDraft.value.trim();
+    if (trimmed.length === 0) return;
+    const next = tagsDraft.value.includes(trimmed)
+      ? tagsDraft.value
+      : [...tagsDraft.value, trimmed];
+    tagsDraft.value = next;
+    tagDraft.value = '';
+  };
+
+  const removeTag = (tag: string) => {
+    tagsDraft.value = tagsDraft.value.filter((t) => t !== tag);
+  };
+
+  const saveCandidate = useComputed(() => {
+    const b = workingBuild.value;
+    if (b === null) return null;
+    return prepareSave(catalog, b, nameDraft.value, tagsDraft.value);
+  });
+
+  const doSave = () => {
+    const candidate = saveCandidate.value;
+    if (candidate === null || candidate.build === null) return;
+    const result = repo.put(candidate.build);
+    if (!result.ok) {
+      if (result.reason === 'ERR_QUOTA') {
+        toast('STORAGE FULL — SAVE FAILED', 'danger');
+        return;
+      }
+      toast(`SAVE FAILED · ${result.reason}`, 'danger');
+      return;
+    }
+    if (result.degraded === true) {
+      toast('SAVED IN SESSION MODE — STORAGE DEGRADED', 'warn');
+    } else {
+      toast(`SAVED · ${candidate.build.name}`);
+    }
+    // The build we just wrote is now the current working state — reflect the
+    // storedCost/updatedAt bump so a subsequent share encodes today's cost.
+    workingBuild.value = candidate.build;
+    refitReceipt.value = null;
+    navigate({ name: 'encyclopedia' });
+  };
+
+  const doShare = () => {
+    const candidate = saveCandidate.value;
+    if (candidate === null || candidate.build === null) return;
+    const loc = (globalThis as { location?: Location }).location;
+    const origin = loc?.origin ?? '';
+    const pathname = loc?.pathname ?? '/';
+    const link = buildShareLink(catalog, candidate.build, origin, pathname);
+    if (!link.ok) {
+      toast(`SHARE FAILED · ${link.error.code}`, 'danger');
+      return;
+    }
+    const nav = (globalThis as { navigator?: Navigator }).navigator;
+    const clipboard = nav?.clipboard;
+    if (clipboard === undefined) {
+      toast('CLIPBOARD UNAVAILABLE — LINK NOT COPIED', 'warn');
+      return;
+    }
+    void clipboard.writeText(link.value.url).then(
+      () => {
+        const msg = link.value.longUrl
+          ? 'SHARE LINK COPIED · LONG URL'
+          : 'SHARE LINK COPIED';
+        toast(msg);
+      },
+      () => {
+        toast('CLIPBOARD DENIED — LINK NOT COPIED', 'warn');
+      },
+    );
+  };
 
   return (
     <div
@@ -195,6 +319,7 @@ export function Shipyard() {
             build={workingBuild.value}
             snap={snap.value}
             selectedBay={selectedBay.value}
+            refit={refitReceipt.value}
             onSelectBay={selectBay}
             onClearBay={clearBay}
           />
@@ -207,34 +332,43 @@ export function Shipyard() {
         aria-label="Point ledger and derived stats"
         style="background:var(--void);min-height:0;display:flex;flex-direction:column"
       >
-        <div
-          class="ledger"
-          style="background:var(--panel);border-bottom:1px solid var(--line);padding:10px 14px"
-        >
-          <div style="display:flex;align-items:baseline;justify-content:space-between">
-            <span class="t-label">POINT TOTAL</span>
-            <span class="mono-xs c-dim">FR-5</span>
-          </div>
-          <div style="display:flex;align-items:flex-end;gap:8px;margin-top:4px">
-            <span
-              class="t-num-xl c-cyan"
-              data-testid="shipyard-point-total"
-              style="text-shadow:0 0 18px rgba(34,227,255,.45)"
-            >
-              {snap.value === null ? '—' : String(snap.value.cost)}
-            </span>
-            <span class="t-h2" style="padding-bottom:3px">PTS</span>
-          </div>
-          <ValidationBadge snap={snap.value} />
-          <p class="mono-xs" style="margin:9px 0 0;line-height:1.5;color:var(--ink-dim)">
-            <span class="c-amber">!</span> LEFTOVER POINTS ARE WASTED — THERE IS NO CONVERSION.
-          </p>
-        </div>
+        <LedgerPanel
+          snap={snap.value}
+          chassisCost={chassisCost(catalog, workingBuild.value)}
+          componentCount={componentCount(workingBuild.value)}
+          emptySlotCount={emptySlotCount(workingBuild.value)}
+          budget={budget.value}
+          onBudgetChange={(v) => {
+            budget.value = v;
+          }}
+        />
         <div class="col-scroll" style="overflow-y:auto;overflow-x:hidden;flex:1 1 auto;min-height:0;padding:12px 14px">
           <ValidationPanel snap={snap.value} />
-          <p class="mono-xs c-dim" data-testid="shipyard-ledger-placeholder" style="margin-top:10px">
-            DERIVED READOUT LANDS IN CP3.
-          </p>
+          <StatsPanel
+            stats={snap.value?.stats ?? null}
+            delta={statsDelta(previousStats.value, snap.value?.stats ?? null)}
+          />
+          {workingBuild.value !== null ? (
+            <SaveBar
+              name={nameDraft.value}
+              tags={tagsDraft.value}
+              tagDraft={tagDraft.value}
+              canSave={saveCandidate.value?.build !== null && saveCandidate.value !== null}
+              errors={
+                saveCandidate.value?.nameErrors ?? []
+              }
+              onNameChange={(v) => {
+                nameDraft.value = v;
+              }}
+              onTagDraftChange={(v) => {
+                tagDraft.value = v;
+              }}
+              onAddTag={addTag}
+              onRemoveTag={removeTag}
+              onSave={doSave}
+              onShare={doShare}
+            />
+          ) : null}
         </div>
       </section>
     </div>
@@ -259,10 +393,11 @@ function FittingBenchLoaded(props: {
   build: Build;
   snap: FitSnapshot | null;
   selectedBay: number | null;
+  refit: RefitDiff | null;
   onSelectBay: (index: number) => void;
   onClearBay: (index: number) => void;
 }) {
-  const { build, snap, selectedBay, onSelectBay, onClearBay } = props;
+  const { build, snap, selectedBay, refit, onSelectBay, onClearBay } = props;
   const { catalog } = useApp();
   const layout = buildLayout(catalog, build);
   const labels = slotLabels(layout);
@@ -277,19 +412,7 @@ function FittingBenchLoaded(props: {
   return (
     <>
       <div style="padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel)">
-        <div style="display:flex;align-items:center;gap:10px">
-          <label class="sr-only" for="shipyard-buildName">Build name</label>
-          <input
-            id="shipyard-buildName"
-            class="field"
-            style="height:36px;font-size:16px;font-weight:700;letter-spacing:0.10em;text-transform:uppercase"
-            value={build.name}
-            spellcheck={false}
-            data-testid="shipyard-name-input"
-            readOnly
-          />
-        </div>
-        <div style="display:flex;align-items:center;gap:10px;margin-top:7px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <span class="mono-xs">
             <span class="c-amber">◆ {chassisName}</span> · {chassisClass} ·{' '}
             <span class="c-dim">{build.chassisId}</span>
@@ -300,6 +423,7 @@ function FittingBenchLoaded(props: {
           </span>
         </div>
       </div>
+      {refit !== null ? <RefitReceipt refit={refit} labels={labels} /> : null}
       <div class="col-scroll" style="overflow-y:auto;overflow-x:hidden;flex:1 1 auto;min-height:0;padding:12px 16px">
         <div style="display:flex;align-items:baseline;gap:10px">
           <span class="t-h2">SLOT BAYS</span>
@@ -345,39 +469,50 @@ function FittingBenchLoaded(props: {
 }
 
 /**
- * ✓ VALID FIT / ✕ N ISSUES — the single-line fit-legality chip. Sits under
- * the point total so a swap that breaks the fit is visible without scrolling.
+ * Design §4.7 — `needs-refit` is informative, not punitive. Show what
+ * changed and by how much; keep the build viewable + editable. The RE-FIT
+ * flow is: user swaps components, save recomputes storedCost.
  */
-function ValidationBadge(props: { snap: FitSnapshot | null }) {
-  const { snap } = props;
-  if (snap === null) {
-    return (
-      <div style="margin-top:8px">
-        <span class="chip" data-testid="shipyard-validation-badge">
-          NO BUILD
-        </span>
-      </div>
-    );
-  }
-  if (snap.errors.length === 0) {
-    return (
-      <div style="margin-top:8px">
-        <span
-          class="chip chip-green"
-          data-testid="shipyard-validation-badge"
-        >
-          ✓ VALID FIT
-        </span>
-      </div>
-    );
-  }
+function RefitReceipt(props: { refit: RefitDiff; labels: readonly string[] }) {
+  const { refit, labels } = props;
+  const changedLines = refit.lines.filter(
+    (line) => line.componentId !== null,
+  );
   return (
-    <div style="margin-top:8px">
-      <span
-        class="chip chip-red"
-        data-testid="shipyard-validation-badge"
-      >
-        ✕ {snap.errors.length} ISSUE{snap.errors.length === 1 ? '' : 'S'}
+    <div
+      class="banner banner-warn"
+      style="margin:8px 16px;padding:10px 14px;background:rgba(255,176,32,.08);border:1px solid rgba(255,176,32,.35);border-radius:var(--r);display:flex;gap:10px"
+      data-testid="shipyard-refit-receipt"
+    >
+      <span class="c-amber" style="font-weight:700;font-size:14px" aria-hidden="true">
+        ⚠
+      </span>
+      <span>
+        <span class="t-h2 c-amber" style="font-size:11px">
+          NEEDS REFIT · CATALOG DRIFT
+        </span>
+        <span class="t-prose" style="display:block;color:var(--ink)">
+          Recalculated {refit.oldTotal} → {refit.newTotal} PTS{' '}
+          <span
+            class={refit.delta > 0 ? 'c-amber' : refit.delta < 0 ? 'c-green' : 'c-dim'}
+            style="font-weight:700"
+          >
+            ({refit.delta > 0 ? '+' : ''}
+            {refit.delta} pt)
+          </span>
+        </span>
+        <span class="mono-xs c-dim" style="display:block;margin-top:4px">
+          Per-slot current cost:{' '}
+          {changedLines
+            .map(
+              (line) =>
+                `${labels[line.index] ?? '?'}=${line.currentCost}pt`,
+            )
+            .join(' · ')}
+        </span>
+        <span class="mono-xs" style="display:block;margin-top:4px">
+          RE-FIT NOW · SAVE to bank today&apos;s cost. Under-budget is legal (§4.4).
+        </span>
       </span>
     </div>
   );
@@ -433,5 +568,23 @@ function componentsSubtotal(
   const chassis = catalog.chassis(build.chassisId);
   const chassisCost = chassis?.pointCost ?? 0;
   return pointCost(catalog, build) - chassisCost;
+}
+
+function chassisCost(
+  catalog: ReturnType<typeof useApp>['catalog'],
+  build: Build | null,
+): number {
+  if (build === null) return 0;
+  return catalog.chassis(build.chassisId)?.pointCost ?? 0;
+}
+
+function componentCount(build: Build | null): number {
+  if (build === null) return 0;
+  return build.slots.reduce<number>((n, s) => (s !== null ? n + 1 : n), 0);
+}
+
+function emptySlotCount(build: Build | null): number {
+  if (build === null) return 0;
+  return build.slots.reduce<number>((n, s) => (s === null ? n + 1 : n), 0);
 }
 
