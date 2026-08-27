@@ -1,4 +1,5 @@
-// M14 UI — Tactical Movement viewport (S05 CP2/CP3).
+// M14 UI — Tactical Movement viewport (S05 CP2/CP3; SESSION-03 CP2 adds
+// click-to-focus + `F`-key + camera HUD + `R`-key reset).
 //
 // Hosts the three.js tactical view, reached ONLY through a dynamic import
 // (D-RENDER-DYNAMIC / arch §11 — three stays in its own chunk). It:
@@ -9,16 +10,28 @@
 //     ArcPlotter's third channel), sourced from `controller.previewArc` so the
 //     ghost cannot lie (D-PREVIEW-SEAM — no `sim/physics` value import here),
 //   • plays the resolved movement beat during `movement-resolve` (CP3),
-//     honoring reduced-motion by skipping to the final frame.
+//     honoring reduced-motion by skipping to the final frame,
+//   • picks a ship on canvas click (S01 `pick(x,y)`) and reports the bodyId
+//     up so the screen can move selection to any fleet (FR-15),
+//   • wires the render layer's `focusBody(id)` + `setFocusSource(positionOf)`
+//     so the `F` key + Focus HUD button track the selection without a `three`
+//     import (S01 loosened `focusSourceFor` to a `Vec3`-like — arch §5).
+//
+// The imperative handle (`viewHandleRef`) lets the parent screen invoke
+// `resetView()` / `focusSelected()` from the sibling CameraHud without piercing
+// this component's WebGL abstraction. Every method is a no-op when the render
+// import failed or the view has not mounted yet — the degraded (numeric-only)
+// fallback stays fully functional (NFR-Accessibility).
 //
 // If the render import fails or WebGL is unavailable, the viewport DEGRADES to
 // a text notice — numeric arc entry (the sibling ArcPlotter) stays fully
 // functional (NFR-Accessibility).
 
 import { useSignal } from '@preact/signals';
-import { useEffect, useRef } from 'preact/hooks';
+import { useEffect, useImperativeHandle, useRef } from 'preact/hooks';
+import type { Ref } from 'preact';
 
-import type { MatchState, MovementBeatRecord, Vec3 } from '../../../sim/index.js';
+import type { BodyId, MatchState, MovementBeatRecord, Vec3 } from '../../../sim/index.js';
 import type { GhostLayer, TacticalView, TracePlayer } from '../../../render/index.js';
 
 type RenderModule = typeof import('../../../render/index.js');
@@ -30,6 +43,16 @@ export interface GhostArc {
   readonly deltaVMag: number;
   readonly beatSeconds: number;
   readonly hullRadius: number;
+  /** SESSION-03: passed through to S01's ghost draw for Off / 1s / 2s / 4s marks. */
+  readonly markIntervalSec?: number;
+}
+
+/** Imperative handle the sibling CameraHud drives (reset / focus buttons). */
+export interface ViewportHandle {
+  /** Reset the orbit camera to the neutral fleet framing (mirrors `R`). */
+  resetView(): void;
+  /** Slide the orbit target onto the selected ship id (mirrors `F`). */
+  focusSelected(): void;
 }
 
 export interface ViewportProps {
@@ -43,6 +66,14 @@ export interface ViewportProps {
   readonly movementBeat: MovementBeatRecord | null;
   /** Skip the animation to its final frame (reduced motion). */
   readonly reducedMotion: boolean;
+  /** SESSION-03: currently-selected ship id (any fleet), for `F`-focus + focus HUD. */
+  readonly selectedId: BodyId | null;
+  /** SESSION-03: live position lookup — the `focusSourceFor` payload, `Vec3`-like. */
+  readonly positionOf: (id: BodyId) => Vec3 | null;
+  /** SESSION-03: canvas click → picked body id. Absent → click is a no-op. */
+  readonly onPick?: (id: BodyId) => void;
+  /** SESSION-03: parent-driven imperative handle for the camera HUD buttons. */
+  readonly handleRef?: Ref<ViewportHandle | null>;
   /** Called when the resolve animation finishes (or is skipped). */
   readonly onResolveDone: () => void;
 }
@@ -55,6 +86,10 @@ export function Viewport({
   ghostKey,
   movementBeat,
   reducedMotion,
+  selectedId,
+  positionOf,
+  onPick,
+  handleRef,
   onResolveDone,
 }: ViewportProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -64,9 +99,11 @@ export function Viewport({
   const roRef = useRef<ResizeObserver | null>(null);
   const playbackRef = useRef<ReturnType<TracePlayer['playMovement']> | null>(null);
 
-  // Latest inputs, read by the async loader once the view is live.
-  const latest = useRef({ state, ghostArc });
-  latest.current = { state, ghostArc };
+  // Latest inputs, read by the async loader once the view is live. `selectedId`
+  // + `positionOf` live here so the render layer's focus source and the click
+  // handler always read fresh values without re-wiring on every prop change.
+  const latest = useRef({ state, ghostArc, selectedId, positionOf, onPick });
+  latest.current = { state, ghostArc, selectedId, positionOf, onPick };
 
   const failed = useSignal(false);
 
@@ -79,10 +116,30 @@ export function Viewport({
       mod.fromPreviewPath(
         { positions: arc.positions, endsOutsideArena: arc.endsOutsideArena },
         arc.deltaVMag,
-        { beatSeconds: arc.beatSeconds, hullRadius: arc.hullRadius },
+        {
+          beatSeconds: arc.beatSeconds,
+          hullRadius: arc.hullRadius,
+          ...(arc.markIntervalSec !== undefined ? { markIntervalSec: arc.markIntervalSec } : {}),
+        },
       ),
     );
   };
+
+  // ---- Imperative handle for the sibling camera HUD ------------------------
+  useImperativeHandle(
+    handleRef ?? { current: null },
+    () => ({
+      resetView: () => {
+        viewRef.current?.camera.resetToFleetView();
+      },
+      focusSelected: () => {
+        const id = latest.current.selectedId;
+        if (id === null) return;
+        viewRef.current?.focusBody(id);
+      },
+    }),
+    [],
+  );
 
   // ---- Mount: dynamic-import render, build the view, degrade on failure ----
   useEffect(() => {
@@ -99,6 +156,18 @@ export function Viewport({
         viewRef.current = view;
         ghostRef.current = ghost;
         fromPreviewRef.current = mod.fromPreviewPath;
+
+        // Wire the `F`-key focus source so `positionOf(selectedId)` tracks the
+        // roster selection (S01's internal auto-wire tracks only the last-picked
+        // body). A plain closure over the ui's `selectedId` + `positionOf`
+        // covers roster clicks too; the render layer's `Vec3`-like tuple shape
+        // is the contract — no `three` value import needed here.
+        view.camera.setFocusSource(() => {
+          const id = latest.current.selectedId;
+          if (id === null) return null;
+          const p = latest.current.positionOf(id);
+          return p === null ? null : [p.x, p.y, p.z];
+        });
 
         const parent = canvas.parentElement;
         if (parent !== null && typeof ResizeObserver !== 'undefined') {
@@ -154,7 +223,13 @@ export function Viewport({
       from(
         { positions: ghostArc.positions, endsOutsideArena: ghostArc.endsOutsideArena },
         ghostArc.deltaVMag,
-        { beatSeconds: ghostArc.beatSeconds, hullRadius: ghostArc.hullRadius },
+        {
+          beatSeconds: ghostArc.beatSeconds,
+          hullRadius: ghostArc.hullRadius,
+          ...(ghostArc.markIntervalSec !== undefined
+            ? { markIntervalSec: ghostArc.markIntervalSec }
+            : {}),
+        },
       ),
     );
   }, [ghostKey]);
@@ -198,6 +273,26 @@ export function Viewport({
     };
   }, [movementBeat]);
 
+  // ---- Canvas click → pick → onPick(id) ------------------------------------
+  //
+  // The click is a plain DOM event on the `<canvas>` — the render layer's `pick`
+  // does the GPU read. A hit reports the body id up to the screen (which moves
+  // selection + focuses via the camera source). A miss is a no-op — the roster
+  // remains the authoritative selection UI (FR-15) and this is a convenience.
+  const onCanvasClick = (event: Event): void => {
+    const view = viewRef.current;
+    const pick = latest.current.onPick;
+    if (view === null || pick === undefined) return;
+    const mouse = event as MouseEvent;
+    const canvas = canvasRef.current;
+    if (canvas === null) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = mouse.clientX - rect.left;
+    const y = mouse.clientY - rect.top;
+    const hit = view.pick(x, y);
+    if (hit !== null) pick(hit.bodyId);
+  };
+
   if (failed.value) {
     return (
       <div class="tm-viewport tm-viewport-degraded" data-testid="viewport-degraded">
@@ -212,7 +307,7 @@ export function Viewport({
 
   return (
     <div class="tm-viewport" data-testid="viewport">
-      <canvas class="tm-canvas" ref={canvasRef} />
+      <canvas class="tm-canvas" ref={canvasRef} onClick={onCanvasClick} />
       {movementBeat !== null ? (
         <button
           type="button"

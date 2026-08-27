@@ -36,8 +36,9 @@ import { useMatch } from '../matchContext.js';
 import { FleetRoster, ShipInspector, groupByFleet } from '../components/roster/index.js';
 
 import { ArcPlotter } from './tacticalMove/ArcPlotter.js';
+import { CameraHud } from './tacticalMove/CameraHud.js';
 import { CommitBar } from './tacticalMove/CommitBar.js';
-import { Viewport, type GhostArc } from './tacticalMove/Viewport.js';
+import { Viewport, type GhostArc, type ViewportHandle } from './tacticalMove/Viewport.js';
 import {
   deltaVMag,
   fleetGateStatus,
@@ -63,6 +64,7 @@ export function TacticalMove() {
   const drafts = useSignal<Map<BodyId, PlanDraft>>(new Map());
   const selected = useSignal<BodyId | null>(null);
   const planTurn = useRef<number | null>(null);
+  const viewportRef = useRef<ViewportHandle | null>(null);
 
   const isPlan = phase === 'movement-plan';
   const playerRows: RosterShip[] = view === null ? [] : playerRosterRows(view, match.playerFleetId);
@@ -140,9 +142,19 @@ export function TacticalMove() {
   // Shared all-fleets roster groups (FR-15) — no fog, player fleet first.
   const groups = view === null ? [] : groupByFleet(view.ships, match.playerFleetId);
 
+  // Live position lookup for the render camera's focus source (S01 seams). Reads
+  // from `state.bodies` so `F` tracks the currently-selected ship without a
+  // `three` value import — `focusSourceFor` accepts a `Vec3`-like.
+  const positionOf = (id: BodyId): Vec3 | null => {
+    const body = state.bodies.get(id);
+    return body === undefined ? null : body.position;
+  };
+
   // ---- Handlers ------------------------------------------------------------
   const selectShip = (id: BodyId): void => {
     selected.value = id;
+    // Slide the orbit camera onto the newly-selected ship (roster click ↔ pick).
+    viewportRef.current?.focusSelected();
   };
 
   const editSelected = (fn: (d: PlanDraft) => PlanDraft): void => {
@@ -214,7 +226,16 @@ export function TacticalMove() {
             ghostKey={ghostKey}
             movementBeat={phase === 'movement-resolve' ? match.movementBeat.value : null}
             reducedMotion={services.reducedMotion.value}
+            selectedId={selId}
+            positionOf={positionOf}
+            onPick={selectShip}
+            handleRef={viewportRef}
             onResolveDone={() => match.resolveAnimationDone()}
+          />
+          <CameraHud
+            canFocus={selId !== null}
+            onReset={() => viewportRef.current?.resetView()}
+            onFocus={() => viewportRef.current?.focusSelected()}
           />
         </main>
 
@@ -290,6 +311,12 @@ const TM_STYLES = `
   .tm-viewport-degraded { flex-direction: column; gap: var(--s2); padding: var(--s5);
                           align-items: flex-start; justify-content: center; }
   .tm-skip { position: absolute; right: var(--s3); top: var(--s3); z-index: 4; }
+  .tm-cam-hud { position: absolute; left: var(--s3); bottom: var(--s3); z-index: 4;
+                display: flex; flex-direction: column; gap: 4px;
+                background: rgba(9,15,25,.72); border: 1px solid var(--line);
+                border-radius: var(--r-sm); padding: 6px var(--s2); pointer-events: auto; }
+  .tm-cam-hud-buttons { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+  .tm-cam-hud-hint { letter-spacing: .1em; }
 
   .tm-plan-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
                   display: flex; flex-direction: column; gap: var(--s3); padding: var(--s3); }
