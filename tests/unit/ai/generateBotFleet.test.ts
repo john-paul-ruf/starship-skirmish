@@ -11,12 +11,21 @@
 import { describe, expect, it } from 'vitest';
 import { loadCatalog } from '../../../src/catalog/index.js';
 import { pointCost, validateFit } from '../../../src/domain/index.js';
+import type { Build } from '../../../src/domain/index.js';
 import {
   buildOneShip,
   deriveFleetSeed,
+  generateBotFleet,
 } from '../../../src/ai/generateBotFleet.js';
 
 const catalog = loadCatalog();
+const HULL_CAP: number = catalog.tuning.match.fleetHullCap;
+
+// Sum of `storedCost` across a fleet — the value FR-5 caps against `budget`.
+// `storedCost` on a bot-built Build is set to the current `pointCost` in
+// `buildOneShip`, so the two are equal at authoring time.
+const sumStoredCost = (fleet: readonly Build[]): number =>
+  fleet.reduce((acc, build) => acc + build.storedCost, 0);
 
 describe('CP1 — buildOneShip smoke (primitive)', () => {
   it('produces one legal, priced ship inside a small budget', () => {
@@ -42,5 +51,18 @@ describe('CP1 — buildOneShip smoke (primitive)', () => {
     // storedCost is the authoring-instant fact — equal to current pointCost.
     expect(built.build.storedCost).toBe(pointCost(catalog, built.build));
     expect(built.build.storedCost).toBe(built.cost);
+  });
+});
+
+describe('CP2 — generateBotFleet baseline', () => {
+  it('produces a non-empty legal fleet at a mid budget (rookie)', () => {
+    const budget = 75;
+    const fleet = generateBotFleet(catalog, budget, 'rookie', 42);
+    expect(fleet.length).toBeGreaterThan(0);
+    expect(fleet.length).toBeLessThanOrEqual(HULL_CAP);
+    expect(sumStoredCost(fleet)).toBeLessThanOrEqual(budget);
+    for (const build of fleet) {
+      expect(validateFit(catalog, build).ok).toBe(true);
+    }
   });
 });

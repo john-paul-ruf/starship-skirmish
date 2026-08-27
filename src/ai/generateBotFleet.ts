@@ -201,3 +201,81 @@ export const buildOneShip = (
   if (!validated.ok) return null;
   return { build: priced, cost };
 };
+
+// ---- Synthetic identity fields (public API — bot builds never persist) ----
+
+// Fixed sentinel string used for `createdAt` / `updatedAt` on synthetic bot
+// builds. The wall-clock read (`new Date()`) is banned in `src/ai/**` and would
+// destroy determinism. The value never enters the sim (domain §3.2: identity
+// fields are carried opaquely) — this constant is just a stable filler.
+const SYNTHETIC_TIMESTAMP = '1970-01-01T00:00:00.000Z';
+
+// Schema version stamped on synthetic bot builds. Kept in sync with
+// `src/io/migrate/migrations.CURRENT_SCHEMA_VERSION` (= 1 today); duplicated
+// here rather than imported because `ai → io` is not in the module graph
+// (architecture §5: `ai → {sim, domain, catalog}` only).
+const SYNTHETIC_SCHEMA_VERSION = 1;
+
+const buildMetaFor = (
+  catalog: Catalog,
+  budget: number,
+  tier: BotTier,
+  rngKey: number,
+  shipIndex: number,
+): BuildMeta => ({
+  id: `bot-${budget}-${tier}-${rngKey >>> 0}-${shipIndex}`,
+  schemaVersion: SYNTHETIC_SCHEMA_VERSION,
+  catalogVersion: catalog.catalogVersion,
+  createdAt: SYNTHETIC_TIMESTAMP,
+  updatedAt: SYNTHETIC_TIMESTAMP,
+});
+
+// ---- Public API -----------------------------------------------------------
+
+/**
+ * Assemble a legal bot fleet from the shared catalog to `budget` (FR-31).
+ * Pure + deterministic in `(catalog, budget, tier, rngKey)`: same inputs ⇒
+ * byte-identical `Build[]`.
+ *
+ * Guarantees (all mechanically checked in the property suite):
+ *   • Every returned Build passes `validateFit` against `catalog` (FR-4 / FR-31).
+ *   • `Σ storedCost ≤ budget` (Decision 9 / FR-5 — under-budget is legal).
+ *   • Fleet length ≤ `catalog.tuning.match.fleetHullCap` (FR-10, v1 = 20).
+ *   • For a legal budget the fleet is non-empty. Any budget ≥ the cheapest
+ *     chassis's `pointCost` fits at least one ship; `catalog.tuning.match.
+ *     legalBudgets` (v1 = 25..150) all clear that bar (cheapest chassis = 4).
+ *
+ * Fill loop: repeatedly `buildOneShip` against the *remaining* budget,
+ * appending until either the remaining budget cannot afford the cheapest
+ * chassis (buildOneShip → null) or the fleet reaches `fleetHullCap` ships.
+ * There is no leftover-points / conversion concept — the negative-space
+ * invariant (Custom Rule 4) is enforced by absence.
+ *
+ * `tier` is a variety input only (D-TIER-FLEET): it mixes into the seed so
+ * different tiers draw different-but-equally-legal fleets. No tier grants
+ * any stat, budget, or point advantage — FR-29 / FR-30 hold structurally
+ * because the same catalog and the same budget are the only material inputs.
+ *
+ * Returns `Build[]` (unvalidated `Build`, not `ValidatedBuild`). The harness
+ * (S05) re-runs `validateFit` at the domain seam, keeping the io/domain
+ * validation gate the single source of legality truth.
+ */
+export const generateBotFleet = (
+  catalog: Catalog,
+  budget: number,
+  tier: BotTier,
+  rngKey: number,
+): Build[] => {
+  const seed = deriveFleetSeed(rngKey, tier);
+  const hullCap = catalog.tuning.match.fleetHullCap;
+  const fleet: Build[] = [];
+  let remainingBudget = budget;
+  for (let shipIndex = 0; shipIndex < hullCap; shipIndex += 1) {
+    const meta = buildMetaFor(catalog, budget, tier, rngKey, shipIndex);
+    const built = buildOneShip(catalog, seed, shipIndex, remainingBudget, meta);
+    if (built === null) break;
+    fleet.push(built.build);
+    remainingBudget -= built.cost;
+  }
+  return fleet;
+};
