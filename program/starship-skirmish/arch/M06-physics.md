@@ -180,3 +180,116 @@ tests do — the scenes are stationary).
   update shields/hull.
 - **M12 `src/ai/`:** will consume `previewPath` when a bot commander evaluates its own
   candidate moves.
+
+<!-- finite-thrust-movement / SESSION-01 -->
+## finite-thrust-movement / SESSION-01 — Segmented plan + finite-thrust integrator
+
+### M04 (Sim: Math Core) — no shape change
+
+Still `+ − × ÷ √` arithmetic-only + `dirFromBearingPitch` (transcendental ban intact).
+Consumers of the new plan shape convert bearing/pitch → `Vec3` on the *producer* side,
+so `sim/physics` never sees an angle (D-PHYSICS-VEC3-ONLY holds end-to-end).
+
+### M06 (Physics) — additive public API
+
+- **`src/sim/types.ts`**
+  - **NEW** `interface WaypointBurn { readonly deltaV: Vec3; }` — one waypoint burn
+    within a beat (finite-thrust). Producer supplies world-space `deltaV`; the
+    burn fires at `PhysicsConfig.maxAccel` for `|deltaV|/maxAccel` sim-seconds
+    from the segment's time-slice start, then coasts. Per-segment `|Δv|` is
+    capped at `maxAccel · sliceSeconds` inside `thrustSchedule`.
+  - **CHANGED (additive)** `MovementPlan` gains `segments?: readonly WaypointBurn[]`.
+    ABSENT → impulsive (byte-identical to pre-SESSION-01, `applyPlan`-at-start).
+    PRESENT → finite-thrust; `deltaV` is IGNORED (segments override). Callers
+    that emit `segments` should still set `deltaV = ZERO` for shape-consistency
+    but the resolver reads only the schedule.
+
+- **`src/sim/physics/config.ts`**
+  - **NEW (optional)** `PhysicsConfig.maxAccel?: number` — engine's bounded
+    acceleration in world-units per sim-second². REQUIRED whenever the resolver
+    is fed a `MovementPlan` with `segments`. Optional (rather than required) so
+    every existing `PhysicsConfig` literal — including `physicsConfigFromTuning`
+    in `src/domain/resolveFleet.ts` (OUT of this session's lease) — still
+    compiles unchanged. See the followUp note below on where the propagation
+    still needs to land.
+  - When `maxAccel` is missing/non-positive/non-finite AND `plan.segments` is
+    present, `thrustSchedule` degrades to depositing the segments' summed
+    impulse at sub-step 0 (impulsive rendering — what an infinite-thrust engine
+    would do). Deterministic; keeps downstream consumers from silently coasting
+    on a misconfigured physics. This is NOT the intended production path.
+
+- **`src/sim/physics/thrust.ts`** — NEW module
+  - `thrustSchedule(plan, N, dt, maxAccel) → Vec3[]` (length `N`): the per-sub-step
+    velocity delta the plan delivers. Impulsive branch returns
+    `[plan.deltaV, ZERO, ZERO, …]`. Finite-thrust branch distributes each
+    segment across its `dt / segments.length`-second time-slice via
+    overlap-weighted `maxAccel · overlap · dir_k` accumulation. All arithmetic;
+    no transcendental; no wall-clock.
+  - `peakSpeedSq(startVelocity, schedule) → number`: running-sum peak `|v|²`
+    over the schedule (sampled AFTER each sub-step's Δv is applied — `|v0|²`
+    alone is not considered, matching the pre-SESSION-01 N derivation that
+    used post-plan velocity). For impulsive schedule `[deltaV, 0, …]` returns
+    `|v0 + deltaV|²` — the exact `maxSpeedSq` old resolver computed.
+
+- **`src/sim/physics/integrate.ts`** — additive
+  - **NEW** `applyThrust(body, dv) → Body`: `vel ← vel + dv`, returns new body.
+    Per-sub-step primitive both the resolver and preview funnel through when
+    applying `thrustSchedule[k]`. Same `add` `applyPlan` uses, so an impulsive
+    schedule `[deltaV, 0, …]` reproduces `applyPlan(body, plan)` exactly at k=0
+    and no-ops for k > 0.
+  - `applyPlan` KEPT — still exported, still called by `previewPath`'s pre-
+    SESSION-01 callers via `src/sim/index.ts`, and by
+    `tests/unit/physics/integrate.test.ts`. Only `resolveMovement` no longer
+    routes through it.
+
+- **`src/sim/physics/resolveMovement.ts`** — behaviour additive
+  - Sub-step count derivation now uses per-body analytical peak: `lengthSq(v0)`
+    for no-plan bodies, `peakSpeedSq(v0, thrustSchedule(plan, peakScheduleN, dt, maxAccel))`
+    for plan-carrying bodies (with `peakScheduleN = segments.length` for
+    finite-thrust, `1` for impulsive). Byte-identical to the pre-SESSION-01
+    `maxSpeedSq = max lengthSq(applyPlan(body, plan).velocity)` on the
+    impulsive branch (D-ADDITIVE-PLAN, locked by
+    `tests/unit/physics/impulsiveEquivalence.test.ts`).
+  - Sub-step loop applies `scheduleById[body.id][k]` before broadphase/sweep so
+    CCD sees the same velocity the ballistic advance will use. `k = 0` is
+    pre-applied in the setup (as the `keyframes[0]` snapshot). Fast-path
+    `dv === ZERO` skip preserves object identity when unchanged.
+
+- **`src/sim/physics/previewPath.ts`** — schedule + segment marks
+  - Both `previewPath` and `resolveMovement` build their per-sub-step Δv
+    sequence through the SAME `thrustSchedule` function (D-SHARED-SCHEDULE).
+    Curved preview arcs match the flown curve byte-for-byte on lone-body
+    scenarios (verified in `previewPath.test.ts`).
+  - **NEW** `PreviewPath.markPositions: readonly Vec3[]` — world positions at
+    each waypoint segment boundary (`k · dt / segments.length`), length
+    `segments.length + 1`. Interpolated (lerp) between the enclosing sub-step
+    endpoints, so marks land on the TRUE curved arc. EMPTY for null plans and
+    for segments-absent impulsive plans (the UI keeps its per-second sampling
+    over `positions` there, as before).
+
+- **`src/sim/physics/index.ts`** — barrel append-only
+  - New exports: `thrustSchedule`, `peakSpeedSq`, `applyThrust`, type
+    `WaypointBurn` (re-exported from `../types.js`).
+
+### M02 (Catalog Content) — additive tuning block
+
+- **`catalog/tuning.json`**
+  - **NEW** `physics.maxAccel = 25` — the engine acceleration ceiling (world-
+    units/sim-sec²). Sourced from the Gate-1 prototype's `MAX_DV_PER_TURN / dt`
+    relationship; S06 owns the balance re-tune.
+  - **NEW** `physics.movementModel = 1` — version marker. 1 = the pre-SESSION-01
+    impulsive-only model the current hash-locked fixtures were recorded under.
+    S06 bumps to 2 and appends the re-recorded generation when downstream
+    sessions actually emit `segments` (D-VERSION-RERECORD, Custom Rule 3).
+  - Both fields are additive JSON — `test:catalog-lock` stays green (assertLock
+    doesn't require the `physics` key). No `Tuning` type updates needed on this
+    session because `loadCatalog` casts `tuningFile as unknown as Tuning`; the
+    values live in JSON and will be read by S02/S04 once
+    `physicsConfigFromTuning` in `src/domain/` (out of this session's lease) is
+    taught to propagate them.
+
+> **Jikijitsu note (cross-lease gap, carried to Forge):** the load-bearing
+> propagation `src/domain/resolveFleet.ts::physicsConfigFromTuning` →
+> `PhysicsConfig.maxAccel` is owned by NO session in this feature. Without it,
+> producers that emit `segments` deterministically fall back to impulsive-at-k=0
+> (no curve). Downstream S02/S04 must land it within their own reasoning or block.

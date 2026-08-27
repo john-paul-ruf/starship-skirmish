@@ -72,3 +72,13 @@ bit-identical outputs on every JS engine.
 Note: `Math.imul` is banned in some determinism ban-lists but is fine here — its
 result is spec-defined two's-complement int32, same on every engine. It is *not*
 on the sim ban-list in `eslint.config.js`.
+
+<!-- finite-thrust-movement / SESSION-01 -->
+### finite-thrust-movement / SESSION-01 — M04: NO shape change
+
+The finite-thrust feature makes **no change** to the M04 surface. The segmented
+`MovementPlan` carries per-segment `deltaV: Vec3` (world-space), and producers
+(UI/AI) convert bearing/pitch → `Vec3` via the existing `dirFromBearingPitch`
+before the plan ever reaches `sim/physics` — so physics stays angle-free and the
+transcendental ban is intact (D-PHYSICS-VEC3-ONLY). Full M06/M02 delta lives in
+`M06-physics.md` under the matching marker.
