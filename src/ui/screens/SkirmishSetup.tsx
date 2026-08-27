@@ -20,19 +20,27 @@ import { useMemo } from 'preact/hooks';
 
 import { useApp } from '../appContext.js';
 
+import { ArenaPanel } from './skirmish/ArenaPanel.js';
 import { BudgetPicker } from './skirmish/BudgetPicker.js';
 import { FleetDraft } from './skirmish/FleetDraft.js';
+import { LaunchBar } from './skirmish/LaunchBar.js';
 import { Opposition } from './skirmish/Opposition.js';
 import {
   addToDraft,
+  arenaReadout,
+  canLaunch,
   eligibleForDraft,
+  formatSeedLabel,
   initialSetupState,
+  launchBlockReason,
   legalBudgets,
   removeFromDraft,
   rerollBot,
   setBotCount,
   setBotTier,
   setBudget,
+  setSeed,
+  toMatchSetup,
   type SetupState,
 } from './skirmish/model.js';
 import type { BotTier } from '../../ai/index.js';
@@ -52,7 +60,8 @@ const mintPreviewSeed = (): number => {
 };
 
 export function SkirmishSetup() {
-  const { catalog, repo } = useApp();
+  const services = useApp();
+  const { catalog, repo } = services;
 
   const state = useSignal<SetupState>(initialSetupState(catalog, mintPreviewSeed()));
 
@@ -87,8 +96,35 @@ export function SkirmishSetup() {
     state.value = rerollBot(state.value, index);
   };
 
+  const onRerollSeed = (): void => {
+    state.value = setSeed(state.value, mintPreviewSeed());
+  };
+
+  const onCopySeed = (): void => {
+    const label = formatSeedLabel(state.value.seed);
+    const clipboard = (globalThis as { navigator?: { clipboard?: { writeText?: (t: string) => Promise<void> } } })
+      .navigator?.clipboard;
+    void clipboard?.writeText?.(label);
+    services.toast(`Copied seed ${label}.`);
+  };
+
+  const onLaunch = (): void => {
+    if (!canLaunch(state.value, catalog)) return;
+    try {
+      // `startMatch` mints the real seed, assembles the config, creates the
+      // controller (which navigates into tactical-move), and stores it as
+      // `activeMatch`. It throws on an illegal player build — canLaunch already
+      // gates that, so this catch is defensive against any other assembly fault.
+      services.startMatch(toMatchSetup(state.value));
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : 'assembly failed';
+      services.toast(`Could not launch: ${reason}`, 'danger');
+    }
+  };
+
   const current = state.value;
   const match = catalog.tuning.match;
+  const arena = arenaReadout(current, catalog);
 
   return (
     <div class="skm-wrap" data-testid="screen-skirmish-setup">
@@ -114,16 +150,33 @@ export function SkirmishSetup() {
           onRemove={onRemove}
         />
 
-        <Opposition
-          catalog={catalog}
-          bots={current.bots}
-          budget={current.budget}
-          minBots={match.minBots}
-          maxBots={match.maxBots}
-          onSetCount={onSetCount}
-          onSetTier={onSetTier}
-          onReroll={onReroll}
-        />
+        <div class="skm-right">
+          <Opposition
+            catalog={catalog}
+            bots={current.bots}
+            budget={current.budget}
+            minBots={match.minBots}
+            maxBots={match.maxBots}
+            onSetCount={onSetCount}
+            onSetTier={onSetTier}
+            onReroll={onReroll}
+          />
+
+          <ArenaPanel
+            radius={arena.radius}
+            fleetCount={arena.fleetCount}
+            budget={current.budget}
+            seedLabel={formatSeedLabel(current.seed)}
+            onRerollSeed={onRerollSeed}
+            onCopySeed={onCopySeed}
+          />
+
+          <LaunchBar
+            enabled={canLaunch(current, catalog)}
+            reason={launchBlockReason(current, catalog)}
+            onLaunch={onLaunch}
+          />
+        </div>
       </div>
     </div>
   );
@@ -150,6 +203,7 @@ const SKM_STYLES = `
   .skm-draft { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr);
                gap: var(--s3); align-items: start; }
 
+  .skm-right { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; }
   .skm-opposition { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; }
   .skm-count-row { display: flex; align-items: center; gap: var(--s3); }
   .skm-fairness { border-left: 3px solid var(--cyan); }
@@ -166,6 +220,12 @@ const SKM_STYLES = `
   .skm-total-row { display: flex; align-items: center; gap: var(--s2); }
   .skm-budget-headline { font-size: 11px; font-weight: 700; letter-spacing: .12em;
                          color: var(--ink-hi); }
+
+  .skm-seed-row { display: flex; align-items: center; gap: var(--s2); }
+  .skm-seed-value { font-size: 16px; letter-spacing: .10em; margin-top: var(--s2); }
+
+  .skm-launch { display: flex; flex-direction: column; }
+  .skm-launch-btn { width: 100%; }
 `;
 
 function SkirmishSetupStyles() {
