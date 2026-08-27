@@ -1,4 +1,4 @@
-// M14 UI — Encyclopedia BuildCard (S04 checkpoint 1; actions land in CP2).
+// M14 UI — Encyclopedia BuildCard (S04 checkpoint 1; actions wired in CP2).
 //
 // One IndexEntry → one card. Renders every axis the browse cache carries
 // cheaply (name / class / cost / tags / status), and the `needs-refit` badge
@@ -16,6 +16,11 @@
 //
 // XSS (§4.9): every user-authored string (`name`, tag, chassis id) renders as
 // a text node; `dangerouslySetInnerHTML` is lint-banned repo-wide.
+//
+// SKIRMISH action (§S04 spec): the "▲ FIELD" affordance from the mock is
+// rendered but DISABLED with a title — the Setup screen belongs to the next
+// feature. `Route` currently has no variant we could point at without lease
+// creep; the disabled state keeps the design intent visible.
 
 import type { Catalog, ChassisClass } from '../../../catalog/index.js';
 import type { IndexEntry } from '../../../persist/index.js';
@@ -28,6 +33,9 @@ export interface BuildCardProps {
   readonly catalog: Catalog;
   readonly selected: boolean;
   readonly onToggleSelect: (id: string) => void;
+  readonly onOpen: (id: string) => void;
+  readonly onDuplicate: (id: string) => void;
+  readonly onDelete: (id: string) => void;
 }
 
 export function BuildCard({
@@ -35,6 +43,9 @@ export function BuildCard({
   catalog,
   selected,
   onToggleSelect,
+  onOpen,
+  onDuplicate,
+  onDelete,
 }: BuildCardProps) {
   const failed = entry.status === 'failed';
   const chassis = catalog.chassis(entry.chassisId);
@@ -143,6 +154,53 @@ export function BuildCard({
         ) : (
           <Chip tone="green">OK</Chip>
         )}
+      </div>
+
+      <div class="enc-card-acts" data-testid="card-actions">
+        <button
+          type="button"
+          class="btn btn-sm"
+          disabled
+          title="Skirmish arrives with the tactical feature."
+          data-testid="card-skirmish"
+        >
+          ▲ FIELD
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm"
+          disabled={failed || undefined}
+          onClick={() => {
+            onOpen(entry.id);
+          }}
+          title={failed ? 'Failed builds cannot be opened.' : 'Open in the Shipyard.'}
+          data-testid="card-open"
+        >
+          ✎ EDIT
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm"
+          disabled={failed || undefined}
+          onClick={() => {
+            onDuplicate(entry.id);
+          }}
+          title={failed ? 'Failed builds cannot be duplicated.' : 'Duplicate this build.'}
+          data-testid="card-duplicate"
+        >
+          ⧉ DUPLICATE
+        </button>
+        <div class="grow" />
+        <button
+          type="button"
+          class="btn btn-sm btn-danger"
+          onClick={() => {
+            onDelete(entry.id);
+          }}
+          data-testid="card-delete"
+        >
+          🗑 DELETE
+        </button>
       </div>
     </article>
   );

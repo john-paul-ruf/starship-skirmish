@@ -245,6 +245,41 @@ export const layoutSummary = (layout: readonly SlotType[]): string => {
   return parts.join('/');
 };
 
+// ---- Duplicate mint -------------------------------------------------------
+
+/**
+ * The identity fields the DUPLICATE action mints for a copied `BuildDoc`. Kept
+ * pure and stateless: the caller supplies the fresh id + timestamp, and this
+ * helper composes the collision-free name via `mintUniqueName` (persist). Pure
+ * so the "unique name is derived only from the source name + repo lookup"
+ * invariant is directly testable without a live repo.
+ */
+export interface DuplicateIdentity {
+  readonly id: string;
+  readonly name: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+/**
+ * Compose the identity for a duplicate: fresh id (caller-minted so the model
+ * stays deterministic in tests), fresh timestamps (ditto), and a unique name
+ * derived from the source name via the passed `isTaken` predicate. The persist
+ * `mintUniqueName` is used verbatim — no additional logic here.
+ */
+export const duplicateIdentity = (
+  sourceName: string,
+  freshId: string,
+  freshTimestamp: string,
+  isTaken: (nameKey: string) => boolean,
+  mint: (base: string, isTaken: (nk: string) => boolean, maxLength?: number) => string,
+): DuplicateIdentity => ({
+  id: freshId,
+  name: mint(sourceName, isTaken),
+  createdAt: freshTimestamp,
+  updatedAt: freshTimestamp,
+});
+
 // ---- Refit receipt --------------------------------------------------------
 
 /**

@@ -22,9 +22,11 @@ import { useApp } from '../appContext.js';
 import { Button, Chip, Meter, type MeterFill } from '../components/index.js';
 
 import { BuildCard } from './encyclopedia/BuildCard.js';
+import { DeleteModal } from './encyclopedia/DeleteModal.js';
 import { FilterBar } from './encyclopedia/FilterBar.js';
 import {
   collectAvailableTags,
+  duplicateIdentity,
   filterByText,
   pruneSelection,
   summariseSelectedCost,
@@ -34,7 +36,7 @@ import {
   applyViewToPrefs,
   type EncyclopediaView,
 } from './encyclopedia/model.js';
-import { STORAGE_BUDGET_BYTES, type UsageLevel } from '../../persist/index.js';
+import { mintUniqueName, STORAGE_BUDGET_BYTES, type UsageLevel } from '../../persist/index.js';
 
 // Warn / critical are UI-band ratios (§3.7). The absolute values live in
 // `persist/quota.ts`; we recompute them locally for a MeterNotch position
@@ -50,6 +52,7 @@ export function Encyclopedia() {
   // search or needsRefit (§3.8 — session-scoped axes).
   const view = useSignal<EncyclopediaView>(viewFromPrefs(repo.loadPrefs()));
   const selection = useSignal<readonly string[]>([]);
+  const pendingDeleteId = useSignal<string | null>(null);
   // A tick to force re-materialisation of `repo.list(query)` after mutations
   // land (delete, duplicate). Every mutation site bumps this after its repo
   // call — the repo is not a signal, so the screen needs a change trigger.
@@ -105,6 +108,66 @@ export function Encyclopedia() {
   const onSelectToggle = (id: string) => {
     selection.value = toggleSelection(selection.value, id);
   };
+
+  const onOpen = (id: string) => {
+    navigate({ name: 'shipyard', buildId: id });
+  };
+
+  const onDuplicate = (id: string) => {
+    const source = repo.get(id);
+    if (source === null) {
+      services.toast('This build cannot be duplicated.', 'warn');
+      return;
+    }
+    // Fresh browser identity + timestamps. crypto.randomUUID is UUIDv4-shaped
+    // and available in every evergreen engine; the repo does not care about
+    // the exact format so long as it's unique. Timestamps are ISO to align
+    // with `wallClock` (persist/LibraryRepo.ts).
+    const freshId = crypto.randomUUID();
+    const freshTs = new Date().toISOString();
+    const identity = duplicateIdentity(
+      source.build.name,
+      freshId,
+      freshTs,
+      (nk) => repo.findByNameKey(nk).length > 0,
+      mintUniqueName,
+    );
+    const result = repo.put({
+      ...source.build,
+      id: identity.id,
+      name: identity.name,
+      createdAt: identity.createdAt,
+      updatedAt: identity.updatedAt,
+    });
+    if (result.ok) {
+      services.toast(`Duplicated as “${identity.name}”.`);
+      refreshTick.value += 1;
+    } else {
+      services.toast(`Duplicate failed (${result.reason}).`, 'danger');
+    }
+  };
+
+  const onDelete = (id: string) => {
+    pendingDeleteId.value = id;
+  };
+
+  const onConfirmDelete = () => {
+    const id = pendingDeleteId.value;
+    if (id === null) return;
+    const entry = repo.entry(id);
+    const removed = repo.remove(id);
+    pendingDeleteId.value = null;
+    if (removed.removed) {
+      services.toast(
+        `Deleted “${entry?.name.length ? entry.name : '(unnamed build)'}”.`,
+        'warn',
+      );
+      refreshTick.value += 1;
+    }
+  };
+
+  const pendingDelete =
+    pendingDeleteId.value !== null ? repo.entry(pendingDeleteId.value) ?? null : null;
 
   const totalCount = allEntries.value.length;
   const shownCount = visibleEntries.value.length;
@@ -177,10 +240,24 @@ export function Encyclopedia() {
               catalog={catalog}
               selected={selection.value.includes(entry.id)}
               onToggleSelect={onSelectToggle}
+              onOpen={onOpen}
+              onDuplicate={onDuplicate}
+              onDelete={onDelete}
             />
           ))}
         </div>
       )}
+
+      {pendingDelete !== null ? (
+        <DeleteModal
+          entry={pendingDelete}
+          catalog={catalog}
+          onCancel={() => {
+            pendingDeleteId.value = null;
+          }}
+          onConfirm={onConfirmDelete}
+        />
+      ) : null}
     </div>
   );
 }
@@ -406,7 +483,15 @@ const ENC_STYLES = `
 
   .enc-tag-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
 
+  .enc-card-acts { display: flex; gap: 4px; flex-wrap: wrap;
+                   padding: var(--s2) var(--s3);
+                   border-top: 1px solid rgba(30,44,60,.55);
+                   background: var(--panel-in, transparent); }
+
   .enc-empty { padding: var(--s3); }
+
+  .enc-modal-preview { padding: var(--s3); display: flex; flex-direction: column; gap: 4px; }
+  .enc-modal-ft { display: flex; align-items: center; gap: var(--s2); width: 100%; }
 `;
 
 function EncyclopediaStyles() {
