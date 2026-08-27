@@ -158,12 +158,36 @@ export const runScenario = (scenario: Scenario): ScenarioResult => {
 
 /**
  * A bot-vs-bot match recipe. Deterministic in `(seed, budget, fleetTiers,
- * catalog)`: same recipe ⇒ same fleets ⇒ same plans ⇒ byte-identical per-turn
- * digests. Fixture-sized: tiers + seed + budget only, no serialized builds.
+ * catalog, movementModel)`: same recipe ⇒ same fleets ⇒ same plans ⇒
+ * byte-identical per-turn digests. Fixture-sized: tiers + seed + budget only,
+ * no serialized builds.
  *
  * `fleetTiers.length` is the number of fleets in the match (2..maxFleets).
  * Each fleet is drawn from the ONE shared catalog at the same numeric budget
  * — FR-29 / FR-30 (tiers are variety-only inputs, no stat advantage).
+ *
+ * `movementModel` (D-VERSION-RERECORD, finite-thrust-movement SESSION-06)
+ * selects which physics model recorded outcomes are anchored to. Absent /
+ * `1` = the impulsive-only model the pre-SESSION-06 fixtures were recorded
+ * under: `runMatchScenario` does NOT inject `PhysicsConfig.maxAccel`, so
+ * bots' single-segment finite-thrust plans (S03) degrade to the impulsive-
+ * fallback in `thrustSchedule` (all-Δv-at-k=0) — byte-identical to the pre-
+ * S01 impulsive path. `2` = the finite-thrust model: `runMatchScenario`
+ * injects `maxAccel` from `tuning.physics.maxAccel`, so bot arcs actually
+ * curve while thrusting. This is the versioning marker Custom Rule 3 /
+ * FR-2 require to change a recorded determinism outcome — the fixture
+ * generation on disk is keyed by its recorded `movementModel`; new
+ * fixtures are APPENDED under a new model number, historical fixtures are
+ * pinned to their original model number and never re-recorded.
+ *
+ * IN-LEASE INJECTION (S06 explicit, still-un-owned prod plumbing): the
+ * game-runtime seam `src/domain/resolveFleet.ts::physicsConfigFromTuning`
+ * still does NOT propagate `tuning.physics.maxAccel` to `PhysicsConfig`
+ * (S01/S02/S03 all flagged this; no session's lease owns the fix). Until
+ * that lands, the harness is the ONLY place `maxAccel` actually reaches
+ * `resolveMovement`. The injection here is in-lease and deliberate; it does
+ * NOT change the production match code path (see followUp on the S06
+ * handoff for the required domain propagation).
  */
 export interface MatchScenario {
   readonly kind: 'match';
@@ -171,6 +195,12 @@ export interface MatchScenario {
   readonly seed: Seed;
   readonly budget: number;
   readonly fleetTiers: readonly BotTier[];
+  /**
+   * Movement-model version marker. Absent = `1` (impulsive model, byte-
+   * identical to pre-finite-thrust recorded outcomes). `2` = finite-thrust
+   * model (bot arcs curve). See doc comment on `MatchScenario`.
+   */
+  readonly movementModel?: number;
 }
 
 /**
@@ -243,8 +273,51 @@ export const runMatchScenario = async (
 ): Promise<MatchScenarioResult> => {
   const tuning = catalog.tuning;
   const arena = resolveArena(tuning, scenario.budget);
-  const physics = physicsConfigFromTuning(tuning, scenario.budget);
+  const physicsBase = physicsConfigFromTuning(tuning, scenario.budget);
   const combat = combatConfigFromTuning(tuning);
+
+  // Movement-model dispatch (D-VERSION-RERECORD, finite-thrust-movement S06).
+  //
+  // `physicsConfigFromTuning` (in `src/domain/resolveFleet.ts`, out of every
+  // session's lease as of S06) does NOT propagate `tuning.physics.maxAccel`
+  // to `PhysicsConfig`. That means bots' single-segment plans (S03) degrade
+  // to the impulsive-fallback in `thrustSchedule` unless someone injects
+  // `maxAccel` here. The rule:
+  //
+  //   • movementModel absent / 1 (impulsive generation): do NOT inject.
+  //     `runMatchScenario` reproduces byte-identical pre-S06 outcomes.
+  //     This is the code path the pre-S06 harness fixtures were recorded
+  //     under and stay pinned to (Custom Rule 3 / FR-2).
+  //   • movementModel >= 2 (finite-thrust generation): inject
+  //     `maxAccel` from `tuning.physics.maxAccel`. Bots' arcs curve;
+  //     recorded outcomes anchor to this model.
+  //
+  // Reading `tuning.physics.maxAccel` requires a local type widening —
+  // `Tuning` in `src/catalog/types.ts` does not (yet) declare the
+  // `physics` block (S01's arch delta notes `loadCatalog` casts the file
+  // via `unknown as Tuning`). Extending `Tuning` is out of this session's
+  // lease. `undefined` here → `thrustSchedule`'s impulsive-fallback runs
+  // (deterministic; still not what we want, so we fail loud instead).
+  const model = scenario.movementModel ?? 1;
+  const tuningWithPhysics = tuning as unknown as {
+    readonly physics?: { readonly maxAccel?: number };
+  };
+  const physics: PhysicsConfig =
+    model >= 2
+      ? (() => {
+          const maxAccel = tuningWithPhysics.physics?.maxAccel;
+          if (
+            typeof maxAccel !== 'number' ||
+            !Number.isFinite(maxAccel) ||
+            maxAccel <= 0
+          ) {
+            throw new Error(
+              `runMatchScenario: scenario.movementModel = ${model} requires tuning.physics.maxAccel to be a positive finite number (got ${JSON.stringify(maxAccel)}).`,
+            );
+          }
+          return { ...physicsBase, maxAccel };
+        })()
+      : physicsBase;
 
   const fleets: MatchFleetSnapshot[] = [];
   const simFleets = [];

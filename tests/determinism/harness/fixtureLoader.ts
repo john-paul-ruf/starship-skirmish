@@ -33,6 +33,17 @@ export const MANIFEST_PATH = path.join(FIXTURES_DIR, 'manifest.json');
  * tiers — D-MATCH-SCENARIO) plus the recorded truth (`outcome`,
  * `turnDigests`). `loadFixture` splits them back apart so the replay call
  * can pass a clean `MatchScenario` to `runMatchScenario`.
+ *
+ * `movementModel` (D-VERSION-RERECORD, finite-thrust-movement SESSION-06)
+ * is optional to preserve byte-compatibility with pre-S06 fixtures on
+ * disk: those files were written without the field, and are pinned to
+ * `movementModel = 1` (impulsive-fallback semantics, byte-identical to
+ * pre-S01 outcomes). A missing field is treated as `1`. New generations
+ * (bumped model, curved arcs) are APPENDED as new files with an explicit
+ * `movementModel: N` — Custom Rule 3 / FR-2 forbid editing historical
+ * fixtures to add the field. The loader threads `movementModel` back
+ * into the reconstructed `MatchScenario` so `runMatchScenario` dispatches
+ * on the recorded generation.
  */
 export interface HarnessFixtureFile {
   readonly kind: 'match';
@@ -40,6 +51,7 @@ export interface HarnessFixtureFile {
   readonly seed: Seed;
   readonly budget: number;
   readonly fleetTiers: readonly BotTier[];
+  readonly movementModel?: number;
   readonly outcome: MatchOutcome;
   readonly turnDigests: readonly string[];
 }
@@ -79,12 +91,20 @@ export const loadFixture = (name: string): HarnessFixture => {
   ) {
     throw new Error(`harness fixture ${name} is malformed`);
   }
+  // Thread `movementModel` back through if present. A missing field means
+  // the file was written before finite-thrust-movement SESSION-06 and is
+  // pinned to model 1 (impulsive fallback). Spreading conditionally keeps
+  // model-1 scenarios byte-equivalent to the pre-S06 shape (no phantom
+  // `movementModel: undefined` field on the reconstructed scenario).
   const scenario: MatchScenario = {
     kind: 'match',
     name: parsed.name,
     seed: parsed.seed,
     budget: parsed.budget,
     fleetTiers: parsed.fleetTiers,
+    ...(parsed.movementModel !== undefined
+      ? { movementModel: parsed.movementModel }
+      : {}),
   };
   return {
     scenario,
