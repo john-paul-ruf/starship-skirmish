@@ -37,7 +37,7 @@ export function CommitBar({ gate, hostile, doomedNames, onCommit }: CommitBarPro
   const isHostile = canCommit && hostile;
 
   const label = isHostile
-    ? '✕ COMMIT MOVEMENT · BOUNDARY EXIT'
+    ? '✕ COMMIT · BOUNDARY EXIT'
     : `COMMIT MOVEMENT · ${String(gate.plannedCount)}/${String(gate.total)} PLANNED`;
 
   const cls = `btn btn-commit${!canCommit ? ' is-disabled' : isHostile ? ' is-hostile' : ''}`;

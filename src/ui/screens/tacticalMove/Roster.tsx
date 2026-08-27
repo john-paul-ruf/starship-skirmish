@@ -41,7 +41,7 @@ export function Roster({ rows, drafts, exitIds, selectedId, onSelect }: RosterPr
 
   return (
     <aside class="tm-roster panel" aria-label="Fleet roster" data-testid="roster">
-      <div class="side-hd">
+      <div class="tm-side-hd">
         <span class="t-label">Roster</span>
         <span class="grow" />
         <span class="mono-xs" data-testid="roster-live">

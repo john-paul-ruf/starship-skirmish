@@ -152,7 +152,7 @@ export function TacticalMove() {
           />
         ) : (
           <aside class="tm-roster panel tm-resolving-side" aria-label="Fleet roster">
-            <div class="side-hd">
+            <div class="tm-side-hd">
               <span class="t-label">Roster</span>
             </div>
             <div class="mono-xs c-dim" style="padding:var(--s3)">
@@ -223,12 +223,21 @@ const TM_STYLES = `
                gap: var(--s3); padding: var(--s3); flex: 1 1 auto; min-height: 0; align-items: stretch; }
 
   .tm-roster, .tm-plan { display: flex; flex-direction: column; min-height: 0; }
+  .tm-side-hd { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3);
+                border-bottom: 1px solid var(--line);
+                background: linear-gradient(180deg, rgba(34,227,255,.05), transparent); }
   .tm-roster-note { border: 0; border-bottom: 1px solid var(--line); padding: 5px var(--s3); }
   .tm-roster-list { overflow-y: auto; overflow-x: hidden; flex: 1 1 auto; min-height: 0; }
   .tm-roster-gate { border: 0; border-top: 1px solid var(--line-hot); padding: 6px var(--s3);
                     letter-spacing: .12em; }
 
-  .tm-row { display: flex; align-items: center; gap: 6px; width: 100%; }
+  .tm-row { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left;
+            padding: 7px var(--s3); border: 0; border-bottom: 1px solid rgba(30,44,60,.6);
+            background: transparent; color: inherit; font: inherit; cursor: pointer;
+            -webkit-appearance: none; appearance: none; }
+  button.tm-row:hover { background: var(--panel-hi); }
+  .tm-row.is-selected { background: rgba(34,227,255,.10); box-shadow: inset 2px 0 0 var(--cyan); }
+  .tm-row.is-dead { cursor: default; }
   .tm-row-status { flex: none; }
   .tm-row-dead { text-decoration: line-through; color: var(--ink-dim); }
 
