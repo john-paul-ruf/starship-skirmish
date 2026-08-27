@@ -211,7 +211,15 @@ export const createMatchController = (
     commanders = [player.commander, ...bots];
     finished = false;
     animationResolve = null;
-    void driveTurn();
+    // Defer the first turn one microtask so the caller (`startMatch`) can set
+    // `activeMatch = controller` BEFORE the loop's first `navigate` reaches the
+    // outlet — otherwise the shell would see the `tactical-move` route with a
+    // still-null `activeMatch` and bounce back to setup. `driveTurn` itself is
+    // async, but its synchronous prefix (the first navigate) would otherwise
+    // run during `createMatchController`, before the controller is returned.
+    queueMicrotask(() => {
+      void driveTurn();
+    });
   };
 
   // ---- UI-facing methods --------------------------------------------------
