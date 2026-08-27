@@ -47,6 +47,12 @@ export const EXIT_STATUS = 'PREDICTED EXIT — SHIP DESTROYED';
  * them the marks are true per-second placements + the exact §2a merge threshold; without
  * them the ghost degrades to one mark per interior sample and no merge flag. The screen
  * SHOULD pass both for Gate-1-faithful marks.
+ *
+ * `markIntervalSec` (S01, prototype `Off/1s/2s/4s` selector) tunes ruler density on the
+ * impulsive arc: `undefined` or `0` = one mark per whole sim-second (the existing
+ * behavior); `> 0` = one mark every `markIntervalSec` sim-seconds. Marks reuse the
+ * same exact time → index lerp (NEVER a second integrator — the §2 "preview must not
+ * lie" invariant).
  */
 export interface GhostDrawInput {
   readonly positions: readonly Vec3[];
@@ -54,6 +60,7 @@ export interface GhostDrawInput {
   readonly deltaVMag: number;
   readonly beatSeconds?: number;
   readonly hullRadius?: number;
+  readonly markIntervalSec?: number;
 }
 
 /**
@@ -64,13 +71,18 @@ export interface GhostDrawInput {
 export const fromPreviewPath = (
   preview: Pick<PreviewPath, 'positions' | 'endsOutsideArena'>,
   deltaVMag: number,
-  opts: { readonly beatSeconds?: number; readonly hullRadius?: number } = {},
+  opts: {
+    readonly beatSeconds?: number;
+    readonly hullRadius?: number;
+    readonly markIntervalSec?: number;
+  } = {},
 ): GhostDrawInput => ({
   positions: preview.positions,
   endsOutsideArena: preview.endsOutsideArena,
   deltaVMag,
   ...(opts.beatSeconds !== undefined ? { beatSeconds: opts.beatSeconds } : {}),
   ...(opts.hullRadius !== undefined ? { hullRadius: opts.hullRadius } : {}),
+  ...(opts.markIntervalSec !== undefined ? { markIntervalSec: opts.markIntervalSec } : {}),
 });
 
 /** One numbered arc mark, placed at a fractional index into `positions`. */
@@ -116,21 +128,26 @@ const dist = (a: Vec3, b: Vec3): number => {
 };
 
 /**
- * The numbered per-second marks for an arc. With `beatSeconds`, mark `s` (1..⌊dt⌋) sits
- * at fractional index `s / beatSeconds · (n − 1)` — an exact time→index lerp of the
- * uniform-in-time samples (NOT a second integrator). Without it, one mark per interior
- * sample. A mark within `1.2 · hullRadius` of its predecessor is flagged `merged` (§2a).
+ * The numbered per-interval marks for an arc. With `beatSeconds`, mark `k` sits at
+ * fractional index `(k · interval) / beatSeconds · (n − 1)` — an exact time → index
+ * lerp of the uniform-in-time samples (NOT a second integrator). `interval` is
+ * `markIntervalSec` when positive, else `1` (the current per-second cadence). Without
+ * `beatSeconds`, falls back to one mark per interior sample. A mark within
+ * `1.2 · hullRadius` of its predecessor is flagged `merged` (§2a).
  */
 export const computeMarks = (input: GhostDrawInput): GhostMark[] => {
-  const { positions, beatSeconds, hullRadius } = input;
+  const { positions, beatSeconds, hullRadius, markIntervalSec } = input;
   const n = positions.length;
   if (n < 2) return [];
 
   const slots: Array<{ readonly second: number; readonly index: number }> = [];
   if (beatSeconds !== undefined && beatSeconds > 0) {
-    const seconds = Math.floor(beatSeconds);
-    for (let s = 1; s <= seconds; s += 1) {
-      slots.push({ second: s, index: (s / beatSeconds) * (n - 1) });
+    const interval =
+      markIntervalSec !== undefined && markIntervalSec > 0 ? markIntervalSec : 1;
+    const count = Math.floor(beatSeconds / interval);
+    for (let k = 1; k <= count; k += 1) {
+      const t = k * interval;
+      slots.push({ second: t, index: (t / beatSeconds) * (n - 1) });
     }
   } else {
     for (let i = 1; i <= n - 2; i += 1) slots.push({ second: i, index: i });

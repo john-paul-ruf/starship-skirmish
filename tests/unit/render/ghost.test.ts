@@ -71,6 +71,52 @@ describe('computeMarks (per-second placement)', () => {
     expect(marks[1]!.position.x).toBeCloseTo(40, 6);
   });
 
+  it('markIntervalSec: 2 places marks at 2s / 4s / 6s / 8s (S01 selector)', () => {
+    // beatSeconds=8 → interval=2 → k=1..4 → t=2,4,6,8. n=9 so index = (t/8)·8 = t.
+    const positions = Array.from({ length: 9 }, (_, i) => ({ x: i * 10, y: 0, z: 0 }));
+    const marks = computeMarks({
+      positions,
+      endsOutsideArena: false,
+      deltaVMag: 40,
+      beatSeconds: 8,
+      markIntervalSec: 2,
+    });
+    expect(marks.map((m) => m.second)).toEqual([2, 4, 6, 8]);
+    expect(marks.map((m) => m.position.x)).toEqual([20, 40, 60, 80]);
+  });
+
+  it('markIntervalSec: 4 places marks at 4s / 8s (fewer, sparser)', () => {
+    const positions = Array.from({ length: 9 }, (_, i) => ({ x: i * 10, y: 0, z: 0 }));
+    const marks = computeMarks({
+      positions,
+      endsOutsideArena: false,
+      deltaVMag: 40,
+      beatSeconds: 8,
+      markIntervalSec: 4,
+    });
+    expect(marks.map((m) => m.second)).toEqual([4, 8]);
+  });
+
+  it('markIntervalSec: 0 reproduces the per-second cadence exactly', () => {
+    const positions = Array.from({ length: 9 }, (_, i) => ({ x: i * 10, y: 0, z: 0 }));
+    const withZero = computeMarks({
+      positions,
+      endsOutsideArena: false,
+      deltaVMag: 40,
+      beatSeconds: 8,
+      markIntervalSec: 0,
+    });
+    const perSecond = computeMarks({
+      positions,
+      endsOutsideArena: false,
+      deltaVMag: 40,
+      beatSeconds: 8,
+    });
+    expect(withZero.map((m) => m.second)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(withZero.map((m) => m.second)).toEqual(perSecond.map((m) => m.second));
+    expect(withZero.map((m) => m.position.x)).toEqual(perSecond.map((m) => m.position.x));
+  });
+
   it('falls back to one mark per interior sample without beatSeconds', () => {
     const marks = computeMarks(input({}));
     // n=5 → interior samples 1..3.
@@ -136,17 +182,23 @@ describe('isLowDeltaVArc + fromPreviewPath', () => {
 
   it('fromPreviewPath maps the controller preview 1:1 and threads options', () => {
     const preview = { positions: straight(3, 5), endsOutsideArena: true };
-    const built = fromPreviewPath(preview, 12, { beatSeconds: 3, hullRadius: 4 });
+    const built = fromPreviewPath(preview, 12, {
+      beatSeconds: 3,
+      hullRadius: 4,
+      markIntervalSec: 2,
+    });
     expect(built.positions).toBe(preview.positions);
     expect(built.endsOutsideArena).toBe(true);
     expect(built.deltaVMag).toBe(12);
     expect(built.beatSeconds).toBe(3);
     expect(built.hullRadius).toBe(4);
+    expect(built.markIntervalSec).toBe(2);
   });
 
   it('fromPreviewPath omits optional fields when not supplied', () => {
     const built = fromPreviewPath({ positions: [], endsOutsideArena: false }, 0);
     expect('beatSeconds' in built).toBe(false);
     expect('hullRadius' in built).toBe(false);
+    expect('markIntervalSec' in built).toBe(false);
   });
 });

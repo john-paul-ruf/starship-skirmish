@@ -26,3 +26,9 @@ export { attachGhost, fromPreviewPath } from './ghost.js';
 export type { GhostLayer, GhostDrawInput, GhostMark } from './ghost.js';
 // Ghost palette tokens the screens reference (Gate 1 §2a).
 export { GHOST_CYAN, GHOST_MAGENTA_HI, GHOST_AMBER, GHOST_EXIT_RED, EXIT_STATUS } from './ghost.js';
+
+// SESSION-01 (skirmish-tactical-parity) — flown-path trail primitive (Gate 1 FINDINGS
+// §2a, prototype `last ~16 s` fade). Attached to a `TacticalView` and driven from a
+// TracePlayer keyframe hook or the screen's own scheduler.
+export { attachTrail, DEFAULT_TRAIL_WINDOW_SECONDS, TRAIL_COLOR, trailAlphaFor, pruneTrail } from './trail.js';
+export type { TrailLayer, TrailPoint } from './trail.js';
