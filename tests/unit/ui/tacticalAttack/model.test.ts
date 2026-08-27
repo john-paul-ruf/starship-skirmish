@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   aoeOverlapsFriendly,
+  aoeRingProjection,
   assignmentGate,
   calledShotEquals,
   calledShotOptions,
@@ -376,6 +377,81 @@ describe('fireContext', () => {
 
   it('is empty when no assignments are staged (commit is never gated by roles)', () => {
     expect(fireContext([], view).size).toBe(0);
+  });
+});
+
+// ---- World-projected AoE ring (S04 CP2) -----------------------------------
+
+describe('aoeRingProjection', () => {
+  // A fake `worldToScreen` that simulates a top-down orthographic-ish
+  // projection: world (x, z) plane maps 1:1 into pixel space with a fixed
+  // (400, 300) canvas origin. `y` is ignored (elevation), so a horizontal
+  // AoE ring lands as a horizontal pixel ring — exact numbers we can assert.
+  const fakeW2S = (pos: readonly [number, number, number]): { readonly x: number; readonly y: number } | null => {
+    const [wx, , wz] = pos;
+    return { x: 400 + wx, y: 300 + wz };
+  };
+
+  it('derives ring pixel center + radius from two projected samples', () => {
+    const ring = aoeRingProjection(fakeW2S, { x: 100, y: 0, z: 200 }, 60);
+    expect(ring).not.toBeNull();
+    // Center: (400 + 100, 300 + 200) = (500, 500).
+    expect(ring?.cx).toBe(500);
+    expect(ring?.cy).toBe(500);
+    // Edge sample at (x+60, y, z) → (560, 500); pixel distance = 60.
+    expect(ring?.r).toBe(60);
+  });
+
+  it('returns null when the ring CENTER projects behind the camera', () => {
+    // A projection that always returns null → hide the ring entirely.
+    const behindCamera = (): { readonly x: number; readonly y: number } | null => null;
+    expect(aoeRingProjection(behindCamera, { x: 0, y: 0, z: 0 }, 60)).toBeNull();
+  });
+
+  it('returns null when the EDGE sample projects behind the camera (never draws partial)', () => {
+    // Center projects fine, edge sample degenerates → hide the ring instead of
+    // drawing a mis-scaled radius. Banner remains authoritative.
+    const centerOnly = (pos: readonly [number, number, number]): { readonly x: number; readonly y: number } | null => {
+      const [wx] = pos;
+      // Center point (wx === 100) projects; anything else (wx === 160) is behind.
+      if (wx === 100) return { x: 500, y: 500 };
+      return null;
+    };
+    expect(aoeRingProjection(centerOnly, { x: 100, y: 0, z: 200 }, 60)).toBeNull();
+  });
+
+  it('a null-projected preview leaves aoeOverlapsFriendly (the authoritative geometry) untouched', () => {
+    // The banner geometry is orthogonal to the ring — verified against the same
+    // fixtures. Even with the ring hidden, `aoeOverlapsFriendly` still fires.
+    const shooterShip = shipView({
+      bodyId: 1,
+      fleetId: 0,
+      ship: simShip({
+        missiles: [
+          {
+            ammo: 1,
+            damage: 40,
+            aoeRadius: 60,
+            boostVelocity: 140,
+            trackingTurnRate: 1,
+            bodyMass: 5,
+            bodyRadius: 1,
+          },
+        ],
+      }),
+      missileAlive: [true],
+      missileAmmo: [1],
+    });
+    const view = viewOf(
+      [shooterShip, shipView({ bodyId: 2, fleetId: 0, name: 'TIN CAN 3' }), shipView({ bodyId: 3, fleetId: 1 })],
+      [body(1, at(0)), body(2, at(244)), body(3, at(200))],
+    );
+    // Ring hidden…
+    expect(aoeRingProjection(() => null, at(200), 60)).toBeNull();
+    // …banner still fires.
+    expect(
+      aoeOverlapsFriendly({ shooterId: 1, targetId: 3, missileIndex: 0 }, view),
+    ).not.toBeNull();
   });
 });
 

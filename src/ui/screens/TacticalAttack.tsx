@@ -187,15 +187,23 @@ export function TacticalAttack() {
     });
   }
 
-  // Informational AoE ring for the first staged missile (no per-ship selection
-  // state on this screen — the banner carries the authoritative geometry).
+  // Informational AoE ring for the first staged missile: the label + the blast
+  // center in world coords (Viewport projects it via `worldToScreen`, hides on
+  // null). The banner carries the authoritative geometry — this ring never
+  // gates commit and never contradicts `aoeOverlapsFriendly`.
   let aoePreview: AoePreview | null = null;
   for (const a of staged) {
     if (a.missileIndex === undefined) continue;
     const shooter = shipViewOf(view, a.shooterId);
     const rack = shooter?.ship.missiles[a.missileIndex];
     if (shooter === undefined || rack === undefined) continue;
-    aoePreview = { label: `${shooter.name} · M${String(a.missileIndex + 1)}`, radius: rack.aoeRadius };
+    const center = positionOfInView(view, a.targetId);
+    if (center === undefined) continue;
+    aoePreview = {
+      label: `${shooter.name} · M${String(a.missileIndex + 1)}`,
+      radius: rack.aoeRadius,
+      center,
+    };
     break;
   }
 

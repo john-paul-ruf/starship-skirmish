@@ -1,4 +1,4 @@
-// M14 UI — Tactical Attack viewport (skirmish-tactical-parity S04 CP1).
+// M14 UI — Tactical Attack viewport (skirmish-tactical-parity S04 CP1+CP2).
 //
 // Hosts the three.js tactical canvas and plays the attack beat. Render is
 // reached by a DYNAMIC import (D-RENDER-DYNAMIC, arch §11) so the rest of the
@@ -9,13 +9,13 @@
 //   • wire canvas click → `pick(x,y)` → `onPickBody(id)` and set the camera's
 //     focus source over the screen's current selection so `F` slides onto the
 //     roster's chosen ship (S04 CP1) — the render seams from S01;
+//   • project the AoE preview through `view.worldToScreen(blastCenter)` and
+//     draw an SVG ring over the canvas (S04 CP2) — `null` projection HIDES the
+//     ring; the friendly-fire banner remains the authoritative geometry (§4.6);
 //   • on `attack-resolve`, attachTracePlayer(view).playAttack(beat) → when the
 //     animation finishes, call `onResolveDone` so the controller advances;
 //   • reduced motion (or render unavailable) skips straight to the final frame
 //     and fires `onResolveDone` — the match never stalls on missing WebGL.
-// CP1 keeps the AoE preview as an informational LABEL only — the authoritative
-// friendly-fire geometry lives in `aoeOverlapsFriendly` (banner). CP2 upgrades
-// the overlay to a world-projected ring via `view.worldToScreen`.
 
 import { useEffect, useRef } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
@@ -25,10 +25,13 @@ import type { TacticalView, TracePlayer } from '../../../render/index.js';
 import type { MatchPhase } from '../../matchContext.js';
 
 import { CameraHud } from './CameraHud.js';
+import { aoeRingProjection, type AoeRingProjection } from './model.js';
 
 export interface AoePreview {
   readonly label: string;
   readonly radius: number;
+  /** Blast center in world coordinates — projected via `view.worldToScreen`. */
+  readonly center: Vec3;
 }
 
 export interface ViewportProps {
@@ -73,11 +76,15 @@ export function Viewport(props: ViewportProps) {
   const playerRef = useRef<TracePlayer | null>(null);
   /** 'pending' until the dynamic import settles; 'ready' | 'failed' after. */
   const status = useSignal<'pending' | 'ready' | 'failed'>('pending');
+  /** Ring geometry driven by RAF while an AoE preview is live (CP2). Signal so
+   *  the DOM re-renders when the camera orbits; not part of controller state. */
+  const ring = useSignal<AoeRingProjection | null>(null);
 
-  // Latest reactive inputs the async mount reads through a ref — avoids stale
-  // closures in the camera focus source without spinning up an effect per input.
-  const latest = useRef({ selectedId, positionOf });
-  latest.current = { selectedId, positionOf };
+  // Latest reactive inputs the async mount + RAF loops read through a ref —
+  // avoids stale closures in the camera focus source + ring reprojection
+  // without spinning up an effect per input.
+  const latest = useRef({ selectedId, positionOf, aoePreview });
+  latest.current = { selectedId, positionOf, aoePreview };
 
   // Mount: create the view + trace player from the dynamically-imported render
   // layer. Disposed on unmount. A `cancelled` guard covers an unmount that races
@@ -86,6 +93,8 @@ export function Viewport(props: ViewportProps) {
     const canvas = canvasRef.current;
     if (canvas === null) return;
     let cancelled = false;
+    let ringRaf = 0;
+    const hasRaf = typeof requestAnimationFrame === 'function';
 
     void (async () => {
       try {
@@ -103,6 +112,29 @@ export function Viewport(props: ViewportProps) {
           const p = latest.current.positionOf(id);
           return p === null ? null : [p.x, p.y, p.z];
         });
+        // CP2 ring: reproject every frame while a preview is live so the ring
+        // stays glued to the world as the camera orbits. Compare against the
+        // last value before writing to the signal — else every RAF thrashes
+        // Preact's re-render pass.
+        const reprojectRing = (): void => {
+          const preview = latest.current.aoePreview;
+          const prev = ring.value;
+          const next =
+            preview === null
+              ? null
+              : aoeRingProjection(view.worldToScreen, preview.center, preview.radius);
+          const same =
+            (prev === null && next === null) ||
+            (prev !== null &&
+              next !== null &&
+              prev.cx === next.cx &&
+              prev.cy === next.cy &&
+              prev.r === next.r);
+          if (!same) ring.value = next;
+          if (hasRaf) ringRaf = requestAnimationFrame(reprojectRing);
+        };
+        if (hasRaf) ringRaf = requestAnimationFrame(reprojectRing);
+        else reprojectRing();
         status.value = 'ready';
       } catch {
         if (!cancelled) status.value = 'failed';
@@ -111,6 +143,9 @@ export function Viewport(props: ViewportProps) {
 
     return () => {
       cancelled = true;
+      if (ringRaf !== 0 && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(ringRaf);
+      }
       playerRef.current?.dispose();
       viewRef.current?.dispose();
       playerRef.current = null;
@@ -165,6 +200,8 @@ export function Viewport(props: ViewportProps) {
     view.focusBody(id);
   };
 
+  const currentRing = ring.value;
+
   return (
     <div class="viewport" style="position:relative;min-height:360px" data-testid="attack-viewport">
       <canvas
@@ -172,6 +209,28 @@ export function Viewport(props: ViewportProps) {
         onClick={onCanvasClick}
         style="display:block;width:100%;height:100%;cursor:crosshair"
       />
+
+      {aoePreview !== null && phase === 'attack-plan' && currentRing !== null ? (
+        <svg
+          data-testid="aoe-ring"
+          data-ring-cx={String(currentRing.cx)}
+          data-ring-cy={String(currentRing.cy)}
+          data-ring-r={String(currentRing.r)}
+          aria-hidden="true"
+          style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;overflow:visible"
+        >
+          <circle
+            cx={currentRing.cx}
+            cy={currentRing.cy}
+            r={currentRing.r}
+            fill="none"
+            stroke="var(--red)"
+            stroke-width="1.5"
+            stroke-dasharray="6 4"
+            opacity="0.85"
+          />
+        </svg>
+      ) : null}
 
       {aoePreview !== null && phase === 'attack-plan' ? (
         <div

@@ -298,6 +298,40 @@ export const fireContext = (
   return roles;
 };
 
+// ---- World-projected AoE ring geometry (S04 CP2) --------------------------
+
+/** A projected AoE ring — CSS-pixel center + radius over the tactical canvas. */
+export interface AoeRingProjection {
+  readonly cx: number;
+  readonly cy: number;
+  readonly r: number;
+}
+
+/**
+ * Project a missile blast's world geometry into CSS-pixel coordinates using the
+ * render layer's `worldToScreen` seam (S01). The ring center comes from the
+ * blast center; the pixel radius comes from projecting a second world point
+ * offset by `aoeRadius` along the world +X axis and taking the pixel distance
+ * to the center — a `null` on EITHER sample returns `null`, so the caller HIDES
+ * the ring on any degenerate projection rather than drawing off-screen or
+ * misaligned (S01 followUp). The friendly-fire banner is the authoritative
+ * geometry (§4.6) — this ring is an informational overlay only.
+ */
+export const aoeRingProjection = (
+  worldToScreen: (pos: readonly [number, number, number]) => { readonly x: number; readonly y: number } | null,
+  center: Vec3,
+  aoeRadius: number,
+): AoeRingProjection | null => {
+  const c = worldToScreen([center.x, center.y, center.z]);
+  if (c === null) return null;
+  const edge = worldToScreen([center.x + aoeRadius, center.y, center.z]);
+  if (edge === null) return null;
+  const dx = edge.x - c.x;
+  const dy = edge.y - c.y;
+  const r = Math.sqrt(dx * dx + dy * dy);
+  return { cx: c.x, cy: c.y, r };
+};
+
 // ---- Plan emission --------------------------------------------------------
 
 /**
