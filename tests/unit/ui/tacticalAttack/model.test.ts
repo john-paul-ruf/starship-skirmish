@@ -12,6 +12,7 @@ import {
   calledShotOptions,
   calledShotUnlocked,
   enemyShips,
+  fireContext,
   fireSlotTotal,
   friendlyShips,
   GENERATOR_HINT,
@@ -266,6 +267,115 @@ describe('aoeOverlapsFriendly', () => {
       [body(1, at(200)), body(2, at(999)), body(3, at(200))],
     );
     expect(aoeOverlapsFriendly(missileAssignment, view)).toBeNull();
+  });
+});
+
+// ---- Fire-context annotation (S04 CP1) ------------------------------------
+
+describe('fireContext', () => {
+  // A shooter (fleet 0), a nearby friendly (fleet 0), and two enemies (fleet 1).
+  const shooter = shipView({
+    bodyId: 1,
+    fleetId: 0,
+    name: 'WIDOWMAKER',
+    ship: simShip({
+      missiles: [
+        {
+          ammo: 2,
+          damage: 40,
+          aoeRadius: 60,
+          boostVelocity: 140,
+          trackingTurnRate: 1,
+          bodyMass: 5,
+          bodyRadius: 1,
+        },
+      ],
+    }),
+    missileAlive: [true],
+    missileAmmo: [2],
+  });
+  const friendly = shipView({ bodyId: 2, fleetId: 0, name: 'TIN CAN 3' });
+  const enemyPrimary = shipView({ bodyId: 3, fleetId: 1, name: 'SPUR' });
+  const enemySecondary = shipView({ bodyId: 4, fleetId: 1, name: 'IRON VERDICT' });
+
+  const view = viewOf(
+    [shooter, friendly, enemyPrimary, enemySecondary],
+    [body(1, at(0)), body(2, at(244)), body(3, at(200)), body(4, at(600))],
+  );
+
+  it('flags a targeted enemy and the shooter on a weapon assignment (no AoE)', () => {
+    const roles = fireContext(
+      [{ shooterId: 1, targetId: 4, weaponIndex: 0 }],
+      view,
+    );
+    expect(roles.get(1)).toEqual(['shooter']);
+    expect(roles.get(4)).toEqual(['targeted']);
+    // No missile → no AoE-friendly annotations.
+    expect(roles.get(2)).toBeUndefined();
+    expect(roles.get(3)).toBeUndefined();
+  });
+
+  it('flags an AoE friendly whose position sits inside the missile blast', () => {
+    const roles = fireContext(
+      [{ shooterId: 1, targetId: 3, missileIndex: 0 }],
+      view,
+    );
+    // Shooter + targeted enemy first…
+    expect(roles.get(1)).toEqual(['shooter']);
+    expect(roles.get(3)).toEqual(['targeted']);
+    // …and TIN CAN 3 (bodyId 2) is 44u from the target (r60) → flagged AoE.
+    expect(roles.get(2)).toEqual(['aoe-friendly']);
+  });
+
+  it('combines roles when a ship carries more than one (shooter AND caught in AoE)', () => {
+    // Second assignment: enemySecondary lobs a missile at TIN CAN 3 — but ships
+    // can't be sim-side enemies fighting the shooter itself, so instead re-use
+    // the shooter as ALSO an AoE friendly by staging a second missile from a
+    // sibling in the same fleet. Build a small stand-in: another player ship
+    // launching a missile whose blast catches WIDOWMAKER.
+    const sibling = shipView({
+      bodyId: 5,
+      fleetId: 0,
+      name: 'HARRIER-2',
+      ship: simShip({
+        missiles: [
+          {
+            ammo: 1,
+            damage: 30,
+            aoeRadius: 40,
+            boostVelocity: 120,
+            trackingTurnRate: 1,
+            bodyMass: 5,
+            bodyRadius: 1,
+          },
+        ],
+      }),
+      missileAlive: [true],
+      missileAmmo: [1],
+    });
+    const combined = viewOf(
+      [shooter, sibling, friendly, enemyPrimary],
+      // Enemy at 30 → within r40 of blast center; WIDOWMAKER at 0 → within r40 too.
+      [body(1, at(0)), body(5, at(-100)), body(2, at(999)), body(3, at(30))],
+    );
+    const roles = fireContext(
+      [
+        { shooterId: 1, targetId: 3, weaponIndex: 0 },     // WIDOWMAKER shoots SPUR
+        { shooterId: 5, targetId: 3, missileIndex: 0 },    // HARRIER-2 lobs a missile at SPUR → catches WIDOWMAKER
+      ],
+      combined,
+    );
+    // WIDOWMAKER is BOTH the shooter of assignment #1 AND caught in HARRIER-2's blast.
+    const widow = roles.get(1);
+    expect(widow).toBeDefined();
+    expect(widow).toContain('shooter');
+    expect(widow).toContain('aoe-friendly');
+    // HARRIER-2 is the second shooter.
+    expect(roles.get(5)).toEqual(['shooter']);
+  });
+
+  it('is empty when no assignments are staged (commit is never gated by roles)', () => {
+    expect(fireContext([], view).size).toBe(0);
   });
 });
 

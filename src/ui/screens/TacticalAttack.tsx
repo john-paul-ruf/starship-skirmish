@@ -1,4 +1,4 @@
-// M14 UI — Tactical Attack screen (S06 body over the S01 placeholder).
+// M14 UI — Tactical Attack screen (skirmish-tactical-parity S04 body over S06).
 //
 // D-PLACEHOLDER: the `TacticalAttack` export name + `data-testid=
 // "screen-tactical-attack"` root are contracted by S01 — the screens barrel and
@@ -12,11 +12,19 @@
 // never blocked — when a missile blast clips a friendly (§4.6). COMMIT resolves
 // the attack beat; during `attack-resolve` the viewport animates it, then hands
 // off (`resolveAnimationDone`) to the next movement turn or post-match.
+//
+// S04 adds the FR-15 all-fleets left column (roster + inspector — no fog of
+// war, mocks/tactical-attack.html col-l), roster→selection→camera.focus wiring
+// via S01's `focusBody`/`setFocusSource`/`worldToScreen` seams, and a camera
+// HUD. Every blind-fire invariant carries verbatim.
 
 import { useSignal } from '@preact/signals';
+import type { ComponentChildren } from 'preact';
 
-import type { CalledShotTarget } from '../../sim/index.js';
+import type { BodyId, CalledShotTarget } from '../../sim/index.js';
 
+import { FleetRoster, ShipInspector, fleetLabel, groupByFleet } from '../components/roster/index.js';
+import type { RosterEntry } from '../components/roster/index.js';
 import { useApp } from '../appContext.js';
 import { useMatch } from '../matchContext.js';
 
@@ -30,13 +38,38 @@ import { WeaponBench } from './tacticalAttack/WeaponBench.js';
 import {
   aoeOverlapsFriendly,
   assignmentGate,
+  fireContext,
   friendlyShips,
+  positionOf as positionOfInView,
   shipViewOf,
   slotKey,
   toAttackPlans,
   type Assignment,
+  type FireContextRole,
   type FireSlot,
 } from './tacticalAttack/model.js';
+
+/** Roster badge for one role. Text + color-token — never color alone (§1.1). */
+const ROLE_BADGE: Readonly<Record<FireContextRole, { readonly label: string; readonly cls: string }>> = {
+  shooter: { label: 'SHOOTER', cls: 'chip chip-cyan' },
+  targeted: { label: 'TARGETED', cls: 'chip chip-amber' },
+  'aoe-friendly': { label: '⚠ IN AoE', cls: 'chip chip-red' },
+};
+
+const roleChip = (role: FireContextRole): ComponentChildren => {
+  const meta = ROLE_BADGE[role];
+  return (
+    <span
+      key={role}
+      class={meta.cls}
+      data-testid="roster-role-chip"
+      data-role={role}
+      aria-label={meta.label}
+    >
+      {meta.label}
+    </span>
+  );
+};
 
 export function TacticalAttack() {
   const match = useMatch();
@@ -44,6 +77,8 @@ export function TacticalAttack() {
   const phase = match.phase.value;
   const state = match.state.value;
   const assignments = useSignal<ReadonlyMap<string, Assignment>>(new Map());
+  /** All-fleets selection (roster + inspector + camera focus). */
+  const selectedId = useSignal<BodyId | null>(null);
 
   // The screen is only meaningful in the two attack phases. Any other phase
   // renders a stable, empty root so the testid never disappears.
@@ -67,6 +102,10 @@ export function TacticalAttack() {
           reducedMotion={app.reducedMotion.value}
           onResolveDone={() => match.resolveAnimationDone()}
           aoePreview={null}
+          selectedId={null}
+          positionOf={() => null}
+          onPickBody={() => undefined}
+          focusLabel="—"
         />
         <div class="mono-xs c-dim">RESOLVING FIRE AGAINST A PRE-DAMAGE SNAPSHOT …</div>
       </div>
@@ -77,7 +116,7 @@ export function TacticalAttack() {
   const view = match.view.value;
   const selfFleetId = match.playerFleetId;
 
-  const onAssign = (slot: FireSlot, targetId: number | null) => {
+  const onAssign = (slot: FireSlot, targetId: BodyId | null) => {
     const next = new Map(assignments.value);
     const key = slotKey(slot);
     if (targetId === null) {
@@ -107,6 +146,10 @@ export function TacticalAttack() {
     assignments.value = next;
   };
 
+  const onSelect = (bodyId: BodyId) => {
+    selectedId.value = bodyId;
+  };
+
   if (view === null) {
     // Entering the phase before the view is populated — render just the
     // viewport shell; the plan UI appears on the next tick.
@@ -119,6 +162,10 @@ export function TacticalAttack() {
           reducedMotion={app.reducedMotion.value}
           onResolveDone={() => match.resolveAnimationDone()}
           aoePreview={null}
+          selectedId={null}
+          positionOf={() => null}
+          onPickBody={() => undefined}
+          focusLabel="—"
         />
       </section>
     );
@@ -152,6 +199,32 @@ export function TacticalAttack() {
     break;
   }
 
+  const groups = groupByFleet(view.ships, selfFleetId);
+  const roleMap = fireContext(staged, view);
+
+  const annotate = (entry: RosterEntry): ComponentChildren => {
+    const roles = roleMap.get(entry.bodyId);
+    if (roles === undefined || roles.length === 0) return null;
+    return (
+      <span
+        style="display:inline-flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"
+        aria-label={`Fire context: ${roles.map((r) => ROLE_BADGE[r].label).join(', ')}`}
+      >
+        {roles.map(roleChip)}
+      </span>
+    );
+  };
+
+  const selected =
+    selectedId.value !== null ? shipViewOf(view, selectedId.value) ?? null : null;
+  const selectedVelocity =
+    selected !== null
+      ? state.bodies.get(selected.bodyId)?.velocity ?? null
+      : null;
+  const focusLabel = selected !== null ? selected.name : '—';
+
+  const positionForFocus = (id: BodyId) => positionOfInView(view, id) ?? null;
+
   const onCommit = () => {
     match.commitAttack(toAttackPlans(staged, view.ships));
   };
@@ -172,33 +245,67 @@ export function TacticalAttack() {
         TARGETING FROM POST-MOVEMENT POSITIONS · FULL STATE FOR ALL FLEETS · NO FOG OF WAR.
       </div>
 
-      <Viewport
-        state={state}
-        phase={phase}
-        attackBeat={match.attackBeat.value}
-        reducedMotion={app.reducedMotion.value}
-        onResolveDone={() => match.resolveAnimationDone()}
-        aoePreview={aoePreview}
-      />
-
-      <FriendlyFireBanner warnings={warnings} />
-
-      <WeaponBench
-        view={view}
-        selfFleetId={selfFleetId}
-        assignments={assignments.value}
-        onAssign={onAssign}
-        hitChanceFor={match.hitChanceFor}
-        renderCalledShot={(slot, assignment, target) => (
-          <CalledShotPicker
-            target={target}
-            selected={assignment.calledShot}
-            onPick={(cs) => onCalledShot(slot, cs)}
+      <div
+        class="ta-layout"
+        style="display:grid;grid-template-columns:minmax(260px,320px) minmax(0,1fr);gap:var(--s3);align-items:start"
+      >
+        <div
+          class="ta-col-l"
+          data-testid="ta-col-l"
+          style="display:flex;flex-direction:column;gap:var(--s3);min-height:0"
+        >
+          <FleetRoster
+            groups={groups}
+            selectedId={selectedId.value}
+            onSelect={onSelect}
+            annotate={annotate}
+            aria-label="Attack roster — every fleet, no fog of war"
           />
-        )}
-      />
+          <ShipInspector ship={selected} velocity={selectedVelocity} />
+          <div class="mono-xs c-dim" style="letter-spacing:.14em">
+            {`FLEET: ${fleetLabel(selfFleetId)} · ALL FLEETS VISIBLE`}
+          </div>
+        </div>
 
-      <CommitBar gate={gate} onCommit={onCommit} />
+        <div
+          class="ta-col-r"
+          style="display:flex;flex-direction:column;gap:var(--s3);min-width:0"
+        >
+          <Viewport
+            state={state}
+            phase={phase}
+            attackBeat={match.attackBeat.value}
+            reducedMotion={app.reducedMotion.value}
+            onResolveDone={() => match.resolveAnimationDone()}
+            aoePreview={aoePreview}
+            selectedId={selectedId.value}
+            positionOf={positionForFocus}
+            onPickBody={(id) => {
+              if (id !== null) selectedId.value = id;
+            }}
+            focusLabel={focusLabel}
+          />
+
+          <FriendlyFireBanner warnings={warnings} />
+
+          <WeaponBench
+            view={view}
+            selfFleetId={selfFleetId}
+            assignments={assignments.value}
+            onAssign={onAssign}
+            hitChanceFor={match.hitChanceFor}
+            renderCalledShot={(slot, assignment, target) => (
+              <CalledShotPicker
+                target={target}
+                selected={assignment.calledShot}
+                onPick={(cs) => onCalledShot(slot, cs)}
+              />
+            )}
+          />
+
+          <CommitBar gate={gate} onCommit={onCommit} />
+        </div>
+      </div>
     </div>
   );
 }

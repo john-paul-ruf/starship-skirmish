@@ -254,6 +254,50 @@ export const aoeOverlapsFriendly = (
   };
 };
 
+// ---- Fire-context annotation (S04 CP1) ------------------------------------
+
+/**
+ * One row's role in the active fire context — the annotation the shared
+ * `FleetRoster` paints via its per-screen `annotate(entry)` slot. Combined per
+ * row: a single ship can be BOTH a shooter (staged a shot) AND an AoE friendly
+ * (caught in another ship's blast) — the roster surfaces every role that fits.
+ */
+export type FireContextRole = 'shooter' | 'targeted' | 'aoe-friendly';
+
+/**
+ * Derive a per-body role map from the staged assignments + the live view. Pure
+ * (node-testable): the screen wraps the returned roles in the roster's annotate
+ * badge. Never gates commit — the map is informational, mirroring the same
+ * "warns, never blocks" discipline as the friendly-fire banner (§4.6). A shooter
+ * with an assigned target contributes SHOOTER on the shooter row and TARGETED
+ * on the target row; each missile whose blast clips a friendly contributes
+ * AOE-FRIENDLY on every named friendly (the banner remains authoritative —
+ * geometry mirrors `aoeOverlapsFriendly`).
+ */
+export const fireContext = (
+  assignments: readonly Assignment[],
+  view: BlindMatchView,
+): ReadonlyMap<BodyId, readonly FireContextRole[]> => {
+  const roles = new Map<BodyId, FireContextRole[]>();
+  const push = (id: BodyId, role: FireContextRole): void => {
+    let arr = roles.get(id);
+    if (arr === undefined) {
+      arr = [];
+      roles.set(id, arr);
+    }
+    if (!arr.includes(role)) arr.push(role);
+  };
+  for (const a of assignments) {
+    push(a.shooterId, 'shooter');
+    push(a.targetId, 'targeted');
+    if (a.missileIndex === undefined) continue;
+    const overlap = aoeOverlapsFriendly(a, view);
+    if (overlap === null) continue;
+    for (const h of overlap.hits) push(h.friendly.bodyId, 'aoe-friendly');
+  }
+  return roles;
+};
+
 // ---- Plan emission --------------------------------------------------------
 
 /**
