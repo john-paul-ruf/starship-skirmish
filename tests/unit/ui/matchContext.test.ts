@@ -20,6 +20,8 @@ import {
   useMatch,
   type MatchController,
 } from '../../../src/ui/matchContext.js';
+import type { Vec3 } from '../../../src/sim/index.js';
+import type { WaypointBurn } from '../../../src/sim/types.js';
 
 // A reference-identity sentinel — the provider test only compares the value by
 // reference, so the controller need not be a working instance.
@@ -41,5 +43,39 @@ describe('MatchProvider — supplies the controller value', () => {
     expect(vnode.type).toBe(MatchContext.Provider);
     expect(vnode.props['value']).toBe(stubController);
     expect(vnode.props['children']).toBe('child');
+  });
+});
+
+// ---- previewArc — the segmented-arc contract (`finite-thrust-movement` S04)
+//
+// TYPE-level lock for the seam signature. Vitest runs in node with no DOM, so
+// we cannot construct a real controller here — but we CAN prove the contract
+// type accepts both arc shapes and exposes `markPositions` by writing calls
+// that would fail `tsc` if the union widened, narrowed, or dropped the
+// optional key. Runtime behaviour is verified in `tests/unit/app/match/`.
+describe('MatchController.previewArc — accepts Vec3 | { segments } (contract)', () => {
+  it('type-checks both arc forms and exposes an optional markPositions', () => {
+    // A minimal stub matching the seam signature only. If the contract changes
+    // shape (previewArc drops the union, or removes `markPositions?`), this
+    // stub either fails to assign or the reads below fail to type-check.
+    const previewArc: MatchController['previewArc'] = (bodyId, arc) => {
+      // Discriminate on `segments` presence — mirrors the controller impl and
+      // proves the union is genuinely discriminated at compile time.
+      const marks: readonly Vec3[] = 'segments' in arc ? [] : [];
+      void bodyId;
+      void arc;
+      return { positions: [], endsOutsideArena: false, markPositions: marks };
+    };
+    const zero: Vec3 = { x: 0, y: 0, z: 0 };
+    // Impulsive form — a plain Vec3 (regression, pre-SESSION-04 shape).
+    const impulsive = previewArc(1, zero);
+    expect(impulsive.positions).toEqual([]);
+    expect(impulsive.endsOutsideArena).toBe(false);
+    // Segmented form — the new finite-thrust shape.
+    const segments: readonly WaypointBurn[] = [{ deltaV: zero }, { deltaV: zero }];
+    const finite = previewArc(1, { segments });
+    // `markPositions` is optional in the contract; asserting it's an array
+    // (either surfaced or absent) proves the caller reads it defensively.
+    expect(finite.markPositions ?? []).toEqual([]);
   });
 });
