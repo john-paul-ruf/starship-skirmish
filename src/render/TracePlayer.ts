@@ -23,6 +23,7 @@ import type {
 import type { MovementBeatRecord } from '../sim/index.js';
 import { bodyKindToGlyph, type HazardInput } from './hazards.js';
 import { easeInOutQuad, lerpBodyAt, type LerpedBody } from './interp.js';
+import type { TrailLayer } from './trail.js';
 import type { TacticalView } from './types.js';
 
 /** Wall-clock source (ms). Real playback uses `Date.now`; tests inject a fake. */
@@ -71,6 +72,16 @@ export interface PlaybackOpts {
   readonly raf?: RafSchedule;
   readonly cancelRaf?: RafCancel;
   readonly onDone?: () => void;
+  /**
+   * S01: an attached `TrailLayer` — playback pushes one point per NEW keyframe
+   * transition (never per RAF frame, so the trail matches the true flown cadence).
+   * `beatSeconds` must be supplied alongside it to map keyframe index → sim-time.
+   */
+  readonly trail?: TrailLayer;
+  /** Beat duration in sim-seconds (= `physicsConfig.dt`). Required for trail timing. */
+  readonly beatSeconds?: number;
+  /** Sim-time (seconds) the beat starts at. Defaults to 0 (single-beat playback). */
+  readonly startSimTime?: number;
 }
 
 /** A running (or finished) playback. Every method is idempotent once disposed. */
@@ -234,13 +245,38 @@ export const attachTracePlayer = (view: TacticalView): TracePlayer => {
       flashes.clear();
     };
 
+    // S01: record one trail point per NEW keyframe transition so a skip and a full
+    // play leave the trail in the same state (mirroring the FR-19 outcome-invariance).
+    let lastKeyframeIdx = -1;
+    const flushKeyframes = (currentIdx: number): void => {
+      if (opts.trail === undefined || opts.beatSeconds === undefined) return;
+      const start = opts.startSimTime ?? 0;
+      for (let idx = lastKeyframeIdx + 1; idx <= currentIdx; idx += 1) {
+        const at = start + idx * opts.beatSeconds;
+        const frame = keyframes[idx];
+        if (frame === undefined) continue;
+        for (const b of frame) {
+          if (b.kind === 'ship') {
+            opts.trail.push(b.id, [b.position.x, b.position.y, b.position.z], at);
+          }
+        }
+      }
+      lastKeyframeIdx = currentIdx;
+    };
+
     return createPlayback({
       durationMs,
       clock: opts.clock ?? nowDefault,
       raf: opts.raf ?? rafDefault,
       cancelRaf: opts.cancelRaf ?? cancelDefault,
       renderAt: (tNorm) => {
-        pushFrame(lerpBodyAt(keyframes, easeInOutQuad(tNorm)));
+        const easedT = easeInOutQuad(tNorm);
+        pushFrame(lerpBodyAt(keyframes, easedT));
+        const n = keyframes.length;
+        if (n >= 2) {
+          const currentIdx = Math.min(Math.floor(easedT * (n - 1)), n - 1);
+          if (currentIdx > lastKeyframeIdx) flushKeyframes(currentIdx);
+        }
         // Fade flashes out over the beat; strongest at the start, gone by the end.
         const flashAlpha = 1 - tNorm;
         for (const child of flashes.children) (child as Sprite).material.opacity = flashAlpha;

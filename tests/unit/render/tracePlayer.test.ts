@@ -14,6 +14,7 @@ import {
 import type { RafSchedule } from '../../../src/render/TracePlayer.js';
 import type { MovementBeatRecord } from '../../../src/sim/index.js';
 import type { Body } from '../../../src/sim/index.js';
+import type { TrailLayer } from '../../../src/render/trail.js';
 import type { TacticalView } from '../../../src/render/types.js';
 
 // ---- Fakes ------------------------------------------------------------------
@@ -296,6 +297,105 @@ describe('playMovement state machine', () => {
     // Ship 1 lands solid at the final keyframe.
     expect(fake.opacities.get(1)).toBe(1);
     expect(fake.positions.get(1)).toEqual({ x: 10, y: 0, z: 0 });
+  });
+
+  it('records one trail point per NEW keyframe when a TrailLayer is attached (S01)', () => {
+    // Fake trail — captures every push call.
+    const pushes: Array<{ id: number; at: [number, number, number]; simTime: number }> = [];
+    const trail: TrailLayer = {
+      push: (id, at, simTime) => {
+        pushes.push({ id, at: [at[0]!, at[1]!, at[2]!], simTime });
+      },
+      tick: () => undefined,
+      clear: () => undefined,
+      dispose: () => undefined,
+    };
+
+    const sched = new FakeScheduler();
+    const fake = makeFakeView();
+    attachTracePlayer(fake.view).playMovement(record(), {
+      durationMs: 100,
+      clock: sched.clock,
+      raf: sched.raf,
+      cancelRaf: sched.cancel,
+      trail,
+      beatSeconds: 4,
+      startSimTime: 10,
+    });
+
+    sched.runToEnd(5);
+
+    // 4 keyframes × 2 ships (id 1, id 2) = 8 ship pushes. Debris (id 3) is skipped.
+    expect(pushes).toHaveLength(8);
+    expect(pushes.every((p) => p.id === 1 || p.id === 2)).toBe(true);
+    // Sim-time = startSimTime + keyframeIdx · beatSeconds → 10, 14, 18, 22.
+    const times = Array.from(new Set(pushes.map((p) => p.simTime))).sort((a, b) => a - b);
+    expect(times).toEqual([10, 14, 18, 22]);
+    // Ship 1 flies from x=0 to x=30 across the four keyframes.
+    const ship1 = pushes.filter((p) => p.id === 1).sort((a, b) => a.simTime - b.simTime);
+    expect(ship1.map((p) => p.at[0])).toEqual([0, 10, 20, 30]);
+  });
+
+  it('skip() flushes every missed keyframe to the trail (outcome invariance)', () => {
+    // Skip should push the same total keyframes as a full play — the flown trail
+    // must not have gaps because the beat was skipped.
+    const pushesFull: number[] = [];
+    const pushesSkip: number[] = [];
+    const mkTrail = (sink: number[]): TrailLayer => ({
+      push: (id) => {
+        sink.push(id);
+      },
+      tick: () => undefined,
+      clear: () => undefined,
+      dispose: () => undefined,
+    });
+
+    const runFull = (): void => {
+      const sched = new FakeScheduler();
+      const fake = makeFakeView();
+      attachTracePlayer(fake.view).playMovement(record(), {
+        durationMs: 100,
+        clock: sched.clock,
+        raf: sched.raf,
+        cancelRaf: sched.cancel,
+        trail: mkTrail(pushesFull),
+        beatSeconds: 4,
+      });
+      sched.runToEnd(5);
+    };
+    const runSkip = (): void => {
+      const sched = new FakeScheduler();
+      const fake = makeFakeView();
+      attachTracePlayer(fake.view)
+        .playMovement(record(), {
+          durationMs: 100,
+          clock: sched.clock,
+          raf: sched.raf,
+          cancelRaf: sched.cancel,
+          trail: mkTrail(pushesSkip),
+          beatSeconds: 4,
+        })
+        .skip();
+    };
+
+    runFull();
+    runSkip();
+    expect(pushesSkip.length).toBe(pushesFull.length);
+  });
+
+  it('no trail attached → no trail-related work happens (regression guard)', () => {
+    const sched = new FakeScheduler();
+    const fake = makeFakeView();
+    // Nothing to assert on the trail directly — just make sure the untrailed path
+    // still lands the record on the final keyframe (identical to the pre-S01 shape).
+    attachTracePlayer(fake.view).playMovement(record(), {
+      durationMs: 100,
+      clock: sched.clock,
+      raf: sched.raf,
+      cancelRaf: sched.cancel,
+    });
+    sched.runToEnd(20);
+    expect(fake.positions.get(1)).toEqual({ x: 30, y: 0, z: 0 });
   });
 
   it('dispose() cancels the loop without firing onDone', () => {
