@@ -16,7 +16,8 @@
     },
     "startVelocity": 0,
     "fleetStartInsetFraction": 0.72,
-    "minFleetSeparationFraction": 0.9
+    "$comment_minFleetSeparationFraction": "Minimum pairwise fleet-centroid separation as a fraction of arena RADIUS. Equidistant placement on the inset shell gives 2*insetFraction*sin(180deg/N)*R; the tightest supported case is N = match.maxFleets = 5 which yields ~0.846*R. 0.8 holds for N=2..5. createMatch asserts placement satisfies this.",
+    "minFleetSeparationFraction": 0.8
   },
 
   "match": {
@@ -59,7 +60,8 @@
       "frigate": 30,
       "cruiser": 70,
       "mega-destroyer": 140
-    }
+    },
+    "cascadeToNextMovement": true
   },
 
   "collision": {
@@ -71,7 +73,8 @@
   "missiles": {
     "trackingBeats": 2,
     "spentRemainsArmed": true,
-    "reacquireOnTargetLoss": false
+    "reacquireOnTargetLoss": false,
+    "launchClearsLauncher": true
   },
 
   "shields": {

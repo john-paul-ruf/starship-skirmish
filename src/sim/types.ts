@@ -307,11 +307,25 @@ export interface CombatConfig {
   readonly destruction: {
     readonly aoeRadiusByClass: Readonly<Record<ChassisClass, number>>;
     readonly aoeDamageByClass: Readonly<Record<ChassisClass, number>>;
+    /**
+     * When true, a ship killed in the ATTACK beat contributes its class-scaled AoE
+     * + debris to the NEXT movement beat (FR-21 "destruction effects enter the
+     * battlespace for the next movement beat"). Absent/false ⇒ attack-beat kills
+     * produce no cascade (the pre-F6 loop behavior the frozen goldens encode).
+     */
+    readonly cascadeToNextMovement?: boolean;
   };
   readonly missiles: {
     readonly trackingBeats: number;
     readonly spentRemainsArmed: boolean;
     readonly reacquireOnTargetLoss: boolean;
+    /**
+     * When true, a launched missile spawns offset ahead of its launcher by
+     * (launcherRadius + missileRadius + ε) along the firing bearing, so it cannot
+     * detonate on its own launcher on the following movement beat. Absent/false ⇒
+     * missile spawns at the launcher's exact position (pre-F6 behavior).
+     */
+    readonly launchClearsLauncher?: boolean;
   };
   readonly shields: {
     readonly regenTicksRegardlessOfDamage: boolean;

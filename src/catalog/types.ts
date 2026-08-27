@@ -151,6 +151,8 @@ export interface Tuning {
   readonly destruction: {
     readonly aoeRadiusByClass: Readonly<Record<string, number>>;
     readonly aoeDamageByClass: Readonly<Record<string, number>>;
+    /** Attack-beat kill contributes AoE + debris to the NEXT movement beat (FR-21). */
+    readonly cascadeToNextMovement: boolean;
   };
   readonly collision: {
     readonly damageCoefficient: number;
@@ -160,6 +162,8 @@ export interface Tuning {
     readonly trackingBeats: number;
     readonly spentRemainsArmed: boolean;
     readonly reacquireOnTargetLoss: boolean;
+    /** Missile spawns offset ahead of its launcher so it cannot detonate on itself. */
+    readonly launchClearsLauncher: boolean;
   };
   readonly shields: {
     readonly regenTicksRegardlessOfDamage: boolean;

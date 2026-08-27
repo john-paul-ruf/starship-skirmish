@@ -136,6 +136,7 @@ describe('combatConfigFromTuning — missing per-class key fails loud', () => {
           // cruiser deliberately missing
           'mega-destroyer': 140,
         },
+        cascadeToNextMovement: catalog.tuning.destruction.cascadeToNextMovement,
       },
     };
     expect(() => combatConfigFromTuning(tuning)).toThrow(RangeError);
