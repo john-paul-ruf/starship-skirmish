@@ -15,11 +15,12 @@
 import type { Vec3 } from '../mathx/index.js';
 import { add, lengthSq, scale } from '../mathx/index.js';
 import type { Body, BodyId, MovementPlan } from '../types.js';
-import { applyPlan, integrateBody, subStepCount } from './integrate.js';
+import { applyThrust, integrateBody, subStepCount } from './integrate.js';
 import { broadphase } from './broadphase.js';
 import { sweepSphereSphere } from './sweep.js';
 import { resolveCollision } from './momentum.js';
 import { classifyExit, isOutsideArena, type BoundaryExit } from './boundary.js';
+import { peakSpeedSq, thrustSchedule } from './thrust.js';
 import type { PhysicsConfig } from './config.js';
 
 /**
@@ -83,26 +84,50 @@ export const resolveMovement = (
   plans: readonly MovementPlan[],
   config: PhysicsConfig,
 ): StepResult => {
-  // 1 · Apply plans. Iterate `plans` in given order into a Map; a later plan for the
-  //     same body overwrites earlier ones (last-write-wins). Domain layer is expected
-  //     to have already de-duplicated; this is defensive only.
+  // 1 · Bucket plans by bodyId. Iterate `plans` in given order into a Map; a later
+  //     plan for the same body overwrites earlier ones (last-write-wins). Domain
+  //     layer is expected to have already de-duplicated; this is defensive only.
+  //
+  //     `applyPlan` is NOT called here anymore (feature `finite-thrust-movement`,
+  //     SESSION-01). The impulsive shape is instead expressed as the first entry
+  //     of a `thrustSchedule` — `[deltaV, ZERO, …]` (D-ADDITIVE-PLAN). That is
+  //     what the sub-step loop applies below, and it is byte-identical to the
+  //     pre-SESSION-01 `applyPlan`-at-start for every plan without `segments`.
   const planById = new Map<BodyId, MovementPlan>();
   for (let i = 0; i < plans.length; i += 1) planById.set(plans[i]!.bodyId, plans[i]!);
-  const afterPlans = bodies.map((b) => {
-    const plan = planById.get(b.id);
-    return plan === undefined ? b : applyPlan(b, plan);
-  });
 
   // 2 · Sub-step count + cell size (both state-derived).
+  //
+  //     Per-body peak |v|² is the analytical upper bound `peakSpeedSq` yields when
+  //     called against a schedule sampled at SEGMENT boundaries — i.e. the running
+  //     max of `|v0 + Σ effective segment Δv|²`. On the impulsive branch (segments
+  //     absent) this collapses to `|v0 + plan.deltaV|² = |v_post|²`, exactly what
+  //     the pre-SESSION-01 resolver used as its `maxSpeedSq` — that's the
+  //     byte-identity hinge for D-ADDITIVE-PLAN. On finite-thrust it captures the
+  //     worst-case mid-beat velocity across every segment endpoint, so N stays
+  //     large enough that CCD holds even when a burn accelerates the body past
+  //     its start-of-beat speed. A body with no plan contributes `|v0|²`.
+  const peakScheduleN = (plan: MovementPlan): number =>
+    plan.segments === undefined || plan.segments.length === 0
+      ? 1
+      : plan.segments.length;
+
   let maxSpeedSq = 0;
   let maxRadius = 0;
   let minRadius = Infinity;
-  for (let i = 0; i < afterPlans.length; i += 1) {
-    const b = afterPlans[i]!;
-    const s = lengthSq(b.velocity);
-    if (s > maxSpeedSq) maxSpeedSq = s;
+  for (let i = 0; i < bodies.length; i += 1) {
+    const b = bodies[i]!;
     if (b.radius > maxRadius) maxRadius = b.radius;
     if (b.radius < minRadius) minRadius = b.radius;
+    const plan = planById.get(b.id);
+    const peak =
+      plan === undefined
+        ? lengthSq(b.velocity)
+        : peakSpeedSq(
+            b.velocity,
+            thrustSchedule(plan, peakScheduleN(plan), config.dt, config.maxAccel),
+          );
+    if (peak > maxSpeedSq) maxSpeedSq = peak;
   }
   const maxSpeed = Math.sqrt(maxSpeedSq);
   const N = subStepCount(
@@ -118,13 +143,62 @@ export const resolveMovement = (
   // displacement exceeds a body's radius).
   const cellSize = 2 * (maxRadius + maxSpeed * subDt);
 
-  // 3 · Sub-step loop. `current` is always sorted by id (§7.3 rule 1).
-  let current: Body[] = sortById(afterPlans);
+  // 3 · Build the per-body finite-thrust schedule at the chosen N. Bodies without
+  //     a plan get no entry (they coast). For the impulsive branch, each schedule
+  //     is `[deltaV, ZERO, …]` — applying schedule[0] at sub-step 0 (below)
+  //     reproduces `applyPlan(body, plan)` exactly, and schedule[k > 0] = ZERO
+  //     leaves ballistic advance untouched. Keyed by BodyId so lookup is O(1)
+  //     and independent of body iteration order.
+  //
+  //     Iterate the `plans` ARRAY (not `planById` values), matching the earlier
+  //     bucketing loop above — sim iteration must not depend on Map insertion
+  //     order (`FORGE-CONFIG.md` §Conventions). Extraneous plans (bodyId with no
+  //     matching body) get a schedule that is simply never looked up.
+  const scheduleById = new Map<BodyId, readonly Vec3[]>();
+  for (let i = 0; i < plans.length; i += 1) {
+    const plan = plans[i]!;
+    scheduleById.set(plan.bodyId, thrustSchedule(plan, N, config.dt, config.maxAccel));
+  }
+
+  // 4 · Sub-step loop. `current` is always sorted by id (§7.3 rule 1).
+  //     `keyframes[0]` is the post-plan-apply, pre-integration state. For a
+  //     plan with `segments` absent, `schedule[0] = plan.deltaV`, so applying
+  //     schedule[0] here yields the same `applyPlan`-at-start snapshot the pre-
+  //     SESSION-01 resolver emitted as `keyframes[0]`.
+  let current: Body[] = sortById(
+    bodies.map((b) => {
+      const schedule = scheduleById.get(b.id);
+      if (schedule === undefined) return b;
+      const dv0 = schedule[0];
+      return dv0 === undefined ? b : applyThrust(b, dv0);
+    }),
+  );
   const keyframes: Body[][] = [current];
   const contacts: StepContact[] = [];
   const exits: BoundaryExit[] = [];
 
   for (let k = 0; k < N; k += 1) {
+    // Apply this sub-step's finite-thrust Δv BEFORE broadphase/sweep so collision
+    // detection sees the same velocity the ballistic advance will use — the burn
+    // fires at the START of the sub-step (see `thrust.ts` header). k=0 is already
+    // pre-applied above (as the post-plan keyframes[0] snapshot), matching the
+    // pre-SESSION-01 `applyPlan`-at-start semantics.
+    //
+    // Fast-path for the impulsive branch: `thrustSchedule` fills sub-steps k > 0
+    // with the shared `ZERO` reference from mathx, so `dv === ZERO` skips the
+    // allocation entirely. Body-order is preserved by `.map`, so `current` stays
+    // sorted by id (§7.3 rule 1).
+    if (k > 0) {
+      current = current.map((body) => {
+        const schedule = scheduleById.get(body.id);
+        if (schedule === undefined) return body;
+        const dv = schedule[k];
+        if (dv === undefined) return body;
+        if (dv.x === 0 && dv.y === 0 && dv.z === 0) return body;
+        return applyThrust(body, dv);
+      });
+    }
+
     const pairs = broadphase(current, cellSize);
     const startById = new Map<BodyId, Body>();
     for (let i = 0; i < current.length; i += 1) startById.set(current[i]!.id, current[i]!);
