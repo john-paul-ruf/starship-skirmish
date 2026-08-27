@@ -65,6 +65,14 @@ interface CliOptions {
   // Match-mode options (ignored in physics mode):
   readonly budget: number | null;
   readonly fleetTiers: readonly BotTier[] | null;
+  /**
+   * Movement-model version (match mode only, D-VERSION-RERECORD /
+   * finite-thrust-movement S06). Omitted / null = the historical model 1
+   * (impulsive-fallback), byte-identical to pre-S06 CLI runs. `2` selects
+   * the finite-thrust generation — used by S06 for balance re-validation
+   * against the impulsive baseline (`diff <(--movement-model 1) <(--movement-model 2)`).
+   */
+  readonly movementModel: number | null;
 }
 
 const parseRange = (flag: string, spec: string): { start: number; end: number } => {
@@ -98,6 +106,7 @@ const parseArgs = (argv: readonly string[]): CliOptions => {
   let quiet = false;
   let budget: number | null = null;
   let fleetTiers: BotTier[] | null = null;
+  let movementModel: number | null = null;
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i]!;
     if (a === '--mode') {
@@ -128,6 +137,18 @@ const parseArgs = (argv: readonly string[]): CliOptions => {
     } else if (a === '--tiers') {
       fleetTiers = parseTierList(argv[i + 1] ?? '');
       i += 1;
+    } else if (a === '--movement-model') {
+      // Match-mode only; passed through to `seedToMatch` → `MatchScenario`.
+      // 1 or omitted = impulsive baseline; 2 = finite-thrust (S06 rerecord).
+      const raw = argv[i + 1] ?? '';
+      const parsed = Number(raw);
+      if (!Number.isInteger(parsed) || parsed < 1) {
+        throw new Error(
+          `--movement-model expects a positive integer (got ${JSON.stringify(raw)})`,
+        );
+      }
+      movementModel = parsed;
+      i += 1;
     } else if (a === '--quiet') {
       quiet = true;
     } else if (a === '--help' || a === '-h') {
@@ -139,6 +160,7 @@ const parseArgs = (argv: readonly string[]): CliOptions => {
           `  --beats N              physics beats per scenario (default 3)\n` +
           `  --budget N             match mode: fixed budget (default: seeded from n)\n` +
           `  --tiers r,v,a          match mode: fixed per-fleet tiers (default: seeded from n)\n` +
+          `  --movement-model N     match mode: physics model version (1 = impulsive, 2 = finite-thrust)\n` +
           `  --record DIR           also write fixture JSON files (append-only; existing files preserved)\n` +
           `  --quiet                suppress the throughput summary on stderr\n`,
       );
@@ -147,7 +169,17 @@ const parseArgs = (argv: readonly string[]): CliOptions => {
       throw new Error(`unknown argument: ${a}`);
     }
   }
-  return { mode, seedStart, seedEnd, recordDir, beats, quiet, budget, fleetTiers };
+  return {
+    mode,
+    seedStart,
+    seedEnd,
+    recordDir,
+    beats,
+    quiet,
+    budget,
+    fleetTiers,
+    movementModel,
+  };
 };
 
 // ---------------------------------------------------------------------------
@@ -266,6 +298,9 @@ const runMatchMode = async (opts: CliOptions): Promise<void> => {
     const scenario = seedToMatch(n, catalog, {
       ...(opts.budget !== null ? { budget: opts.budget } : {}),
       ...(opts.fleetTiers !== null ? { fleetTiers: opts.fleetTiers } : {}),
+      ...(opts.movementModel !== null
+        ? { movementModel: opts.movementModel }
+        : {}),
     });
     const result = await runMatchScenario(scenario, catalog);
 

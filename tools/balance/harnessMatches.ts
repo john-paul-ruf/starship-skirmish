@@ -61,10 +61,18 @@ export const deriveMatchSeed = (n: number): Seed =>
  *   • `fleetTiers`  — if omitted, drawn as: fleet count in
  *     `[minFleets, maxFleets]` (uniform), each tier drawn independently
  *     from `BOT_TIERS` (uniform).
+ *   • `movementModel` — passthrough onto `MatchScenario.movementModel`
+ *     (D-VERSION-RERECORD, finite-thrust-movement S06). Omitted = model 1
+ *     (impulsive fallback, byte-identical to pre-S06 outcomes). `2` =
+ *     finite-thrust (`runMatchScenario` injects `PhysicsConfig.maxAccel`
+ *     from `tuning.physics.maxAccel`). Same `(n, opts)` under the same
+ *     model still yields byte-identical outcomes — the model is one more
+ *     input to the pure factory.
  */
 export interface SeedToMatchOpts {
   readonly budget?: number;
   readonly fleetTiers?: readonly BotTier[];
+  readonly movementModel?: number;
 }
 
 /**
@@ -105,6 +113,13 @@ export const seedToMatch = (
     seed,
     budget,
     fleetTiers,
+    // Spread `movementModel` only when supplied so the omitted case (model 1
+    // by default in `runMatchScenario`) produces a scenario shape byte-
+    // equivalent to pre-S06 callers — the fixture recorder relies on this
+    // to keep append-only guarantees on model-1 recipes.
+    ...(opts.movementModel !== undefined
+      ? { movementModel: opts.movementModel }
+      : {}),
   };
 };
 
