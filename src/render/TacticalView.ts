@@ -14,7 +14,7 @@
 import { Matrix4 } from 'three';
 import type { Body, BodyId, ChassisClass, MatchState } from '../sim/index.js';
 import { createBoundaryShell } from './boundary.js';
-import { createTacticalCamera, focusSourceFor } from './camera.js';
+import { createTacticalCamera, focusBodyFor, focusSourceFor, projectToViewport } from './camera.js';
 import { createHazardInstances, bodyKindToGlyph, type HazardInput, type HazardKind } from './hazards.js';
 import { createLabelOverlay, type LabelDatum } from './labels.js';
 import { createPickBuffer, type PickInput } from './pick.js';
@@ -145,6 +145,13 @@ export const createTacticalView = (
     return result;
   };
 
+  const worldToScreen = (
+    pos: readonly [number, number, number],
+  ): { readonly x: number; readonly y: number } | null =>
+    projectToViewport(pos, camera.camera, viewWidth, viewHeight);
+
+  const focusBody = focusBodyFor((id) => ships.positionOf(id), camera.focus);
+
   const resize = (width: number, height: number, dpr?: number): void => {
     viewWidth = Math.max(1, width);
     viewHeight = Math.max(1, height);
@@ -173,5 +180,5 @@ export const createTacticalView = (
     context.dispose();
   };
 
-  return { setState, camera, scene, pick, resize, dispose };
+  return { setState, camera, scene, pick, worldToScreen, focusBody, resize, dispose };
 };

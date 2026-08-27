@@ -144,17 +144,65 @@ export const createTacticalCamera = (
   };
 };
 
+/** The `Vec3`-like shape `focusSourceFor` accepts — three's `Vector3` matches
+ *  structurally, so `ui` can wire the `F` key from plain sim positions without a
+ *  value import of `three`. */
+export interface Vec3Like {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+}
+
 /**
  * Convenience: the world position of a body id, given a `(id) → position` lookup —
  * the shape `TacticalView` hands to `setFocusSource` so `F` tracks the selection.
- * Returns `null` when the id is unknown (selection stale after a kill).
+ * Returns `null` when the id is unknown (selection stale after a kill). The
+ * `positionOf` return is loosened from `Vector3` to any `Vec3Like` so screens can
+ * pass a plain-object lookup without importing three (arch §5: `ui` stays three-free).
  */
 export const focusSourceFor = (
   selectedId: () => BodyId | null,
-  positionOf: (id: BodyId) => Vector3 | null,
+  positionOf: (id: BodyId) => Vec3Like | null,
 ): (() => readonly [number, number, number] | null) => () => {
   const id = selectedId();
   if (id === null) return null;
   const p = positionOf(id);
   return p === null ? null : [p.x, p.y, p.z];
+};
+
+/**
+ * Bind a `positionOf` + `focus` pair into a `(id) → void` "slide-focus-to-body"
+ * closure — the shape `TacticalView.focusBody` wraps. Returns a function that
+ * no-ops when `positionOf(id)` is `null` (unknown id, selection stale after a kill).
+ */
+export const focusBodyFor = (
+  positionOf: (id: BodyId) => Vec3Like | null,
+  focus: (at: readonly [number, number, number]) => void,
+): ((id: BodyId) => void) => (id) => {
+  const p = positionOf(id);
+  if (p === null) return;
+  focus([p.x, p.y, p.z]);
+};
+
+/**
+ * Project a world position through `camera` to CSS-pixel coordinates in a `width`×
+ * `height` canvas. Returns `null` when the point sits behind the camera (NDC `z > 1`).
+ *
+ * Pure of side effects but requires the camera's world / projection matrices to be
+ * current (`camera.updateMatrixWorld()` + `camera.updateProjectionMatrix()`); the live
+ * view's RAF keeps them fresh, so `TacticalView.worldToScreen` needs no bookkeeping.
+ */
+export const projectToViewport = (
+  pos: readonly [number, number, number],
+  camera: PerspectiveCamera,
+  width: number,
+  height: number,
+): { readonly x: number; readonly y: number } | null => {
+  const ndc = new Vector3(pos[0], pos[1], pos[2]);
+  ndc.project(camera);
+  if (ndc.z > 1) return null;
+  return {
+    x: ((ndc.x + 1) * 0.5) * width,
+    y: ((1 - ndc.y) * 0.5) * height,
+  };
 };

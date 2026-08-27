@@ -84,6 +84,19 @@ export interface TacticalView {
   /** Extension seam for SESSION-03 playback — the live scene handles. */
   readonly scene: SceneHandles;
   pick(x: number, y: number): PickResult | null;
+  /**
+   * Project a world position to CSS-pixel coordinates in the current canvas rect.
+   * Returns `null` when the point is behind the camera (S06 friendly-fire ring hides
+   * on `null` instead of drawing an off-screen artifact).
+   */
+  worldToScreen(
+    pos: readonly [number, number, number],
+  ): { readonly x: number; readonly y: number } | null;
+  /**
+   * Slide the orbit camera focus onto the body with `id` (roster click-to-focus).
+   * No-op when the id is unknown to the render (e.g. selection stale after a kill).
+   */
+  focusBody(id: BodyId): void;
   resize(width: number, height: number, dpr?: number): void;
   dispose(): void;
 }
