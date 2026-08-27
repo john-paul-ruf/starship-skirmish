@@ -30,7 +30,8 @@ import type {
 } from '../../../src/sim/types.js';
 import type { PhysicsConfig } from '../../../src/sim/physics/index.js';
 import { resolveMovement } from '../../../src/sim/physics/index.js';
-import type { MissileGuidance } from '../../../src/sim/rules/index.js';
+import { guideMissiles, type MissileGuidance } from '../../../src/sim/rules/index.js';
+import type { Vec3 } from '../../../src/sim/mathx/index.js';
 
 // ---- Fixtures --------------------------------------------------------------
 
@@ -526,6 +527,119 @@ describe('runMovementBeat — finite-thrust ship plans (SESSION-02)', () => {
     const out = runMovementBeat(state, [plan]);
     const a1 = out.state.bodies.get(1)!;
     expect(a1.position.y).toBeGreaterThan(0);
+  });
+});
+
+describe('missile guidance stays impulsive (SESSION-02 / D-MISSILE-IMPULSIVE)', () => {
+  it('guideMissiles emits plans with no `segments` field', () => {
+    // The load-bearing regression guard: waypoints are a player/bot movement
+    // concept, NOT missile guidance. If a future edit added a `segments` field
+    // to the plan `guideMissiles` returns, this test would fail — and every
+    // hash-locked determinism fixture would follow suit next turn.
+    const guidance: MissileGuidance = {
+      bodyId: 100,
+      targetId: 200,
+      trackingBeatsLeft: 2,
+      rackDamage: 40,
+      aoeRadius: 60,
+      trackingTurnRate: 30,
+    };
+    const missile: MissileBody = {
+      kind: 'missile',
+      id: 100,
+      position: { x: 0, y: 0, z: 0 },
+      velocity: { x: 100, y: 0, z: 0 },
+      mass: 3,
+      radius: 5,
+    };
+    const bodyById = new Map<BodyId, MissileBody>([[100, missile]]);
+    const targetPosById = new Map<BodyId, Vec3>([[200, { x: 100, y: 100, z: 0 }]]);
+
+    const { plans, nextGuidances } = guideMissiles(
+      [guidance],
+      bodyById,
+      targetPosById,
+      false,
+    );
+
+    expect(plans.length).toBe(1);
+    const p = plans[0]!;
+    // Absent-segments is the D-ADDITIVE-PLAN sentinel that keeps missiles
+    // byte-identical to the pre-SESSION-01 impulsive path.
+    expect(p.segments).toBeUndefined();
+    // The plan still carries a deltaV (the impulsive shape).
+    expect(p.deltaV).toBeDefined();
+    // Guidance decremented — coast/steer bookkeeping is unaffected.
+    expect(nextGuidances.length).toBe(1);
+    expect(nextGuidances[0]!.trackingBeatsLeft).toBe(1);
+  });
+});
+
+describe('runMovementBeat — mixed segmented ship + impulsive missile (SESSION-02)', () => {
+  it('ship curves along its segments; missile guidance resolves impulsively — each independent', () => {
+    // A finite-thrust ship burn (+y) alongside a live missile whose guidance
+    // steers toward the ship. The ship must move in +y (curved arc); the
+    // missile must move under its impulsive-steer plan (deltaV toward target,
+    // segments absent). Neither transforms the other's plan, and the beat
+    // reports both without shape changes.
+    const a = arena();
+    let state = buildInitialState(cfgFT([fleet(0, ['A']), fleet(1, ['B'])], a));
+    const shipId: BodyId = 1;
+    state = withBody(state, shipId, {
+      position: { x: 0, y: 0, z: 0 },
+      velocity: { x: 0, y: 0, z: 0 },
+    });
+    // Second-fleet ship parked far off-axis — not a party.
+    state = withBody(state, 2, { position: { x: 4000, y: 0, z: 0 } });
+
+    // Inject a missile targeting the ship, coming in from +x with modest
+    // speed and healthy distance — far enough that it does NOT reach the ship
+    // this beat (no collision, no detonation to contaminate the test).
+    const missileId: BodyId = 999;
+    const missileBody: MissileBody = {
+      kind: 'missile',
+      id: missileId,
+      position: { x: 800, y: 0, z: 0 },
+      velocity: { x: -50, y: 0, z: 0 },
+      mass: 3,
+      radius: 5,
+    };
+    const guidance: MissileGuidance = {
+      bodyId: missileId,
+      targetId: shipId,
+      trackingBeatsLeft: 3,
+      rackDamage: 40,
+      aoeRadius: 60,
+      trackingTurnRate: 30,
+    };
+    const bodies = new Map<BodyId, Body>(state.bodies);
+    bodies.set(missileId, missileBody);
+    const guidances = new Map<BodyId, MissileGuidance>(state.guidances);
+    guidances.set(missileId, guidance);
+    state = { ...state, bodies, guidances };
+
+    const shipPlan: MovementPlan = {
+      bodyId: shipId,
+      deltaV: { x: 0, y: 0, z: 0 },
+      segments: [{ deltaV: { x: 0, y: 10, z: 0 } }],
+    };
+    const out = runMovementBeat(state, [shipPlan]);
+
+    // Ship curved along its +y burn.
+    const shipOut = out.state.bodies.get(shipId)!;
+    expect(shipOut.position.y).toBeGreaterThan(0);
+
+    // Missile advanced toward -x (its guidance-emitted impulse rotates
+    // velocity toward the ship at (0,0,0); at dt=1 the missile's post-beat
+    // x should be strictly less than its start (800), and it's still alive.
+    const missileOut = out.state.bodies.get(missileId);
+    expect(missileOut).toBeDefined();
+    expect(missileOut!.position.x).toBeLessThan(800);
+
+    // Guidance record survives, tracking decremented (3 → 2).
+    const nextG = out.state.guidances.get(missileId);
+    expect(nextG).toBeDefined();
+    expect(nextG!.trackingBeatsLeft).toBe(2);
   });
 });
 

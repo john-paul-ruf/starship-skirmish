@@ -278,6 +278,14 @@ export const guideMissiles = (
     const rotated = rotateToward(body.velocity, desired, maxRotationRad);
     // Movement plan is a deltaV — the difference between the desired rotated
     // velocity and the current velocity. Physics applies this at start-of-beat.
+    //
+    // IMPULSIVE ONLY (feature `finite-thrust-movement`, SESSION-02;
+    // D-MISSILE-IMPULSIVE). Missiles must NOT emit `MovementPlan.segments`:
+    // waypoints are a player/bot *movement* concept, not missile guidance.
+    // `segments` absent ⇒ `thrustSchedule` returns `[deltaV, ZERO, …]` and the
+    // missile resolves byte-identically to the pre-SESSION-01 impulsive path
+    // (D-ADDITIVE-PLAN). The `segments === undefined` regression guard in the
+    // loop unit suite is the tripwire on this.
     plans.push({
       bodyId: g.bodyId,
       deltaV: of(
