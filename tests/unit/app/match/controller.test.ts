@@ -12,7 +12,15 @@
 import { describe, expect, it } from 'vitest';
 
 import { loadCatalog } from '../../../../src/catalog/index.js';
-import { distance, hitChance, length, seedOf } from '../../../../src/sim/index.js';
+import {
+  distance,
+  hitChance,
+  length,
+  previewPath,
+  seedOf,
+  type MovementPlan,
+} from '../../../../src/sim/index.js';
+import { of } from '../../../../src/sim/mathx/vec3.js';
 import type { Route } from '../../../../src/ui/appContext.js';
 import { generateBotFleet } from '../../../../src/ai/index.js';
 import { assembleMatchConfig } from '../../../../src/app/match/config.js';
@@ -119,5 +127,82 @@ describe('createMatchController — hitChanceFor matches sim/rules.hitChance', (
     );
 
     expect(controller.hitChanceFor(shooterId!, targetId!, 0)).toEqual(expected);
+  });
+});
+
+// ---- previewArc — the segmented-arc seam (`finite-thrust-movement` S04) ----
+//
+// The controller is the ONE integrator seam between `ui` and `sim/physics`
+// (D-PREVIEW-SEAM); a segmented arc has to travel through it byte-identically
+// or the "preview must not lie" invariant (§9) is broken end to end. Two
+// checks:
+//   1. Impulsive form (`Vec3`) — regression guard: the pre-SESSION-04 shape
+//      still works, and the returned positions match a direct `previewPath`
+//      call on the same inputs.
+//   2. Segmented form (`{ segments }`) — the new path: the controller builds
+//      the finite-thrust `MovementPlan` (`deltaV = ZERO`, `segments = arc.segments`)
+//      and forwards it to `previewPath`, surfacing both `positions` (curved when
+//      `state.physics.maxAccel` is set) and `markPositions` (the per-waypoint
+//      boundaries the S05 UI ruler reads).
+describe('createMatchController — previewArc accepts a segmented arc (D-SHARED-SCHEDULE)', () => {
+  const setupSingleFleet = () => {
+    const player = generateBotFleet(catalog, BUDGET, 'ace', 42);
+    const config = assembleMatchConfig(
+      catalog,
+      catalog.tuning,
+      BUDGET,
+      seedOf(0x1111, 0x2222),
+      player,
+      [],
+    );
+    const { services } = captureRoutes();
+    const controller = createMatchController(services, config, []);
+    const s = controller.state.value;
+    // Pick a stable ship body id and take the corresponding Body snapshot.
+    const shipId = Array.from(s.ships.keys()).sort((a, b) => a - b)[0]!;
+    const body = s.bodies.get(shipId)!;
+    return { controller, body, shipId, physics: s.physics };
+  };
+
+  it('impulsive Vec3 arc returns positions matching direct previewPath (regression)', () => {
+    const { controller, body, shipId, physics } = setupSingleFleet();
+    const deltaV = of(3, 0, 0);
+    const seam = controller.previewArc(shipId, deltaV);
+    const direct = previewPath(body, { bodyId: shipId, deltaV }, physics);
+    expect(seam.positions).toEqual(direct.positions);
+    expect(seam.endsOutsideArena).toBe(direct.endsOutsideArena);
+    // Impulsive plans have no waypoint marks — `markPositions` is either
+    // absent from the seam return (optional key) or an empty array; both are
+    // legal shapes, so accept either without asserting a specific value.
+    expect(seam.markPositions ?? []).toEqual([]);
+  });
+
+  it('two-segment arc returns curved positions matching direct previewPath', () => {
+    const { controller, body, shipId, physics } = setupSingleFleet();
+    const segments = [{ deltaV: of(0, 3, 0) }, { deltaV: of(0, 0, 2) }] as const;
+    const seam = controller.previewArc(shipId, { segments });
+    // The controller must build the SAME MovementPlan the resolver sees for a
+    // segmented arc (`deltaV = ZERO`, `segments` forwarded verbatim); the
+    // "preview must not lie" invariant then guarantees seam.positions === direct.
+    const equivalentPlan: MovementPlan = {
+      bodyId: shipId,
+      deltaV: of(0, 0, 0),
+      segments,
+    };
+    const direct = previewPath(body, equivalentPlan, physics);
+    expect(seam.positions).toEqual(direct.positions);
+    expect(seam.endsOutsideArena).toBe(direct.endsOutsideArena);
+    expect(seam.markPositions).toEqual(direct.markPositions);
+    // markPositions has segments.length + 1 boundaries (start + end of every
+    // segment) — the S05 UI ruler reads this length to place per-waypoint
+    // marks. Empty result would silently break the UI, so lock the shape.
+    expect(seam.markPositions).toHaveLength(segments.length + 1);
+  });
+
+  it('an unknown bodyId returns an empty preview (no crash on stale UI selection)', () => {
+    const { controller } = setupSingleFleet();
+    const seam = controller.previewArc(999999, { segments: [{ deltaV: of(1, 0, 0) }] });
+    expect(seam.positions).toEqual([]);
+    expect(seam.endsOutsideArena).toBe(false);
   });
 });

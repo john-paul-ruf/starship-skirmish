@@ -36,6 +36,7 @@ import {
   runMovementBeat,
   withOutcome,
   withTurn,
+  ZERO,
   type AttackBeatRecord,
   type AttackPlan,
   type BlindMatchView,
@@ -52,6 +53,10 @@ import {
   type ShipCombat,
   type Vec3,
 } from '../../sim/index.js';
+// `WaypointBurn` is not re-exported from `sim/index.js` (S01 follow-up #2 —
+// intentional, tracked for Forge); reach it through the `sim/physics` barrel,
+// which `src/app/**` is free to import from. Type-only.
+import type { WaypointBurn } from '../../sim/physics/index.js';
 import { makeBotCommanders, makePlayerCommander } from './commanders.js';
 import { mintSeed, PLAYER_FLEET_ID } from './config.js';
 
@@ -266,13 +271,36 @@ export const createMatchController = (
 
   const previewArc = (
     bodyId: BodyId,
-    deltaV: Vec3,
-  ): { readonly positions: readonly Vec3[]; readonly endsOutsideArena: boolean } => {
+    arc: Vec3 | { readonly segments: readonly WaypointBurn[] },
+  ): {
+    readonly positions: readonly Vec3[];
+    readonly endsOutsideArena: boolean;
+    readonly markPositions?: readonly Vec3[];
+  } => {
     const s = state.value;
     const body = s.bodies.get(bodyId);
     if (body === undefined) return { positions: [], endsOutsideArena: false };
-    const preview = previewPath(body, { bodyId, deltaV }, s.physics);
-    return { positions: preview.positions, endsOutsideArena: preview.endsOutsideArena };
+    // Discriminate on the presence of `segments` — a `Vec3` never carries it,
+    // so `'segments' in arc` is a total, cheap check. Impulsive → today's
+    // `{ bodyId, deltaV }` shape (byte-identical, D-ADDITIVE-PLAN). Finite
+    // thrust → segments + `deltaV = ZERO`; when `segments` are present the
+    // resolver IGNORES `deltaV` (see `sim/types.ts::MovementPlan`), but a
+    // zero fallback keeps the record shape stable for consumers that read it.
+    const plan: MovementPlan =
+      'segments' in arc
+        ? { bodyId, deltaV: ZERO, segments: arc.segments }
+        : { bodyId, deltaV: arc };
+    const preview = previewPath(body, plan, s.physics);
+    // Surface `markPositions` unconditionally (empty array for impulsive plans,
+    // segment-boundary marks for finite-thrust) — the seam signature makes it
+    // optional so callers that only need `positions`/`endsOutsideArena` are
+    // unaffected. The S05 waypoint UI reads it directly to place per-waypoint
+    // marks on the TRUE curved arc (D-SHARED-SCHEDULE).
+    return {
+      positions: preview.positions,
+      endsOutsideArena: preview.endsOutsideArena,
+      markPositions: preview.markPositions,
+    };
   };
 
   const concede = (): void => {

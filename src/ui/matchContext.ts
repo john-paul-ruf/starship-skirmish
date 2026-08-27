@@ -34,6 +34,11 @@ import type {
   SimFleet,
   Vec3,
 } from '../sim/index.js';
+// `WaypointBurn` is not re-exported from `sim/index.js` (an S01 follow-up); it
+// lives on the shared sim types file. `ui → sim/types` is legal (only
+// `sim/physics` + `sim/rules` paths are lint-banned for `ui`), and this stays a
+// TYPE-only import so no sim VALUE leaks into the ui bundle.
+import type { WaypointBurn } from '../sim/types.js';
 
 // ---- Phase state machine --------------------------------------------------
 
@@ -126,11 +131,31 @@ export interface MatchController {
   hitChanceFor(shooterId: BodyId, targetId: BodyId, weaponIndex: number): HitChanceBreakdown;
   /** Movement ghost seam — the ONE integrator (`sim/physics.previewPath`) behind the
    *  controller, so `ui` never value-imports `sim/physics`. The Movement screen (S05)
-   *  calls this on every arc edit; the returned `positions` are what render draws. */
+   *  calls this on every arc edit; the returned `positions` are what render draws.
+   *
+   *  `arc` is a discriminated union that decides the flight model without
+   *  widening the seam surface (D-ADDITIVE-PLAN — `finite-thrust-movement`
+   *  SESSION-04):
+   *    • plain `Vec3` → impulsive plan (the pre-finite-thrust shape, unchanged).
+   *      `positions` samples the flat post-impulse trajectory; `markPositions`
+   *      is absent / empty (impulsive arcs have no per-waypoint marks).
+   *    • `{ segments }` → finite-thrust plan. Physics fires each burn at the
+   *      configured `maxAccel`, so `positions` CURVES while thrusting;
+   *      `markPositions` (from `sim/physics.previewPath`) carries the world
+   *      positions at each waypoint boundary so the UI ruler / waypoint
+   *      selector lands on the TRUE curved arc, not on a straight polyline
+   *      the UI could compute on its own — the point of D-SHARED-SCHEDULE.
+   *  Segments carry only per-waypoint `deltaV: Vec3`; the bearing/pitch →
+   *  Vec3 conversion lives on the caller side (see `sim/mathx.dirFromBearingPitch`)
+   *  so the physics module stays angle-free (D-PHYSICS-VEC3-ONLY). */
   previewArc(
     bodyId: BodyId,
-    deltaV: Vec3,
-  ): { readonly positions: readonly Vec3[]; readonly endsOutsideArena: boolean };
+    arc: Vec3 | { readonly segments: readonly WaypointBurn[] },
+  ): {
+    readonly positions: readonly Vec3[];
+    readonly endsOutsideArena: boolean;
+    readonly markPositions?: readonly Vec3[];
+  };
   /** Player-facing exit (Ruling D, Flow 6) — immediate loss → 'complete'. */
   concede(): void;
   /** Post-match: re-run with the SAME fleets; newSeed=false replays identically (§4.11). */
