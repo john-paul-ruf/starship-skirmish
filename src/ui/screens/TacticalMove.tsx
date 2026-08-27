@@ -1,6 +1,9 @@
 // M14 UI — Tactical Movement screen (S05 body; SESSION-03 rewires to the
 // shared all-fleets roster + ship inspector — camera focus, marks-interval,
-// and the flown trail land in later checkpoints).
+// and the flown trail land in later checkpoints; SESSION-05
+// finite-thrust-movement CP1 adopts the segmented `PlanDraft` +
+// `toMovementPlans({segments})` while keeping the current impulsive-Vec3
+// previewArc path — CP3 flips previewArc over to the segmented seam).
 //
 // The blind arc-plotting screen — the tension engine (design §4.1–§4.3). For
 // each living player ship the player plots a thrust arc (numeric bearing / pitch
@@ -43,12 +46,15 @@ import { Viewport, type GhostArc, type ViewportHandle } from './tacticalMove/Vie
 import {
   buildGhostArc,
   fleetGateStatus,
+  impulsiveTotalDeltaV,
   initialDraft,
+  perSegmentCap,
   planBadgeFor,
+  plannedDeltaVMag,
   playerRosterRows,
-  plotArc,
+  plotWaypoint,
   setCoast,
-  toDeltaV,
+  sliceSecondsFor,
   toMovementPlans,
   type MarksIntervalValue,
   type PlanDraft,
@@ -72,6 +78,15 @@ export function TacticalMove() {
   const isPlan = phase === 'movement-plan';
   const playerRows: RosterShip[] = view === null ? [] : playerRosterRows(view, match.playerFleetId);
 
+  // SESSION-05: segmentation math for the current interval + beat length.
+  // `maxAccel` may be undefined until the SESSION-04 un-owned `resolveFleet`
+  // gap closes — `perSegmentCap` collapses to the ship budget in that case
+  // (impulsive-fallback semantics, matches `sim/physics/thrust.ts` guardrail).
+  const beatSeconds = state.physics.dt;
+  const maxAccel = state.physics.maxAccel;
+  const sliceSeconds = sliceSecondsFor(markInterval.value, beatSeconds);
+  const burnOpts = { sliceSeconds, ...(maxAccel !== undefined ? { maxAccel } : {}) };
+
   // (Re)initialize the drafts + selection whenever a new plan turn begins.
   // Engine-dead ships start on COAST (initialDraft); every other living ship
   // starts UNPLANNED and must be decided before the gate opens. Selection
@@ -85,7 +100,7 @@ export function TacticalMove() {
     const next = new Map<BodyId, PlanDraft>();
     let first: BodyId | null = null;
     for (const row of playerRows) {
-      next.set(row.bodyId, initialDraft(row));
+      next.set(row.bodyId, initialDraft(row, { interval: markInterval.value, beatSeconds }));
       if (first === null) first = row.bodyId;
     }
     drafts.value = next;
@@ -103,10 +118,14 @@ export function TacticalMove() {
 
   // Boundary-exit detection (§4.1) — the ghost cannot lie, so exit truth comes
   // straight from the sim integrator via `previewArc` for EVERY plotted arc.
+  // CP1: still using the impulsive-Vec3 previewArc form; CP3 swaps to the
+  // segmented `{segments}` form so a per-waypoint arc that curves out of the
+  // arena is caught by the true finite-thrust trajectory.
   const exitIds = new Set<BodyId>();
   if (isPlan) {
     for (const d of draftList) {
-      if (match.previewArc(d.bodyId, toDeltaV(d, budgetOf(d.bodyId))).endsOutsideArena) {
+      const impulseVec = impulsiveTotalDeltaV(d, budgetOf(d.bodyId), burnOpts);
+      if (match.previewArc(d.bodyId, impulseVec).endsOutsideArena) {
         exitIds.add(d.bodyId);
       }
     }
@@ -128,16 +147,27 @@ export function TacticalMove() {
 
   let ghostArc: GhostArc | null = null;
   let ghostKey = 'none';
+  let selMagnitudeMax = 0;
+  let selTotalSpent = 0;
   if (isPlan && selPlayerRow !== null && selDraft !== null && selId !== null) {
-    const preview = match.previewArc(selId, toDeltaV(selDraft, selPlayerRow.budget));
-    ghostArc = buildGhostArc(preview, selDraft, selPlayerRow.budget, {
-      beatSeconds: state.physics.dt,
+    const impulseVec = impulsiveTotalDeltaV(selDraft, selPlayerRow.budget, burnOpts);
+    const preview = match.previewArc(selId, impulseVec);
+    selTotalSpent = plannedDeltaVMag(selDraft, selPlayerRow.budget, burnOpts);
+    selMagnitudeMax = perSegmentCap(selPlayerRow.budget, sliceSeconds, maxAccel);
+    ghostArc = buildGhostArc(preview, selTotalSpent, {
+      beatSeconds,
       hullRadius: selBody === null ? selPlayerRow.budget : selBody.radius,
       markIntervalSec: markInterval.value,
     });
-    ghostKey = `${String(selId)}:${selDraft.status}:${Math.round(selDraft.bearing)}:${Math.round(
-      selDraft.pitch,
-    )}:${Math.round(selDraft.magnitude)}:${String(markInterval.value)}:${String(view === null ? 0 : view.turn)}`;
+    const active = selDraft.waypoints[selDraft.activeIndex] ?? selDraft.waypoints[0];
+    const b = active?.bearing ?? 0;
+    const p = active?.pitch ?? 0;
+    const m = active?.magnitude ?? 0;
+    ghostKey = `${String(selId)}:${selDraft.status}:${String(selDraft.activeIndex)}:${Math.round(
+      b,
+    )}:${Math.round(p)}:${Math.round(m)}:${String(markInterval.value)}:${String(
+      view === null ? 0 : view.turn,
+    )}`;
   }
 
   const doomedNames = playerRows.filter((r) => exitIds.has(r.bodyId)).map((r) => r.name);
@@ -169,13 +199,14 @@ export function TacticalMove() {
     drafts.value = next;
   };
 
-  // COMMIT (§4.3): assemble the blind plans and resolve the player's movement
-  // promise. The controller collects plans against a fresh blind view (the
-  // player view carries no opponent plan), resolves the beat, and enters
-  // 'movement-resolve' with the beat to animate. Every arc is budget-clamped in
-  // `toMovementPlans` — over-spend cannot reach the plan (§4.4).
+  // COMMIT (§4.3): assemble the segmented plans and resolve the player's
+  // movement promise. The controller collects plans against a fresh blind view
+  // (the player view carries no opponent plan), resolves the beat, and enters
+  // 'movement-resolve' with the beat to animate. Every waypoint's Δv is
+  // per-segment-capped in `toMovementPlans` — over-spend cannot reach the plan
+  // (§4.4). SESSION-05: plans now carry `segments` (D-ADDITIVE-PLAN).
   const onCommit = (): void => {
-    match.commitMovement(toMovementPlans(draftList, budgetOf));
+    match.commitMovement(toMovementPlans(draftList, budgetOf, burnOpts));
   };
 
   return (
@@ -229,8 +260,8 @@ export function TacticalMove() {
             ghostKey={ghostKey}
             movementBeat={phase === 'movement-resolve' ? match.movementBeat.value : null}
             reducedMotion={services.reducedMotion.value}
-            beatSeconds={state.physics.dt}
-            beatStartSimTime={Math.max(0, match.turn.value - 1) * state.physics.dt}
+            beatSeconds={beatSeconds}
+            beatStartSimTime={Math.max(0, match.turn.value - 1) * beatSeconds}
             selectedId={selId}
             positionOf={positionOf}
             onPick={selectShip}
@@ -263,9 +294,11 @@ export function TacticalMove() {
                 <ArcPlotter
                   ship={selPlayerRow}
                   draft={selDraft}
+                  totalSpent={selTotalSpent}
+                  magnitudeMax={selMagnitudeMax}
                   velocity={selVelocity}
                   exiting={selId !== null && exitIds.has(selId)}
-                  onPlot={(patch) => editSelected((d) => plotArc(d, patch))}
+                  onPlot={(patch) => editSelected((d) => plotWaypoint(d, patch))}
                   onCoast={() => editSelected(setCoast)}
                 />
               ) : (
@@ -384,6 +417,16 @@ const TM_STYLES = `
                            border-radius: var(--r-sm); }
   .tm-marks-interval-btn[aria-pressed="true"] { background: rgba(34,227,255,.15);
                                                 color: var(--cyan); border-color: var(--cyan); }
+
+  .tm-waypoint-selector { display: flex; align-items: center; gap: var(--s2);
+                          flex-wrap: wrap; }
+  .tm-waypoint-buttons { display: inline-flex; gap: 2px; flex-wrap: wrap; }
+  .tm-waypoint-btn { padding: 4px 8px; border: 1px solid var(--line);
+                     background: var(--panel-in); color: var(--ink-dim);
+                     font: inherit; letter-spacing: .1em; cursor: pointer;
+                     border-radius: var(--r-sm); min-width: 56px; }
+  .tm-waypoint-btn[aria-pressed="true"] { background: rgba(34,227,255,.15);
+                                          color: var(--cyan); border-color: var(--cyan); }
 `;
 
 function TacticalMoveStyles() {

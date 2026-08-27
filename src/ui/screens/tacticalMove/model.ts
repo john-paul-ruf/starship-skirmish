@@ -1,4 +1,5 @@
-// M14 UI — Tactical Movement pure plotting logic (S05, extended by S03).
+// M14 UI — Tactical Movement pure plotting logic (S05, extended by S03 and by
+// `finite-thrust-movement` SESSION-05).
 //
 // The blind arc-plotting math, reduced to plain data the sibling `.tsx` panels
 // render and the controller seams consume. Deliberately `.ts` (no JSX): the
@@ -9,11 +10,26 @@
 // `sim/physics` (the preview integrator crosses through `controller.previewArc`,
 // D-PREVIEW-SEAM, never a direct import).
 //
+// SESSION-05 (finite-thrust-movement): a `PlanDraft` is now a sequence of N
+// `WaypointDraft` burns, N driven by the marks-interval (`segCountFor`: 2s → 4
+// segments; Off → 1). Editing a waypoint marks the draft PLANNED; the sum
+// across waypoints is the total Δv committed. `toMovementPlans` emits each
+// ship's plan as `{ segments }` (D-ADDITIVE-PLAN — segments override deltaV;
+// deltaV is set to ZERO for shape-consistency per S01 followUp #3). Per-segment
+// magnitudes are clamped at `min(shipBudget, maxAccel · sliceSeconds)` so a
+// segment can never deliver more impulse than the engine physically can in its
+// slice (matches `sim/physics/thrust.ts` `thrustSchedule`).
+//
 // What lives here:
-//   • the per-ship `PlanDraft` + its status transitions (plot / coast),
-//   • `toDeltaV` — bearing/pitch/magnitude → a Δv vector, clamped to budget at
-//     plan construction (the redundant half of the §4.4 "no free stop" clamp;
-//     the slider `max` is the other half),
+//   • the per-ship `PlanDraft` (waypoints + activeIndex + status) + transitions,
+//   • the segmentation math (`segCountFor`, `sliceSecondsFor`, `perSegmentCap`),
+//   • `waypointBurnsFor` — draft → per-waypoint `WaypointBurn[]`, the shape
+//     `sim/physics.previewPath` and the resolver consume,
+//   • `plannedDeltaVMag` — sum of segment magnitudes for the meter readout,
+//   • `previewInputFor` — draft → `{ segments }` payload for `controller.previewArc`,
+//   • `impulsiveTotalDeltaV` — sum of segment deltas as a Vec3 (the CP1 bridge
+//     that keeps the existing single-Vec3 previewArc calls compiling; CP3 swaps
+//     over to the segmented `previewInputFor`),
 //   • `fleetGateStatus` — the §4.3 commit gate truth (N/M planned-or-coast),
 //   • `toMovementPlans` — drafts → the `MovementPlan[]` the controller commits,
 //   • `playerRosterRows` — the player fleet's LIVING ships as plottable rows;
@@ -31,30 +47,54 @@ import type {
   MovementPlan,
   Vec3,
 } from '../../../sim/index.js';
-import { dirFromBearingPitch, length, scale } from '../../../sim/mathx/index.js';
+// `WaypointBurn` is not re-exported from `sim/index.js` (an S01 follow-up); it
+// lives on the shared sim types file. `ui → sim/types` is legal (only
+// `sim/physics` + `sim/rules` paths are lint-banned for `ui`), and this stays a
+// TYPE-only import so no sim VALUE leaks into the ui bundle.
+import type { WaypointBurn } from '../../../sim/types.js';
+import { add, dirFromBearingPitch, scale } from '../../../sim/mathx/index.js';
 
 // ---- Draft state ----------------------------------------------------------
 
 /**
  * A ship's plan state in the fleet checklist (§4.3):
  *   • `unplanned` — no decision yet; blocks the fleet commit gate.
- *   • `planned`   — a thrust arc is plotted (magnitude may be 0 — a deliberate
- *                   zero-thrust plan still counts as a decision).
+ *   • `planned`   — a thrust plan is plotted (any waypoint edit marks the draft
+ *                   planned; magnitudes may all be 0 — a deliberate zero-thrust
+ *                   plan still counts as a decision).
  *   • `coast`     — no Δv spent; the ship keeps its current momentum (Newtonian).
+ *                   `waypointBurnsFor` emits an all-zero segment list regardless
+ *                   of the stored waypoint magnitudes.
  */
 export type PlanStatus = 'unplanned' | 'planned' | 'coast';
 
-/** One ship's editable movement plan. `bearing`/`pitch`/`magnitude` are the
- *  numeric-primary inputs (Gate 1 §2); `magnitude` is Δv, clamped to the ship's
- *  budget at both the slider and at plan construction. */
-export interface PlanDraft {
-  readonly bodyId: BodyId;
+/**
+ * One waypoint burn within a ship's plan. Bearing/pitch are the numeric-primary
+ * aim inputs (Gate 1 §2); `magnitude` is Δv, raw — clamped at plan construction
+ * to the per-segment cap in `waypointBurnsFor` (the redundant plotting-side half
+ * of the §4.4 "no free stop" clamp; the slider's `max` is the other half).
+ */
+export interface WaypointDraft {
   /** Compass bearing in degrees, normalized to [0, 360). */
   readonly bearing: number;
   /** Pitch in degrees, clamped to [-90, 90]. */
   readonly pitch: number;
-  /** Thrust magnitude in Δv (raw; clamped to budget in `toDeltaV`). */
+  /** Thrust magnitude in Δv (raw; clamped to per-segment cap in `waypointBurnsFor`). */
   readonly magnitude: number;
+}
+
+/**
+ * One ship's editable movement plan — now a sequence of N per-waypoint burns
+ * (SESSION-05, `finite-thrust-movement`). N tracks the marks-interval control
+ * (`segCountFor`: 2s → 4 segments; Off → 1). `activeIndex` is the waypoint the
+ * form is currently bound to (CP2 selector). A single-waypoint plan (Off) is
+ * shape-compatible with the pre-SESSION-05 arc plotter.
+ */
+export interface PlanDraft {
+  readonly bodyId: BodyId;
+  readonly waypoints: readonly WaypointDraft[];
+  /** Index into `waypoints` — the segment the plot form currently edits. */
+  readonly activeIndex: number;
   readonly status: PlanStatus;
 }
 
@@ -75,12 +115,12 @@ export interface RosterShip {
 
 const ZERO_V: Vec3 = { x: 0, y: 0, z: 0 };
 
-/** Clamp a thrust magnitude to `0..budget`; `NaN` → 0 (over/under-spend is
- *  structurally impossible from here, matching the §4.4 slider clamp). */
-export const clampMag = (mag: number, budget: number): number => {
+/** Clamp a thrust magnitude to `0..cap`; `NaN` → 0. Caller supplies the cap
+ *  (per-segment or per-ship-budget depending on the slot). */
+export const clampMag = (mag: number, cap: number): number => {
   if (Number.isNaN(mag) || mag < 0) return 0;
-  const cap = budget > 0 ? budget : 0;
-  return mag > cap ? cap : mag;
+  const capped = cap > 0 ? cap : 0;
+  return mag > capped ? capped : mag;
 };
 
 /** Normalize a bearing to [0, 360); `NaN` → 0. */
@@ -96,60 +136,277 @@ export const clampPitch = (deg: number): number => {
   return deg > 90 ? 90 : deg < -90 ? -90 : deg;
 };
 
+// ---- Marks-interval selector (Gate 1 prototype port) ----------------------
+
+/** The four ghost-arc marks-interval values the shipped selector supports.
+ *  Doubles as the WAYPOINT-GRANULARITY control (SESSION-05): the beat is split
+ *  into segments of `interval` sim-seconds (Off → a single dt-length segment).*/
+export type MarksIntervalValue = 0 | 1 | 2 | 4;
+
+/** Stable option list — order matches the prototype (Off → 1s → 2s → 4s). */
+export interface MarksIntervalOption {
+  readonly value: MarksIntervalValue;
+  readonly label: string;
+  readonly srLabel: string;
+}
+
+export const MARKS_INTERVAL_OPTIONS: readonly MarksIntervalOption[] = [
+  { value: 0, label: 'OFF', srLabel: 'Marks off' },
+  { value: 1, label: '1s', srLabel: 'Marks every second' },
+  { value: 2, label: '2s', srLabel: 'Marks every two seconds' },
+  { value: 4, label: '4s', srLabel: 'Marks every four seconds' },
+];
+
+/** Snap an arbitrary numeric input to the nearest supported interval value.
+ *  Non-finite / negative → 1s (the default). Guards against a stray future
+ *  caller (settings deserializer, hash-state restore) that hands a bad value. */
+export const normalizeMarksInterval = (raw: number): MarksIntervalValue => {
+  if (!Number.isFinite(raw) || raw < 0) return 1;
+  if (raw === 0) return 0;
+  if (raw <= 1) return 1;
+  if (raw <= 2) return 2;
+  return 4;
+};
+
+// ---- Segmentation math ----------------------------------------------------
+
+/**
+ * How many waypoint segments a beat splits into at the given marks interval.
+ * Off → 1 (a single dt-length segment); otherwise `floor(beatSeconds / interval)`.
+ * Non-positive / non-finite `beatSeconds` degrades to 1 (defensive — the
+ * shipping app pins `state.physics.dt` at 8, but a caller with a bad config
+ * still gets a legal single-segment plan). Result is always ≥ 1.
+ */
+export const segCountFor = (
+  interval: MarksIntervalValue,
+  beatSeconds: number,
+): number => {
+  if (!Number.isFinite(beatSeconds) || beatSeconds <= 0) return 1;
+  if (interval === 0) return 1;
+  const n = Math.floor(beatSeconds / interval);
+  return n >= 1 ? n : 1;
+};
+
+/**
+ * Sim-seconds per waypoint segment for the given interval + beat length.
+ * Off → the whole beat; otherwise the interval itself. Symmetric with
+ * `segCountFor` so `segCountFor(i, dt) * sliceSecondsFor(i, dt)` covers the
+ * beat exactly at every supported interval (dt=8, i∈{0,1,2,4}).
+ */
+export const sliceSecondsFor = (
+  interval: MarksIntervalValue,
+  beatSeconds: number,
+): number => {
+  if (!Number.isFinite(beatSeconds) || beatSeconds <= 0) return 1;
+  if (interval === 0) return beatSeconds;
+  return interval;
+};
+
+/**
+ * Per-segment magnitude cap. `maxAccel · sliceSeconds` is the physical burn-rate
+ * limit `sim/physics.thrustSchedule` enforces at the resolver; capping here
+ * mirrors it on the producer side so the plan we commit matches the flown arc.
+ * A ship-budget upper bound keeps a single segment from claiming more than the
+ * ship's whole Δv-per-turn. When `maxAccel` is absent / non-positive / non-finite
+ * (the un-owned resolveFleet gap, SESSION-04 followUp #4) the cap collapses to
+ * the ship budget — the impulsive-fallback path physics already takes when
+ * `maxAccel` is unset (see `sim/physics/thrust.ts` guardrail).
+ */
+export const perSegmentCap = (
+  shipBudget: number,
+  sliceSeconds: number,
+  maxAccel: number | undefined,
+): number => {
+  const budgetFloor = shipBudget > 0 ? shipBudget : 0;
+  if (maxAccel === undefined || !Number.isFinite(maxAccel) || maxAccel <= 0) {
+    return budgetFloor;
+  }
+  if (!Number.isFinite(sliceSeconds) || sliceSeconds <= 0) return budgetFloor;
+  const physCap = maxAccel * sliceSeconds;
+  return physCap < budgetFloor ? physCap : budgetFloor;
+};
+
 // ---- Draft construction + transitions -------------------------------------
 
-/** The starting draft for a roster ship: an engine-dead ship coasts
- *  automatically (§4.3, "a destroyed engine means zero delta-V"); every other
- *  living ship starts `unplanned` and must be decided before commit. */
-export const initialDraft = (row: RosterShip): PlanDraft => ({
-  bodyId: row.bodyId,
-  bearing: 0,
-  pitch: 0,
+/** One zeroed waypoint at the given aim. */
+const zeroWaypoint = (bearing = 0, pitch = 0): WaypointDraft => ({
+  bearing,
+  pitch,
   magnitude: 0,
-  status: row.engineAlive ? 'unplanned' : 'coast',
 });
 
-/** Edit a draft's arc — any subset of bearing/pitch/magnitude — and mark it
- *  `planned`. Bearing wraps, pitch clamps; magnitude is stored raw (the budget
- *  clamp lives in `toDeltaV`, the plan-construction half of the §4.4 clamp). */
-export const plotArc = (
+/**
+ * The starting draft for a roster ship at a given marks interval + beat length.
+ * An engine-dead ship coasts automatically (§4.3, "a destroyed engine means
+ * zero delta-V"); every other living ship starts `unplanned` and must be decided
+ * before commit. All waypoints start zeroed at bearing 0 / pitch 0.
+ */
+export const initialDraft = (
+  row: RosterShip,
+  opts: { readonly interval: MarksIntervalValue; readonly beatSeconds: number },
+): PlanDraft => {
+  const n = segCountFor(opts.interval, opts.beatSeconds);
+  const waypoints: WaypointDraft[] = [];
+  for (let i = 0; i < n; i += 1) waypoints.push(zeroWaypoint());
+  return {
+    bodyId: row.bodyId,
+    waypoints,
+    activeIndex: 0,
+    status: row.engineAlive ? 'unplanned' : 'coast',
+  };
+};
+
+/** Clamp a waypoint index into `[0, count - 1]`. */
+const clampIndex = (i: number, count: number): number => {
+  if (count <= 0) return 0;
+  if (!Number.isFinite(i) || i < 0) return 0;
+  const floored = Math.floor(i);
+  return floored >= count ? count - 1 : floored;
+};
+
+/**
+ * Edit the ACTIVE waypoint's aim — any subset of bearing/pitch/magnitude — and
+ * mark the draft `planned`. Bearing wraps, pitch clamps; magnitude is stored
+ * raw (the per-segment cap lives in `waypointBurnsFor`, mirroring the previous
+ * plan-construction half of the §4.4 clamp). Waypoints other than the active
+ * one are untouched — editing waypoint k leaves waypoints ≠ k intact.
+ */
+export const plotWaypoint = (
   draft: PlanDraft,
   patch: { readonly bearing?: number; readonly pitch?: number; readonly magnitude?: number },
-): PlanDraft => ({
+): PlanDraft => {
+  const idx = clampIndex(draft.activeIndex, draft.waypoints.length);
+  const current = draft.waypoints[idx] ?? zeroWaypoint();
+  const nextWp: WaypointDraft = {
+    bearing: patch.bearing !== undefined ? wrapBearing(patch.bearing) : current.bearing,
+    pitch: patch.pitch !== undefined ? clampPitch(patch.pitch) : current.pitch,
+    magnitude:
+      patch.magnitude !== undefined
+        ? Number.isNaN(patch.magnitude) || patch.magnitude < 0
+          ? 0
+          : patch.magnitude
+        : current.magnitude,
+  };
+  const nextWps = draft.waypoints.slice();
+  nextWps[idx] = nextWp;
+  return { ...draft, waypoints: nextWps, status: 'planned' };
+};
+
+/** Move the waypoint-selector cursor. Out-of-range indices clamp; status
+ *  unchanged (selection is not a plot decision). */
+export const setActiveIndex = (draft: PlanDraft, index: number): PlanDraft => ({
   ...draft,
-  bearing: patch.bearing !== undefined ? wrapBearing(patch.bearing) : draft.bearing,
-  pitch: patch.pitch !== undefined ? clampPitch(patch.pitch) : draft.pitch,
-  magnitude:
-    patch.magnitude !== undefined
-      ? Number.isNaN(patch.magnitude) || patch.magnitude < 0
-        ? 0
-        : patch.magnitude
-      : draft.magnitude,
-  status: 'planned',
+  activeIndex: clampIndex(index, draft.waypoints.length),
 });
 
-/** Set a draft to COAST — no Δv spent, current momentum kept. */
+/** Set a draft to COAST — no Δv spent, current momentum kept. Waypoints are
+ *  preserved as-is (the coast status short-circuits `waypointBurnsFor` to all
+ *  zero segments), so toggling back off COAST restores the prior aim. */
 export const setCoast = (draft: PlanDraft): PlanDraft => ({ ...draft, status: 'coast' });
+
+/**
+ * Re-segment a draft to a new marks interval — the CP3 wiring for
+ * "marks-interval doubles as waypoint-granularity" (prototype `rebuildSegments`).
+ * Preserves the aim (bearing/pitch of waypoint 0) across every new waypoint,
+ * resets magnitudes to 0, snaps `activeIndex` back to 0, and preserves the
+ * plan status (a COAST draft stays COAST; a PLANNED draft stays PLANNED — the
+ * user has still made a decision, just now against a different granularity).
+ */
+export const rebuildForInterval = (
+  draft: PlanDraft,
+  interval: MarksIntervalValue,
+  beatSeconds: number,
+): PlanDraft => {
+  const n = segCountFor(interval, beatSeconds);
+  const first = draft.waypoints[0] ?? zeroWaypoint();
+  const bearing = first.bearing;
+  const pitch = first.pitch;
+  const nextWps: WaypointDraft[] = [];
+  for (let i = 0; i < n; i += 1) nextWps.push(zeroWaypoint(bearing, pitch));
+  return { ...draft, waypoints: nextWps, activeIndex: 0 };
+};
 
 // ---- Δv derivation --------------------------------------------------------
 
-/**
- * The Δv vector a draft commits: `dirFromBearingPitch` (unit) scaled by the
- * budget-clamped magnitude. COAST → the zero vector ("no free stop": a coast
- * spends nothing and simply keeps momentum). The clamp here is redundant with
- * the slider `max` on purpose — over-spend cannot reach the `MovementPlan`.
- */
-export const toDeltaV = (draft: PlanDraft, budget: number): Vec3 => {
-  if (draft.status === 'coast') return ZERO_V;
-  const mag = clampMag(draft.magnitude, budget);
-  if (mag === 0) return ZERO_V;
-  return scale(dirFromBearingPitch(draft.bearing, draft.pitch), mag);
+/** The Δv contribution of one waypoint at the given per-segment cap. */
+const waypointBurn = (wp: WaypointDraft, cap: number): WaypointBurn => {
+  const mag = clampMag(wp.magnitude, cap);
+  if (mag === 0) return { deltaV: ZERO_V };
+  return { deltaV: scale(dirFromBearingPitch(wp.bearing, wp.pitch), mag) };
 };
 
-/** The magnitude of a draft's committed Δv — what the ghost's arc marks read
- *  (Gate 1 §2a). COAST or zero-thrust → 0. */
-export const deltaVMag = (draft: PlanDraft, budget: number): number =>
-  length(toDeltaV(draft, budget));
+/**
+ * The per-waypoint burn list a draft commits. COAST → every burn is the zero
+ * vector regardless of stored magnitudes ("no free stop"). Each burn's Δv is
+ * `dirFromBearingPitch(bearing, pitch) · clampMag(magnitude, perSegCap)` — the
+ * D-PHYSICS-VEC3-ONLY producer-side conversion so `sim/physics` never sees an
+ * angle.
+ */
+export const waypointBurnsFor = (
+  draft: PlanDraft,
+  budget: number,
+  opts: { readonly sliceSeconds: number; readonly maxAccel?: number },
+): readonly WaypointBurn[] => {
+  const cap = perSegmentCap(budget, opts.sliceSeconds, opts.maxAccel);
+  if (draft.status === 'coast') return draft.waypoints.map(() => ({ deltaV: ZERO_V }));
+  return draft.waypoints.map((wp) => waypointBurn(wp, cap));
+};
+
+/**
+ * Total Δv this draft flies across all waypoints — the meter readout. COAST → 0.
+ * Each waypoint contributes its clamped magnitude (the Δv vectors are along
+ * different bearings, so we sum magnitudes rather than the vector length —
+ * matches "SPENT X / BUDGET" semantics as fuel spent, not net displacement).
+ */
+export const plannedDeltaVMag = (
+  draft: PlanDraft,
+  budget: number,
+  opts: { readonly sliceSeconds: number; readonly maxAccel?: number },
+): number => {
+  if (draft.status === 'coast') return 0;
+  const cap = perSegmentCap(budget, opts.sliceSeconds, opts.maxAccel);
+  let total = 0;
+  for (const wp of draft.waypoints) total += clampMag(wp.magnitude, cap);
+  return total;
+};
+
+/**
+ * The `{ segments }` payload `controller.previewArc` consumes for a segmented
+ * finite-thrust preview (SESSION-04 D-ADDITIVE-PLAN). Callers pass this
+ * verbatim to `previewArc(bodyId, previewInputFor(draft, budget, opts))` — the
+ * returned `positions` curves while thrusting when `state.physics.maxAccel` is
+ * set (see the SESSION-04 handoff followUp on the un-owned `resolveFleet` gap).
+ */
+export const previewInputFor = (
+  draft: PlanDraft,
+  budget: number,
+  opts: { readonly sliceSeconds: number; readonly maxAccel?: number },
+): { readonly segments: readonly WaypointBurn[] } => ({
+  segments: waypointBurnsFor(draft, budget, opts),
+});
+
+/**
+ * Sum-of-segment-deltas as a Vec3 — the CP1 bridge that keeps the pre-CP3
+ * `previewArc(bodyId, Vec3)` impulsive-fallback path compiling while the model
+ * carries multi-waypoint state. CP3 swaps the ghost + exit-detection callers
+ * over to `previewInputFor`; this helper stays available for any consumer that
+ * still needs an impulsive net displacement (e.g. a HUD readout).
+ */
+export const impulsiveTotalDeltaV = (
+  draft: PlanDraft,
+  budget: number,
+  opts: { readonly sliceSeconds: number; readonly maxAccel?: number },
+): Vec3 => {
+  if (draft.status === 'coast') return ZERO_V;
+  const cap = perSegmentCap(budget, opts.sliceSeconds, opts.maxAccel);
+  let acc: Vec3 = ZERO_V;
+  for (const wp of draft.waypoints) {
+    const mag = clampMag(wp.magnitude, cap);
+    if (mag === 0) continue;
+    acc = add(acc, scale(dirFromBearingPitch(wp.bearing, wp.pitch), mag));
+  }
+  return acc;
+};
 
 // ---- Fleet commit gate (§4.3) ---------------------------------------------
 
@@ -176,16 +433,25 @@ export const fleetGateStatus = (drafts: readonly PlanDraft[]): FleetGate => {
 // ---- Plan assembly --------------------------------------------------------
 
 /**
- * Drafts → the `MovementPlan[]` the controller commits. `budgetOf` supplies
- * each ship's Δv budget (per-ship `deltaVPerTurn`, 0 when engine-dead) so the
- * plan-construction clamp is applied — over-spend is impossible in the emitted
- * plan regardless of draft state.
+ * Drafts → the segmented `MovementPlan[]` the controller commits (SESSION-05).
+ * Every plan carries `segments` (D-ADDITIVE-PLAN — segments override deltaV);
+ * `deltaV` is set to `ZERO` for shape-consistency per SESSION-01 followUp #3.
+ * `budgetOf` supplies each ship's per-turn Δv budget (0 when engine-dead);
+ * `opts` supplies the sim-time slice length (from the current marks interval)
+ * + `maxAccel` (from `state.physics.maxAccel`, may be undefined until the
+ * SESSION-04 un-owned `resolveFleet` gap closes — the fallback is documented on
+ * `perSegmentCap`).
  */
 export const toMovementPlans = (
   drafts: readonly PlanDraft[],
   budgetOf: (bodyId: BodyId) => number,
+  opts: { readonly sliceSeconds: number; readonly maxAccel?: number },
 ): MovementPlan[] =>
-  drafts.map((d) => ({ bodyId: d.bodyId, deltaV: toDeltaV(d, budgetOf(d.bodyId)) }));
+  drafts.map((d) => ({
+    bodyId: d.bodyId,
+    deltaV: ZERO_V,
+    segments: waypointBurnsFor(d, budgetOf(d.bodyId), opts),
+  }));
 
 // ---- Roster derivation ----------------------------------------------------
 
@@ -214,36 +480,6 @@ export const playerRosterRows = (
   return rows;
 };
 
-// ---- Marks-interval selector (Gate 1 prototype port) ----------------------
-
-/** The four ghost-arc marks-interval values the shipped selector supports. */
-export type MarksIntervalValue = 0 | 1 | 2 | 4;
-
-/** Stable option list — order matches the prototype (Off → 1s → 2s → 4s). */
-export interface MarksIntervalOption {
-  readonly value: MarksIntervalValue;
-  readonly label: string;
-  readonly srLabel: string;
-}
-
-export const MARKS_INTERVAL_OPTIONS: readonly MarksIntervalOption[] = [
-  { value: 0, label: 'OFF', srLabel: 'Marks off' },
-  { value: 1, label: '1s', srLabel: 'Marks every second' },
-  { value: 2, label: '2s', srLabel: 'Marks every two seconds' },
-  { value: 4, label: '4s', srLabel: 'Marks every four seconds' },
-];
-
-/** Snap an arbitrary numeric input to the nearest supported interval value.
- *  Non-finite / negative → 1s (the default). Guards against a stray future
- *  caller (settings deserializer, hash-state restore) that hands a bad value. */
-export const normalizeMarksInterval = (raw: number): MarksIntervalValue => {
-  if (!Number.isFinite(raw) || raw < 0) return 1;
-  if (raw === 0) return 0;
-  if (raw <= 1) return 1;
-  if (raw <= 2) return 2;
-  return 4;
-};
-
 // ---- Ghost arc construction (pure) ----------------------------------------
 
 /** The shape the render layer's ghost draws — mirrors `Viewport.GhostArc` but
@@ -257,19 +493,28 @@ export interface GhostArcInputs {
   readonly beatSeconds: number;
   readonly hullRadius: number;
   readonly markIntervalSec?: number;
+  /** SESSION-05: waypoint-boundary world positions from `sim/physics.previewPath`
+   *  (segmented). Optional passthrough — the render layer's numbered marks will
+   *  land on the TRUE curved arc at each segment boundary once the render layer
+   *  reads it. Absent for the impulsive branch (S04 seam contract). */
+  readonly markPositions?: readonly Vec3[];
 }
 
 /**
  * Assemble a ghost arc from a preview + a plan draft. Pure; the caller pins the
  * `beatSeconds` (= `physicsConfig.dt`), `hullRadius` (the ship's collider
- * radius), and `markIntervalSec` (the Off/1s/2s/4s selector). The marks
- * interval is threaded through verbatim — the render layer honors 0 (Off) as
- * "arc line only, no numbered marks" (S01 `GhostDrawInput.markIntervalSec`).
+ * radius), `markIntervalSec` (the Off/1s/2s/4s selector), and the meter Δv
+ * (SESSION-05: total Δv across all waypoints, `plannedDeltaVMag`). The marks
+ * interval is threaded through verbatim; `markPositions` (segmented preview
+ * only) is passed straight to the ghost input when present.
  */
 export const buildGhostArc = (
-  preview: { readonly positions: readonly Vec3[]; readonly endsOutsideArena: boolean },
-  draft: PlanDraft,
-  budget: number,
+  preview: {
+    readonly positions: readonly Vec3[];
+    readonly endsOutsideArena: boolean;
+    readonly markPositions?: readonly Vec3[];
+  },
+  deltaVMagnitude: number,
   opts: {
     readonly beatSeconds: number;
     readonly hullRadius: number;
@@ -278,10 +523,11 @@ export const buildGhostArc = (
 ): GhostArcInputs => ({
   positions: preview.positions,
   endsOutsideArena: preview.endsOutsideArena,
-  deltaVMag: deltaVMag(draft, budget),
+  deltaVMag: deltaVMagnitude,
   beatSeconds: opts.beatSeconds,
   hullRadius: opts.hullRadius,
   markIntervalSec: opts.markIntervalSec,
+  ...(preview.markPositions !== undefined ? { markPositions: preview.markPositions } : {}),
 });
 
 // ---- Plan-status badge (annotate for FleetRoster) -------------------------
