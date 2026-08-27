@@ -9,20 +9,31 @@
 // the completed `MatchController` via `useMatch()`. CONCEDE is not here; it lives
 // in the shell match-chrome (S01) and merely lands on this screen.
 
+import { useEffect } from 'preact/hooks';
+
+import { useApp } from '../appContext.js';
 import { useMatch } from '../matchContext.js';
 
 import { OutcomeBanner } from './postMatch/OutcomeBanner.js';
 import { FleetsAndFates } from './postMatch/FleetsAndFates.js';
 import { CombatLog } from './postMatch/CombatLog.js';
+import { EndActions } from './postMatch/EndActions.js';
 import { flattenCombatLog, nameByBodyId, perShipFates } from './postMatch/model.js';
 
 export function PostMatch() {
   const match = useMatch();
+  const { navigate } = useApp();
   const outcome = match.outcome.value;
+  const complete = match.phase.value === 'complete' && outcome !== null;
 
-  // Guard: entered without a completed match (deep-link, mid-flight) → nothing
-  // to summarise. The full redirect lands in checkpoint 3.
-  if (outcome === null) {
+  // Guard: entered without a completed match (a bare deep-link to
+  // `#/skirmish/result`, or mid-flight) → nothing to summarise. Redirect to
+  // setup; render an empty root meanwhile so the testid stays stable.
+  useEffect(() => {
+    if (!complete) navigate({ name: 'skirmish-setup' });
+  }, [complete, navigate]);
+
+  if (outcome === null || !complete) {
     return <section class="panel" data-testid="screen-post-match" />;
   }
 
@@ -41,6 +52,7 @@ export function PostMatch() {
       />
       <FleetsAndFates fleets={fates} />
       <CombatLog rows={logRows} nameOf={nameOf} />
+      <EndActions />
     </div>
   );
 }
