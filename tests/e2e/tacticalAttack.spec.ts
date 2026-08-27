@@ -37,7 +37,11 @@ const APP_URL = 'http://localhost:8081/starship-skirmish/';
 
 // Stub the render layer: createTacticalView / attachTracePlayer become no-ops so
 // the harness needs no WebGL. attachTracePlayer records playAttack calls so the
-// reduced-motion assertion can prove the animation was skipped.
+// reduced-motion assertion can prove the animation was skipped. S04 CP1/CP2:
+// stub the new seams the screen wires — `pick`, `focusBody`, `worldToScreen`,
+// `camera.setFocusSource`, `camera.resetToFleetView`, `camera.focus`. The
+// worldToScreen fake is a simple top-down (x, z) → (400+x, 300+z) projection so
+// the AoE ring renders at predictable pixel coords the assertion can pin down.
 const renderStub: esbuild.Plugin = {
   name: 'stub-render',
   setup(build) {
@@ -48,9 +52,23 @@ const renderStub: esbuild.Plugin = {
     build.onLoad({ filter: /.*/, namespace: 'stub-render' }, () => ({
       contents: `
         globalThis.__playAttackCalls = 0;
+        globalThis.__focusBodyCalls = [];
+        globalThis.__resetCalls = 0;
+        globalThis.__focusSource = null;
         export const createTacticalView = () => ({
-          setState() {}, dispose() {}, resize() {}, pick() { return null; },
-          camera: {}, scene: {},
+          setState() {}, dispose() {}, resize() {},
+          pick() { return null; },
+          worldToScreen(pos) {
+            // Fake top-down projection: (x, z) → CSS-pixels (400+x, 300+z).
+            return { x: 400 + pos[0], y: 300 + pos[2] };
+          },
+          focusBody(id) { globalThis.__focusBodyCalls.push(id); },
+          camera: {
+            resetToFleetView() { globalThis.__resetCalls += 1; },
+            focus() {},
+            setFocusSource(source) { globalThis.__focusSource = source; },
+          },
+          scene: {},
         });
         export const attachTracePlayer = () => ({
           playMovement() { return mk(); },
@@ -252,6 +270,135 @@ test.describe('tactical attack screen', () => {
       () => (globalThis as Record<string, unknown>)['__commitCalls'] as unknown[],
     );
     expect(commitCalls.length).toBe(1);
+
+    expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
+  });
+
+  test('left column lists ALL fleets with pips, and clicking an enemy row opens the inspector', async ({
+    page,
+  }) => {
+    const errors = await mount(page);
+
+    // The FR-15 left column is present with the no-fog caption.
+    const roster = page.getByTestId('fleet-roster');
+    await expect(roster).toBeVisible();
+    await expect(roster).toContainText('FULL STATE FOR ALL FLEETS · NO FOG OF WAR');
+
+    // Both fleets have groups — player fleet first, then bots.
+    const groups = page.getByTestId('fleet-group');
+    await expect(groups).toHaveCount(2);
+    await expect(groups.nth(0)).toHaveAttribute('data-fleet-role', 'player');
+    await expect(groups.nth(0)).toHaveAttribute('data-fleet-id', '0');
+    await expect(groups.nth(1)).toHaveAttribute('data-fleet-role', 'bot');
+    await expect(groups.nth(1)).toHaveAttribute('data-fleet-id', '1');
+
+    // Living roster rows are real buttons; every ship in every fleet is listed.
+    const livingRows = page.getByTestId('roster-ship');
+    // 2 player ships + 2 bot ships (all alive in the fixture).
+    await expect(livingRows).toHaveCount(4);
+    // Each row carries pips (never color-alone: label + aria-label).
+    await expect(livingRows.nth(0).getByTestId('ship-pips')).toBeVisible();
+
+    // Inspector starts empty and announces SELECT A SHIP.
+    const inspector = page.getByTestId('ship-inspector');
+    await expect(inspector).toBeVisible();
+    await expect(page.getByTestId('inspector-empty')).toBeVisible();
+
+    // Click SPUR (an enemy, bodyId 3) → inspector switches, testid decorates it.
+    await page.locator('[data-testid="roster-ship"][data-ship-id="3"]').click();
+    await expect(page.getByTestId('inspector-empty')).toHaveCount(0);
+    await expect(page.getByTestId('ship-inspector')).toHaveAttribute('data-ship-id', '3');
+    await expect(page.getByTestId('ship-inspector')).toContainText('SPUR');
+
+    // The camera focus label updates too — the HUD's focus-label reads the selection.
+    await expect(page.getByTestId('camera-focus-label')).toHaveText('SPUR');
+
+    // Roster row selection propagates to focusBody(3) so F would slide to it.
+    const focusCalls = await page.evaluate(
+      () => (globalThis as unknown as { __focusBodyCalls: number[] }).__focusBodyCalls,
+    );
+    // The screen owns the F-key focus source; roster click sets selection but
+    // does NOT call focusBody directly (the CAMERA HUD's FOCUS button does).
+    // Instead assert the focus-source closure returns SPUR's position.
+    const focusPos = await page.evaluate(() => {
+      const g = globalThis as unknown as { __focusSource: null | (() => readonly number[] | null) };
+      return g.__focusSource !== null ? g.__focusSource() : null;
+    });
+    expect(focusPos).toEqual([200, 0, 0]); // SPUR is at (200, 0, 0)
+    // The camera-HUD Focus button dispatches focusBody(3) explicitly.
+    await page.getByTestId('cam-focus').click();
+    const postFocusCalls = await page.evaluate(
+      () => (globalThis as unknown as { __focusBodyCalls: number[] }).__focusBodyCalls,
+    );
+    expect(postFocusCalls).toEqual([...focusCalls, 3]);
+
+    // The Reset button snaps the camera back.
+    await page.getByTestId('cam-reset').click();
+    const resetCalls = await page.evaluate(
+      () => (globalThis as unknown as { __resetCalls: number }).__resetCalls,
+    );
+    expect(resetCalls).toBe(1);
+
+    expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
+  });
+
+  test('an AoE-over-friendly missile draws a projected ring alongside the authoritative banner', async ({
+    page,
+  }) => {
+    const errors = await mount(page);
+    const rows = page.getByTestId('weapon-row');
+
+    // WIDOWMAKER M1 → SPUR@(200,0,0). r60 blast. worldToScreen's top-down fake
+    // projects the target to (400+200, 300+0) = (600, 300); a sample offset by
+    // +radius on x maps to (660, 300) → pixel radius = 60.
+    await rows.nth(1).locator('select').selectOption('3');
+
+    // Ring reprojection lives in a RAF loop — poll until it lands.
+    const ring = page.getByTestId('aoe-ring');
+    await expect(ring).toBeVisible();
+    await expect(ring).toHaveAttribute('data-ring-cx', '600');
+    await expect(ring).toHaveAttribute('data-ring-cy', '300');
+    await expect(ring).toHaveAttribute('data-ring-r', '60');
+    // Ring is aria-hidden — informational overlay, banner carries the a11y channel.
+    await expect(ring).toHaveAttribute('aria-hidden', 'true');
+
+    // The banner remains authoritative and role="alert".
+    const banner = page.getByTestId('ff-banner');
+    await expect(banner).toBeVisible();
+    await expect(banner).toHaveAttribute('role', 'alert');
+
+    // Commit is NEVER disabled by the warning — the ring is informational.
+    await expect(page.getByTestId('commit-fire-btn')).toBeEnabled();
+
+    expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
+  });
+
+  test('roster paints TARGETED / SHOOTER / AoE fire-context chips as assignments are staged', async ({
+    page,
+  }) => {
+    const errors = await mount(page);
+    const rows = page.getByTestId('weapon-row');
+
+    // WIDOWMAKER M1 → SPUR. Fire context should paint SHOOTER on 1 and
+    // TARGETED on 3, plus AoE on 2 (TIN CAN 3 caught in the blast).
+    await rows.nth(1).locator('select').selectOption('3');
+
+    const shooterChip = page
+      .locator('[data-testid="roster-ship"][data-ship-id="1"]')
+      .getByTestId('roster-role-chip');
+    await expect(shooterChip).toHaveAttribute('data-role', 'shooter');
+
+    const targetedChip = page
+      .locator('[data-testid="roster-ship"][data-ship-id="3"]')
+      .getByTestId('roster-role-chip');
+    await expect(targetedChip).toHaveAttribute('data-role', 'targeted');
+
+    const aoeChip = page
+      .locator('[data-testid="roster-ship"][data-ship-id="2"]')
+      .getByTestId('roster-role-chip');
+    await expect(aoeChip).toHaveAttribute('data-role', 'aoe-friendly');
+    // The chip carries text ("⚠ IN AoE") in addition to color — never color-alone.
+    await expect(aoeChip).toContainText('AoE');
 
     expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
   });
