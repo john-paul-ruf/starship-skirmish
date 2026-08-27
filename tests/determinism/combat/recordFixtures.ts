@@ -567,6 +567,94 @@ const SCEN_PD_INTERCEPT: Scenario = {
   ],
 };
 
+/** Scenario 7 — attack-beat cascade + missile launch-clears-launcher offset
+ *  (S03 · combat-integration). Fleet 0's Alpha-Striker one-shots fleet 1's
+ *  fragile Victim on turn 1 ATTACK beat with a 200-damage cannon; because
+ *  `cascadeToNextMovement:true`, that death produces a `PendingDetonation`
+ *  that fires on turn 2 MOVEMENT — spawning 4 frigate-class debris and
+ *  applying ownership-blind AoE (radius 160, damage 30) to fleet 1's Witness,
+ *  which sits ~45 units from Victim (in-fleet spacing = 3 × maxRadius).
+ *  Alpha-Striker also launches a missile at Victim on turn 1; with
+ *  `launchClearsLauncher:true` the missile spawns offset AHEAD of the launcher
+ *  along the firing bearing and flies away without self-detonating on its own
+ *  launcher (the pre-F6 baseline would have detonated the missile on the very
+ *  next sub-step). Fleet 1's Defender pins the match down with a durable
+ *  40-damage cannon so the outcome lands ≥1 turn after the cascade fires — a
+ *  final-turn cascade would never observably resolve (victory check cuts the
+ *  loop first).
+ *
+ *  This fixture pins BOTH gate behaviours in one match — the cascade
+ *  observable via the debris count jump + Witness hull loss on turn 2
+ *  movement, the offset observable via Alpha-Striker surviving turn 2
+ *  movement with 40 hull (starting 80 minus one 40-damage Defender cannon
+ *  hit; no self-AoE from its own missile). Bakes both S01 gates ON via
+ *  `gatedCombat()`. */
+const cascadeArena = arena(900);
+const SCEN_CASCADE_MISSILE: Scenario = {
+  name: 'seed-7-cascade-missile',
+  description:
+    'Attack-beat kill cascades AoE + debris onto next movement beat (fleet 1 Victim killed T1 → 4 frigate debris + AoE on Witness T2 movement). Alpha-Striker also launches a missile with launchClearsLauncher offset so it does not detonate on itself. Bakes gates ON.',
+  seed: seedOf(0x7ca57ca5, 0x7de17de1),
+  arena: cascadeArena,
+  physics: defaultPhysics(cascadeArena),
+  combat: gatedCombat(),
+  fleets: [
+    fleet(0, [
+      ship('Alpha-Striker', {
+        chassisClass: 'frigate',
+        maxHull: 120,
+        weapons: [
+          // 200 damage kills Victim (maxHull 60) in one shot at accuracy 1;
+          // damages Defender (maxHull 400) over subsequent turns.
+          { range: 3000, damage: 200, shotsPerTurn: 1, accuracy: 1.0 },
+        ],
+        missiles: [
+          {
+            ammo: 1,
+            damage: 40,
+            aoeRadius: 60,
+            boostVelocity: 80,
+            trackingTurnRate: 0.1,
+            bodyMass: 3,
+            bodyRadius: 5,
+          },
+        ],
+      }),
+    ]),
+    fleet(1, [
+      // Victim first ⇒ lowest BodyId in fleet 1 ⇒ simple-fire commander on
+      // fleet 0 targets here. Alpha-Striker one-shots it turn 1 attack beat.
+      ship('Victim', {
+        chassisClass: 'frigate',
+        maxHull: 60,
+        radius: 15,
+        weapons: [],
+      }),
+      // Witness sits ~45 units from Victim (in-fleet spacing = 3 × maxRadius
+      // = 45), safely inside the 160-radius frigate AoE that the cascade
+      // fires on turn 2 movement.
+      ship('Witness', {
+        chassisClass: 'frigate',
+        maxHull: 200,
+        radius: 15,
+        weapons: [],
+      }),
+      // Defender's cannon extends the match past turn 2 so the cascade fires
+      // ≥1 turn before end-of-match.
+      ship('Defender', {
+        chassisClass: 'cruiser',
+        maxHull: 400,
+        radius: 30,
+        weapons: [{ range: 3000, damage: 40, shotsPerTurn: 1, accuracy: 1.0 }],
+      }),
+    ]),
+  ],
+  commanders: [
+    { fleetId: 0, kind: 'simple-fire-missile' },
+    { fleetId: 1, kind: 'simple-fire' },
+  ],
+};
+
 const SCENARIOS: readonly Scenario[] = [
   SCEN_DUEL,
   SCEN_ASYMMETRIC,
@@ -574,6 +662,7 @@ const SCENARIOS: readonly Scenario[] = [
   SCEN_MISSILE_CASCADE,
   patchRammingScripts(SCEN_COLLISION),
   SCEN_PD_INTERCEPT,
+  SCEN_CASCADE_MISSILE,
 ];
 
 // ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@
     "seed-3-triangle.json": "be4268e4f701f4370ed919f35c03954b028bba293c0c4ec820232d3fbc23c8fb",
     "seed-4-missile-cascade.json": "44d032bfef8a18fbc4d425418fda41eea9e9dbd412cc4afed639daa9a5fa2221",
     "seed-5-collision.json": "60539acfee1d4eb2732ebe4f7b665038474989a4394d557c25f75ec32fc415ff",
-    "seed-6-pd-intercept.json": "e18deddf9b886de142376861413a72c30616514320bd47adb76bdf5d51864cc0"
+    "seed-6-pd-intercept.json": "e18deddf9b886de142376861413a72c30616514320bd47adb76bdf5d51864cc0",
+    "seed-7-cascade-missile.json": "3da670a69e11ca3df46cf95d63e9709975d90148d3061b3ee974deec3c15b14f"
   }
 }
