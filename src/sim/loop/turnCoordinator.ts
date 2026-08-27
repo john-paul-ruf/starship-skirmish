@@ -51,6 +51,12 @@ export interface TurnResult {
  * worker. Returns the flat plan set (per-commander order preserved; the
  * resolver sorts internally by `bodyId` so order across commanders does not
  * affect the outcome — see §7.3 rule 2 in resolveMovement).
+ *
+ * A commander's plan is OPAQUE here (feature `finite-thrust-movement`,
+ * SESSION-02). A finite-thrust plan (D-ADDITIVE-PLAN — `MovementPlan.segments`
+ * present) rides through unchanged; the coordinator never normalizes,
+ * expands, or strips a plan. This is the load-bearing "no coordinator
+ * reshapes plans" property S02's tests lock in.
  */
 const collectMovementPlans = async (
   state: MatchState,

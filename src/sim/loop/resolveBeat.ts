@@ -148,6 +148,14 @@ export const runMovementBeat = (
   // 1. Filter caller plans: drop plans for engine-dead ships (they coast).
   //    Also drop plans for ids we don't own (spurious plans are silently
   //    ignored — the boundary is defensive against a misbehaving Commander).
+  //
+  //    Plans are OPAQUE here (feature `finite-thrust-movement`, SESSION-02):
+  //    a plan carrying `segments` (finite-thrust, D-ADDITIVE-PLAN) is pushed
+  //    into `shipPlans` byte-identically — the beat never reads `deltaV` /
+  //    `segments`, only forwards the plan to `resolveMovement`, which the
+  //    S01 shared `thrustSchedule` already understands. The
+  //    `resolveMovement`-equivalence test in the loop unit suite is the
+  //    tripwire on this property.
   const shipPlans: MovementPlan[] = [];
   for (let i = 0; i < movementPlans.length; i += 1) {
     const p = movementPlans[i]!;

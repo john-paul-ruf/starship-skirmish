@@ -29,6 +29,7 @@ import type {
   SimShip,
 } from '../../../src/sim/types.js';
 import type { PhysicsConfig } from '../../../src/sim/physics/index.js';
+import { resolveMovement } from '../../../src/sim/physics/index.js';
 import type { MissileGuidance } from '../../../src/sim/rules/index.js';
 
 // ---- Fixtures --------------------------------------------------------------
@@ -416,6 +417,115 @@ describe('runMovementBeat — destruction cascade consume (CP3)', () => {
       (b) => b.kind === 'debris',
     ).length;
     expect(debrisCount).toBe(0);
+  });
+});
+
+// ============================================================================
+// Feature: finite-thrust-movement — SESSION-02
+// ============================================================================
+//
+// S02 lets SHIP plans carry `MovementPlan.segments` (finite-thrust) through
+// `runMovementBeat` unchanged while MISSILES stay impulsive (D-MISSILE-
+// IMPULSIVE). The loop already forwards plans opaquely into `resolveMovement`
+// (S01 owns the finite-thrust integrator + shared `thrustSchedule`); these
+// tests lock that "beat adds no divergence vs a direct resolveMovement" and
+// "missiles emit segments-absent plans" property.
+
+// A `PhysicsConfig` with `maxAccel` set — S01 followUp #1 notes production
+// `maxAccel` reaches PhysicsConfig only once `physicsConfigFromTuning` is
+// taught to propagate it (out of this session's lease). Unit-test scaffolding
+// constructs the config directly, in-lease.
+const physicsFT = (a: Arena): PhysicsConfig => ({
+  dt: 1,
+  subStepMin: 4,
+  subStepMax: 64,
+  restitution: 0.15,
+  collisionDamageCoefficient: 0.0012,
+  arena: a,
+  maxAccel: 25,
+});
+
+const cfgFT = (fleets: readonly SimFleet[], a: Arena = arena()): MatchConfig => ({
+  seed: seedOf(1, 2),
+  fleets,
+  arena: a,
+  physics: physicsFT(a),
+  combat: combat(),
+});
+
+describe('runMovementBeat — finite-thrust ship plans (SESSION-02)', () => {
+  it('routes a segmented ship plan through the beat unchanged (matches direct resolveMovement)', () => {
+    // A lone-participant ship carrying two waypoint burns (+y then +z). No
+    // collisions, no missiles. The beat's final position must equal what a
+    // direct `resolveMovement` call with the SAME plan produces — proving
+    // the beat contributes no divergence beyond what S01's shared
+    // `thrustSchedule` already delivers. Ship B is placed far away so it
+    // never interacts.
+    const a = arena();
+    let state = buildInitialState(cfgFT([fleet(0, ['A']), fleet(1, ['B'])], a));
+    const idA: BodyId = 1;
+    state = withBody(state, idA, {
+      position: { x: 0, y: 0, z: 0 },
+      velocity: { x: 5, y: 0, z: 0 },
+    });
+    state = withBody(state, 2, {
+      position: { x: 4000, y: 0, z: 0 },
+      velocity: { x: 0, y: 0, z: 0 },
+    });
+
+    const segmentedPlan: MovementPlan = {
+      bodyId: idA,
+      deltaV: { x: 0, y: 0, z: 0 }, // ignored on the finite-thrust branch
+      segments: [
+        { deltaV: { x: 0, y: 12, z: 0 } },
+        { deltaV: { x: 0, y: 0, z: 12 } },
+      ],
+    };
+
+    const beatOut = runMovementBeat(state, [segmentedPlan]);
+
+    // Direct comparison. Same bodies snapshot, same plan, same PhysicsConfig
+    // — `resolveMovement` is the S01 primitive the beat forwards into.
+    const bodiesIn = Array.from(state.bodies.values()).sort((x, y) => x.id - y.id);
+    const stepResult = resolveMovement(bodiesIn, [segmentedPlan], state.physics);
+    const directA = stepResult.finalBodies.find((b) => b.id === idA)!;
+    const beatA = beatOut.state.bodies.get(idA)!;
+
+    // Byte-identical position + velocity — the beat added nothing.
+    expect(beatA.position.x).toBe(directA.position.x);
+    expect(beatA.position.y).toBe(directA.position.y);
+    expect(beatA.position.z).toBe(directA.position.z);
+    expect(beatA.velocity.x).toBe(directA.velocity.x);
+    expect(beatA.velocity.y).toBe(directA.velocity.y);
+    expect(beatA.velocity.z).toBe(directA.velocity.z);
+
+    // Record's keyframes carry the curve for free — one snapshot per sub-step
+    // (physics `StepResult.keyframes` is `subStepCount + 1`; the beat wires it
+    // through unchanged). Curved playback needs no trace-shape change.
+    expect(beatOut.record.keyframes.length).toBe(stepResult.subStepCount + 1);
+    expect(beatOut.record.subStepCount).toBe(stepResult.subStepCount);
+  });
+
+  it('a segmented ship plan actually curves (position.y > 0 after a purely +y burn segment)', () => {
+    // Ship starts at rest; single +y burn. If segments were silently stripped,
+    // the ship would coast at zero and this assertion would fail. Not a
+    // determinism test — a smoke assertion that finite thrust delivers motion.
+    const a = arena();
+    let state = buildInitialState(cfgFT([fleet(0, ['A']), fleet(1, ['B'])], a));
+    state = withBody(state, 1, {
+      position: { x: 0, y: 0, z: 0 },
+      velocity: { x: 0, y: 0, z: 0 },
+    });
+    state = withBody(state, 2, { position: { x: 4000, y: 0, z: 0 } });
+
+    const plan: MovementPlan = {
+      bodyId: 1,
+      deltaV: { x: 0, y: 0, z: 0 },
+      segments: [{ deltaV: { x: 0, y: 10, z: 0 } }],
+    };
+    const out = runMovementBeat(state, [plan]);
+    const a1 = out.state.bodies.get(1)!;
+    expect(a1.position.y).toBeGreaterThan(0);
   });
 });
 

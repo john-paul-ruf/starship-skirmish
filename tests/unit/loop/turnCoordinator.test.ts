@@ -188,6 +188,40 @@ describe('runTurn — determinism (N-turn digest equality)', () => {
   });
 });
 
+describe('collectMovementPlans — segmented plans flow opaquely (SESSION-02)', () => {
+  it('a commander returning a finite-thrust plan drives the ship along its burn', async () => {
+    // If `collectMovementPlans` (or any coordinator seam) reconstructed a
+    // plan without carrying `segments`, this ship would coast at rest and the
+    // assertion below would fail. The physics config carries `maxAccel`, so
+    // segments deliver a curved arc through the shared `thrustSchedule` (S01).
+    const a: Arena = { center: { x: 0, y: 0, z: 0 }, radius: 5000 };
+    const physicsFT: PhysicsConfig = { ...physics(a), maxAccel: 25 };
+    let state = buildInitialState({
+      seed: seedOf(1, 2),
+      fleets: [fleet(0, [ship('A')]), fleet(1, [ship('B')])],
+      arena: a,
+      physics: physicsFT,
+      combat: combat(),
+    });
+    state = withBody(state, 1, {
+      position: { x: 0, y: 0, z: 0 },
+      velocity: { x: 0, y: 0, z: 0 },
+    });
+    state = withBody(state, 2, { position: { x: 4000, y: 0, z: 0 } });
+
+    const segmentedPlan: MovementPlan = {
+      bodyId: 1,
+      deltaV: { x: 0, y: 0, z: 0 },
+      segments: [{ deltaV: { x: 0, y: 10, z: 0 } }],
+    };
+    const c0 = scripted(0, [segmentedPlan], []);
+    const c1 = scripted(1, [], []);
+    const result = await runTurn(state, [c0, c1]);
+    // Segments delivered → +y motion despite zero starting velocity.
+    expect(result.state.bodies.get(1)!.position.y).toBeGreaterThan(0);
+  });
+});
+
 describe('runMatch — loops to victory', () => {
   it('reaches a decisive outcome with the correct fleetId', async () => {
     let state = buildInitialState(cfg([
