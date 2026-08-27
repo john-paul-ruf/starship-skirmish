@@ -306,6 +306,42 @@ describe('previewInputFor', () => {
     expect(Math.hypot(input.segments[0]!.deltaV.x, input.segments[0]!.deltaV.y, input.segments[0]!.deltaV.z)).toBeCloseTo(20, 6);
     expect(Math.hypot(input.segments[1]!.deltaV.x, input.segments[1]!.deltaV.y, input.segments[1]!.deltaV.z)).toBeCloseTo(30, 6);
   });
+
+  it('CP3 ghost-draw path: the value handed to controller.previewArc is `{ segments }`', () => {
+    // The screen calls `controller.previewArc(id, previewInputFor(draft, budget, opts))`.
+    // A spy previewArc captures the exact ARC argument to lock the segmented
+    // seam without touching WebGL (session CP3 commit-condition).
+    const captured: unknown[] = [];
+    const previewArcSpy = (_bodyId: BodyId, arc: unknown): { positions: unknown[]; endsOutsideArena: boolean } => {
+      captured.push(arc);
+      return { positions: [], endsOutsideArena: false };
+    };
+
+    const d = draft({
+      bodyId: 7,
+      status: 'planned',
+      waypoints: [wp({ bearing: 45, magnitude: 12 }), wp({ bearing: 90, magnitude: 18 })],
+    });
+
+    previewArcSpy(d.bodyId, previewInputFor(d, 60, { sliceSeconds: 2, maxAccel: 30 }));
+    previewArcSpy(d.bodyId, previewInputFor(d, 60, { sliceSeconds: 2, maxAccel: 30 }));
+
+    expect(captured).toHaveLength(2);
+    for (const arc of captured) {
+      // Every call carries `{segments}`, never a bare Vec3 (the impulsive form).
+      expect(arc).not.toHaveProperty('x');
+      expect(arc).toHaveProperty('segments');
+      const segments = (arc as { segments: readonly { deltaV: { x: number; y: number; z: number } }[] }).segments;
+      expect(segments).toHaveLength(2);
+      // Segments carry WaypointBurn { deltaV: Vec3 } — the sim/types contract.
+      for (const s of segments) {
+        expect(s).toHaveProperty('deltaV');
+        expect(s.deltaV).toHaveProperty('x');
+        expect(s.deltaV).toHaveProperty('y');
+        expect(s.deltaV).toHaveProperty('z');
+      }
+    }
+  });
 });
 
 // ---- Draft transitions ----------------------------------------------------

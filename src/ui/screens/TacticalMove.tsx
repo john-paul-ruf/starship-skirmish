@@ -46,13 +46,14 @@ import { Viewport, type GhostArc, type ViewportHandle } from './tacticalMove/Vie
 import {
   buildGhostArc,
   fleetGateStatus,
-  impulsiveTotalDeltaV,
   initialDraft,
   perSegmentCap,
   planBadgeFor,
   plannedDeltaVMag,
   playerRosterRows,
   plotWaypoint,
+  previewInputFor,
+  rebuildForInterval,
   setActiveIndex,
   setCoast,
   sliceSecondsFor,
@@ -74,6 +75,9 @@ export function TacticalMove() {
   const selected = useSignal<BodyId | null>(null);
   const markInterval = useSignal<MarksIntervalValue>(1);
   const planTurn = useRef<number | null>(null);
+  /** Last marks-interval a draft-rebuild ran against — the CP3 gate so the
+   *  interval-change effect fires only on a real change, not on turn init. */
+  const lastInterval = useRef<MarksIntervalValue>(1);
   const viewportRef = useRef<ViewportHandle | null>(null);
 
   const isPlan = phase === 'movement-plan';
@@ -106,8 +110,25 @@ export function TacticalMove() {
     }
     drafts.value = next;
     selected.value = first;
+    lastInterval.current = markInterval.value;
     viewportRef.current?.clearTrail();
   }, [view === null ? -1 : view.turn]);
+
+  // SESSION-05 CP3: the marks-interval selector doubles as WAYPOINT-GRANULARITY.
+  // On interval change, rebuild every current draft — aim (bearing/pitch of
+  // waypoint 0) preserved, magnitudes reset to 0, activeIndex snaps to 0. The
+  // prototype rebuilds ALL ships in the fleet, not just the selected one; matches
+  // that behavior so the whole roster shares one granularity at all times.
+  useEffect(() => {
+    if (lastInterval.current === markInterval.value) return;
+    lastInterval.current = markInterval.value;
+    if (drafts.value.size === 0) return;
+    const next = new Map<BodyId, PlanDraft>();
+    for (const [id, d] of drafts.value) {
+      next.set(id, rebuildForInterval(d, markInterval.value, beatSeconds));
+    }
+    drafts.value = next;
+  }, [markInterval.value]);
 
   // ---- Derivations ---------------------------------------------------------
   const budgetById = new Map<BodyId, number>();
@@ -119,16 +140,14 @@ export function TacticalMove() {
 
   // Boundary-exit detection (§4.1) — the ghost cannot lie, so exit truth comes
   // straight from the sim integrator via `previewArc` for EVERY plotted arc.
-  // CP1: still using the impulsive-Vec3 previewArc form; CP3 swaps to the
-  // segmented `{segments}` form so a per-waypoint arc that curves out of the
-  // arena is caught by the true finite-thrust trajectory.
+  // SESSION-05 CP3: the segmented `{segments}` seam (D-ADDITIVE-PLAN, S04) so a
+  // per-waypoint arc that CURVES out of the arena is caught by the true
+  // finite-thrust trajectory — not by a summed-impulsive straight line.
   const exitIds = new Set<BodyId>();
   if (isPlan) {
     for (const d of draftList) {
-      const impulseVec = impulsiveTotalDeltaV(d, budgetOf(d.bodyId), burnOpts);
-      if (match.previewArc(d.bodyId, impulseVec).endsOutsideArena) {
-        exitIds.add(d.bodyId);
-      }
+      const preview = match.previewArc(d.bodyId, previewInputFor(d, budgetOf(d.bodyId), burnOpts));
+      if (preview.endsOutsideArena) exitIds.add(d.bodyId);
     }
   }
 
@@ -151,8 +170,10 @@ export function TacticalMove() {
   let selMagnitudeMax = 0;
   let selTotalSpent = 0;
   if (isPlan && selPlayerRow !== null && selDraft !== null && selId !== null) {
-    const impulseVec = impulsiveTotalDeltaV(selDraft, selPlayerRow.budget, burnOpts);
-    const preview = match.previewArc(selId, impulseVec);
+    const preview = match.previewArc(
+      selId,
+      previewInputFor(selDraft, selPlayerRow.budget, burnOpts),
+    );
     selTotalSpent = plannedDeltaVMag(selDraft, selPlayerRow.budget, burnOpts);
     selMagnitudeMax = perSegmentCap(selPlayerRow.budget, sliceSeconds, maxAccel);
     ghostArc = buildGhostArc(preview, selTotalSpent, {
