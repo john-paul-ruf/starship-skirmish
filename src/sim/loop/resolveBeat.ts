@@ -61,7 +61,7 @@ import {
   type AttackBeatRecord,
   type MovementBeatRecord,
 } from '../trace/index.js';
-import type { MatchState } from './matchState.js';
+import { pendingDetonationsSorted, type MatchState, type PendingDetonation } from './matchState.js';
 
 export interface MovementBeatOutcome {
   readonly state: MatchState;
@@ -582,6 +582,54 @@ export const runMovementBeat = (
     }
   }
 
+  // ── Stage G.5 — Cascade CONSUME (from previous attack beat) ──────────────
+  // Fold each carried-over `PendingDetonation` into this beat's cascade:
+  // its AoE hits land in `aoeBundles` (ownership-blind, ships only) with a
+  // shotIndex namespace (`0x30000 + hi`) disjoint from collision/missile-AoE
+  // (small subStep values), missile-detonation AoE (`0x10000 + h`), and
+  // in-beat destruction AoE (`0x20000 + hi`). Its debris joins
+  // `newDebrisDescriptors`. Iterated in ascending `event.bodyId`.
+  //
+  // A cascade AoE kill this beat is itself an in-arena death and follows the
+  // existing single-pass rule (see `secondaryDeaths` below — its own
+  // debris/AoE would go to the next beat; we do NOT recurse here).
+  //
+  // Consumed unconditionally: the produce side is gated by
+  // `combat.destruction.cascadeToNextMovement`; when the gate is off,
+  // `state.pendingDetonations` is empty and this loop is a no-op — the
+  // frozen combat goldens stay byte-identical.
+  const pending = pendingDetonationsSorted(state);
+  for (let pi = 0; pi < pending.length; pi += 1) {
+    const pd = pending[pi]!;
+    const aoeResult = detonate(pd.event, finalPositions, state.combat);
+    if (aoeResult !== null) {
+      const hits = aoeResult.hits;
+      for (let hi = 0; hi < hits.length; hi += 1) {
+        const hit = hits[hi]!;
+        if (!isShip(hit.bodyId)) continue;
+        pushDamage(aoeBundles, hit.bodyId, {
+          sourceId: pd.event.bodyId,
+          shotIndex: 0x30000 + hi,
+          amount: hit.damage,
+          source: 'aoe',
+        });
+      }
+    }
+    // Debris uses `pd.ship` because `state.ships` no longer holds this bodyId
+    // (removed by the attack beat that produced this pending detonation).
+    const debris = spawnDebris(pd.event, pd.ship, state.seed, state.turn, state.combat);
+    for (let di2 = 0; di2 < debris.length; di2 += 1) {
+      const dd = debris[di2]!;
+      newDebrisDescriptors.push({
+        ownerId: pd.event.bodyId,
+        position: dd.position,
+        velocity: dd.velocity,
+        mass: dd.mass,
+        radius: dd.radius,
+      });
+    }
+  }
+
   // Apply pass-2 AoE.
   const aoeTargetIds = Array.from(aoeBundles.keys()).sort((a, b) => a - b);
   for (let ti = 0; ti < aoeTargetIds.length; ti += 1) {
@@ -764,10 +812,10 @@ export const runMovementBeat = (
     fleetOf: fleetOfOut,
     guidances: guidancesOut,
     debrisAge: debrisAgeOut,
-    // Movement beat CONSUMES pendingDetonations (checkpoint 3 wires the
-    // consume path). This checkpoint leaves the array empty on the way out:
-    // the field is behavior-neutral until both produce (attack beat) and
-    // consume (movement beat) sides land.
+    // Movement beat CONSUMED any incoming `pendingDetonations` in Stage G.5;
+    // clear on the way out. Any secondary-death cascade this beat produced
+    // is intentionally NOT re-queued (single-pass rule; matches the existing
+    // "next beat" comment on `secondaryDeaths`).
     pendingDetonations: [],
   };
   return { state: stateOut, record };
@@ -869,10 +917,25 @@ export const runAttackBeat = (
   for (let i = 0; i < res.destroyed.length; i += 1) {
     removedBodyIds.add(res.destroyed[i]!.bodyId);
   }
-  // AoE cascade from the just-killed ships lands NEXT movement beat (per FR-21
-  // "destruction effects enter the battlespace for the NEXT movement beat" —
-  // we do NOT recompute a second attack pass here). Debris and secondary
-  // kills accrue in the next movement beat.
+  // Attack-beat kills produce class-scaled AoE + debris on the NEXT movement
+  // beat (FR-21). Gate: `combat.destruction.cascadeToNextMovement`. Absent /
+  // false ⇒ empty pending list (pre-F6 loop behavior — the frozen combat
+  // goldens' baked configs omit the flag). Carry each event alongside its
+  // pre-removal `SimShip` because `spawnDebris` reads `ship.mass` and the
+  // ship is about to be dropped from `state.ships`. Sorted by `event.bodyId`
+  // ascending — determinism §7.3 rule 1.
+  const cascadeEnabled = state.combat.destruction.cascadeToNextMovement ?? false;
+  const pendingDetonations: PendingDetonation[] = [];
+  if (cascadeEnabled) {
+    for (let i = 0; i < res.destroyed.length; i += 1) {
+      const event = res.destroyed[i]!;
+      if (!event.detonates) continue;
+      const dyingShip = state.ships.get(event.bodyId);
+      if (dyingShip === undefined) continue;
+      pendingDetonations.push({ event, ship: dyingShip.ship });
+    }
+    pendingDetonations.sort((a, b) => a.event.bodyId - b.event.bodyId);
+  }
 
   const bodiesOut = new Map<BodyId, Body>();
   for (const [id, b] of state.bodies) {
@@ -920,10 +983,11 @@ export const runAttackBeat = (
     fleetOf: fleetOfOut,
     guidances: guidancesOut,
     debrisAge: state.debrisAge,
-    // Attack beat PRODUCES pendingDetonations (checkpoint 3 wires the produce
-    // path behind `combat.destruction.cascadeToNextMovement`). This checkpoint
-    // emits an empty list, keeping frozen goldens byte-identical.
-    pendingDetonations: [],
+    // Attack beat PRODUCES pendingDetonations for the next movement beat's
+    // cascade (FR-21). Empty when `combat.destruction.cascadeToNextMovement`
+    // is absent/false — the frozen goldens rely on that absent⇒off
+    // behaviour to stay byte-identical.
+    pendingDetonations,
   };
   return { state: stateOut, record };
 };

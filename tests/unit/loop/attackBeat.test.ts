@@ -143,6 +143,70 @@ describe('runAttackBeat — snapshot semantics', () => {
     expect(out.state.ships.get(1)!.missileAmmo[0]).toBe(3);
   });
 
+  it('cascadeToNextMovement=true: attack-beat kills populate pendingDetonations, sorted by bodyId (CP3)', () => {
+    // Two attackers each kill the other in a single beat — a symmetric
+    // mutual-kill so BOTH corpses land in pendingDetonations. Gate on.
+    const cfgOn: MatchConfig = {
+      ...cfg([
+        fleet(0, [
+          ship('A', {
+            maxHull: 30,
+            weapons: [{ range: 3000, damage: 100, shotsPerTurn: 1, accuracy: 1 }],
+          }),
+        ]),
+        fleet(1, [
+          ship('B', {
+            maxHull: 30,
+            weapons: [{ range: 3000, damage: 100, shotsPerTurn: 1, accuracy: 1 }],
+          }),
+        ]),
+      ]),
+      combat: {
+        ...combat(),
+        destruction: { ...combat().destruction, cascadeToNextMovement: true },
+      },
+    };
+    let state = buildInitialState(cfgOn);
+    state = withBody(state, 1, { position: { x: -400, y: 0, z: 0 } });
+    state = withBody(state, 2, { position: { x: 400, y: 0, z: 0 } });
+    const plans: AttackPlan[] = [
+      { shooterId: 1, targetId: 2, weaponIndex: 0 },
+      { shooterId: 2, targetId: 1, weaponIndex: 0 },
+    ];
+    const out = runAttackBeat(state, plans);
+    // Both dead, both queued for cascade in ascending bodyId order.
+    const pending = out.state.pendingDetonations ?? [];
+    expect(pending.map((p) => p.event.bodyId)).toEqual([1, 2]);
+    // Each pending event has detonates=true and carries a valid ship handle.
+    expect(pending.every((p) => p.event.detonates === true)).toBe(true);
+    expect(pending.every((p) => typeof p.ship.mass === 'number')).toBe(true);
+  });
+
+  it('cascadeToNextMovement absent (default): attack-beat kills DO NOT queue pending (frozen-goldens path)', () => {
+    let state = buildInitialState(cfg([
+      fleet(0, [
+        ship('A', {
+          weapons: [{ range: 3000, damage: 200, shotsPerTurn: 1, accuracy: 1 }],
+        }),
+      ]),
+      fleet(1, [
+        ship('B', {
+          maxHull: 50,
+          weapons: [{ range: 3000, damage: 20, shotsPerTurn: 1, accuracy: 1 }],
+        }),
+      ]),
+    ]));
+    state = withBody(state, 1, { position: { x: -400, y: 0, z: 0 } });
+    state = withBody(state, 2, { position: { x: 400, y: 0, z: 0 } });
+    const plans: AttackPlan[] = [
+      { shooterId: 1, targetId: 2, weaponIndex: 0 },
+    ];
+    const out = runAttackBeat(state, plans);
+    // B dies but gate is absent (default combat()) ⇒ no cascade queued.
+    expect(out.record.destroyed.some((d) => d.bodyId === 2)).toBe(true);
+    expect(out.state.pendingDetonations ?? []).toEqual([]);
+  });
+
   it('shuffled attack plans ⇒ identical resulting state digest', () => {
     let state = buildInitialState(cfg([
       fleet(0, [ship('A'), ship('B')]),

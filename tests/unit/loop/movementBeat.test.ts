@@ -11,13 +11,18 @@
 import { describe, expect, it } from 'vitest';
 import { runMovementBeat } from '../../../src/sim/loop/resolveBeat.js';
 import { buildInitialState } from '../../../src/sim/loop/createMatch.js';
-import type { MatchConfig, MatchState } from '../../../src/sim/loop/matchState.js';
+import type {
+  MatchConfig,
+  MatchState,
+  PendingDetonation,
+} from '../../../src/sim/loop/matchState.js';
 import { seedOf } from '../../../src/sim/mathx/index.js';
 import type {
   Arena,
   Body,
   BodyId,
   CombatConfig,
+  DestructionEvent,
   MissileBody,
   MovementPlan,
   SimFleet,
@@ -330,6 +335,87 @@ describe('runMovementBeat — point-defense interception (CP2)', () => {
     // No intercept log entries at all.
     const interceptEntries = out.record.log.filter((e) => e.result === 'intercept');
     expect(interceptEntries.length).toBe(0);
+  });
+});
+
+describe('runMovementBeat — destruction cascade consume (CP3)', () => {
+  const cascadeCombat = (): CombatConfig => ({
+    ...combat(),
+    destruction: {
+      ...combat().destruction,
+      cascadeToNextMovement: true,
+    },
+  });
+
+  it("consumes state.pendingDetonations: witness takes ownership-blind AoE + debris appears", () => {
+    // Setup: two ships in fleet 0 (Witness at origin, Extra far away).
+    // A cascade carries in for a "phantom" frigate at position (0, 0, 0) —
+    // frigate AoE radius from the test combat config is 90; damage 40 at
+    // center. Place Witness INSIDE the AoE. debrisPerDestruction.frigate=4.
+    let state = buildInitialState(cfg([
+      { fleetId: 0, ships: [ship('Witness'), ship('Extra')] },
+      fleet(1, ['Bystander']),
+    ]));
+    const witnessId: BodyId = 1;
+    state = withBody(state, witnessId, { position: { x: 50, y: 0, z: 0 } });
+    state = withBody(state, 2, { position: { x: 4000, y: 0, z: 0 } });
+    state = withBody(state, 3, { position: { x: -4000, y: 0, z: 0 } });
+
+    // The phantom event's bodyId (900) is not in ships/bodies — that is
+    // correct: the ship was destroyed in the (imagined) prior attack beat.
+    // Carry its SimShip so spawnDebris has `ship.mass`.
+    const phantomShip: SimShip = ship('Phantom');
+    const phantomEvent: DestructionEvent = {
+      bodyId: 900,
+      chassisClass: 'frigate',
+      position: { x: 0, y: 0, z: 0 },  // Witness at (50,0,0) is 50 < 90 (AoE radius)
+      velocity: { x: 0, y: 0, z: 0 },
+      cause: 'weapon',
+      detonates: true,
+    };
+    const pending: PendingDetonation[] = [{ event: phantomEvent, ship: phantomShip }];
+    state = {
+      ...state,
+      combat: cascadeCombat(),
+      pendingDetonations: pending,
+    };
+
+    const witnessBefore = state.ships.get(witnessId)!.hull;
+    const out = runMovementBeat(state, []);
+
+    // Witness took AoE damage — hull strictly less than before.
+    const witnessAfter = out.state.ships.get(witnessId)!.hull;
+    expect(witnessAfter).toBeLessThan(witnessBefore);
+
+    // debrisPerDestruction.frigate = 4 bodies appear.
+    const debrisCount = Array.from(out.state.bodies.values()).filter(
+      (b) => b.kind === 'debris',
+    ).length;
+    expect(debrisCount).toBe(4);
+
+    // Cascade cleared from the output state — the next beat sees no pending.
+    expect(out.state.pendingDetonations).toEqual([]);
+  });
+
+  it("gate off (cascadeToNextMovement absent + empty pending): NO cascade damage, NO debris", () => {
+    let state = buildInitialState(cfg([
+      { fleetId: 0, ships: [ship('Witness'), ship('Extra')] },
+      fleet(1, ['Bystander']),
+    ]));
+    const witnessId: BodyId = 1;
+    state = withBody(state, witnessId, { position: { x: 50, y: 0, z: 0 } });
+    state = withBody(state, 2, { position: { x: 4000, y: 0, z: 0 } });
+    state = withBody(state, 3, { position: { x: -4000, y: 0, z: 0 } });
+    // Baseline combat() has cascadeToNextMovement absent (⇒ gate off).
+    // Empty pendingDetonations models the produce-side output.
+    state = { ...state, pendingDetonations: [] };
+    const witnessBefore = state.ships.get(witnessId)!.hull;
+    const out = runMovementBeat(state, []);
+    expect(out.state.ships.get(witnessId)!.hull).toBe(witnessBefore);
+    const debrisCount = Array.from(out.state.bodies.values()).filter(
+      (b) => b.kind === 'debris',
+    ).length;
+    expect(debrisCount).toBe(0);
   });
 });
 
