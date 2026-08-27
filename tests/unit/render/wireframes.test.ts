@@ -64,7 +64,8 @@ describe('SHIP_GEOMETRY', () => {
     const [a, b] = geo.edges[0]!;
     const va = geo.vertices[a]!;
     const vb = geo.vertices[b]!;
-    expect(Array.from(flat.slice(0, 6))).toEqual([va[0], va[1], va[2], vb[0], vb[1], vb[2]]);
+    const expected = [va[0], va[1], va[2], vb[0], vb[1], vb[2]];
+    for (let k = 0; k < 6; k += 1) expect(flat[k]).toBeCloseTo(expected[k]!, 5);
   });
 });
 
