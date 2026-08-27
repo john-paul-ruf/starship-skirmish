@@ -118,6 +118,24 @@ const defaultCombat = (): CombatConfig => ({
   shields: { regenTicksRegardlessOfDamage: true },
 });
 
+/**
+ * Combat config with the two S01 gate flags turned ON — used by scenarios that
+ * exercise the destruction cascade (`cascadeToNextMovement`) and/or the missile
+ * launch offset (`launchClearsLauncher`). SEPARATE from `defaultCombat()`: the
+ * frozen goldens (seed-1..5) MUST keep serializing to the exact bytes on disk,
+ * so their config omits these fields and any change to `defaultCombat()` would
+ * fail the recorder's append-only guard (recordFixtures.ts:615). New scenarios
+ * that need the gated behaviour bake this config instead.
+ */
+const gatedCombat = (): CombatConfig => {
+  const base = defaultCombat();
+  return {
+    ...base,
+    destruction: { ...base.destruction, cascadeToNextMovement: true },
+    missiles: { ...base.missiles, launchClearsLauncher: true },
+  };
+};
+
 // ---------------------------------------------------------------------------
 // Ship / fleet factories. These construct `SimShip` directly (not via the
 // domain resolver) so the fixture can pin exactly the profile it needs — the
@@ -478,12 +496,84 @@ const patchRammingScripts = (scenario: Scenario): Scenario => {
   return { ...scenario, commanders: patchedCommanders };
 };
 
+/** Scenario 6 — point-defense interception (S03 · combat-integration). Fleet 0
+ *  attacker launches a slow-boost missile at a fleet 1 defender equipped with a
+ *  long-range 100 %-chance PD turret. Turn 2 movement beat: the missile enters
+ *  PD range and is deterministically shot down BEFORE its contact-processing
+ *  detonation path can fire (Stage B.5 runs before Stage C in `resolveBeat.ts`).
+ *  Both sides fire cannons — attacker's 30-damage cannon puts down the fragile
+ *  defender on turn 2 attack, one turn after the observable intercept.
+ *
+ *  Bakes the S01 gate flags via `gatedCombat()` — `launchClearsLauncher:true`
+ *  is what lets the missile fly at the defender at all (otherwise the missile
+ *  spawns inside its launcher and self-detonates on the first sub-step of
+ *  turn 2 movement, per the pre-F6 baseline the frozen goldens encode). PD
+ *  itself is not config-gated: every frozen fixture ship has `pointDefense: []`
+ *  so the code path is naturally inert for them. */
+const pdArena = arena(800);
+const SCEN_PD_INTERCEPT: Scenario = {
+  name: 'seed-6-pd-intercept',
+  description:
+    '1v1 duel with a PD-equipped defender. Attacker launches one slow missile turn 1; PD intercepts it on turn 2 movement before the cannon duel resolves in attacker\'s favour on turn 2 attack. Bakes gates ON (launchClearsLauncher, cascadeToNextMovement).',
+  seed: seedOf(0x6dd6dd6d, 0x6ce6ce6c),
+  arena: pdArena,
+  physics: defaultPhysics(pdArena),
+  combat: gatedCombat(),
+  fleets: [
+    fleet(0, [
+      ship('Skirmisher', {
+        chassisClass: 'frigate',
+        maxHull: 80,
+        weapons: [{ range: 2500, damage: 30, shotsPerTurn: 1, accuracy: 0.9 }],
+        missiles: [
+          {
+            ammo: 1,
+            damage: 40,
+            aoeRadius: 80,
+            // Slow enough that after ONE movement beat (dt=10 → 1000 units) the
+            // missile is still ~130 units short of the defender (fleet distance
+            // ≈ 2 × 0.72 × 800 = 1152 − launch offset 21 ≈ 1131) — safely
+            // inside PD's 300-unit interceptRange without physically overlapping.
+            boostVelocity: 100,
+            trackingTurnRate: 0.2,
+            bodyMass: 3,
+            bodyRadius: 6,
+          },
+        ],
+      }),
+    ]),
+    fleet(1, [
+      ship('Interceptor', {
+        chassisClass: 'frigate',
+        maxHull: 60,
+        weapons: [{ range: 2500, damage: 20, shotsPerTurn: 1, accuracy: 0.9 }],
+        pointDefense: [
+          {
+            // Generous range covers post-physics missile position with room
+            // for placement jitter; chance 1.0 makes the intercept
+            // deterministic (a probabilistic PD roll would still be seeded and
+            // hash-frozen — 1.0 makes the fixture's INTENT self-documenting).
+            interceptRange: 300,
+            interceptChance: 1.0,
+            interceptsPerTurn: 2,
+          },
+        ],
+      }),
+    ]),
+  ],
+  commanders: [
+    { fleetId: 0, kind: 'simple-fire-missile' },
+    { fleetId: 1, kind: 'simple-fire' },
+  ],
+};
+
 const SCENARIOS: readonly Scenario[] = [
   SCEN_DUEL,
   SCEN_ASYMMETRIC,
   SCEN_TRIANGLE,
   SCEN_MISSILE_CASCADE,
   patchRammingScripts(SCEN_COLLISION),
+  SCEN_PD_INTERCEPT,
 ];
 
 // ---------------------------------------------------------------------------
