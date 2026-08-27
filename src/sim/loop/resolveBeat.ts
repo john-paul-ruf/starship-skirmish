@@ -40,6 +40,7 @@ import {
   detonatesOnContact,
   enforceHazardCap,
   guideMissiles,
+  interceptMissiles,
   regenShields,
   resolveAttackBeat,
   spawnDebris,
@@ -47,6 +48,7 @@ import {
   type Damage,
   type DebrisAge,
   type HazardEntry,
+  type InterceptCandidate,
   type LaunchEnv,
   type MissileGuidance,
   type ShipCombat,
@@ -55,6 +57,7 @@ import {
   logAoe,
   logBoundaryExit,
   logCollision,
+  logIntercept,
   type AttackBeatRecord,
   type MovementBeatRecord,
 } from '../trace/index.js';
@@ -202,6 +205,98 @@ export const runMovementBeat = (
     else boundaryHazardExits.push(exit.bodyId);
   }
 
+  // ── Stage B.5 — Point-defense interception ───────────────────────────────
+  // Between physics and contact processing so an intercepted missile is
+  // removed BEFORE Stage C can detonate it. Candidates are enumerated in
+  // strict ascending (defenderId, pdIndex, missileId) order — the exact key
+  // interceptMissiles sorts by — using post-physics positions from
+  // `finalPositions`. Missiles that exited the arena this beat aren't in
+  // `finalById` and so are already unreachable to PD.
+  //
+  // PD requires no config gate: candidates only exist for ships with a live
+  // PD turret, and every frozen combat golden fixture has `pointDefense: []`
+  // ⇒ zero candidates ⇒ digests identical.
+  const interceptCandidates: InterceptCandidate[] = [];
+  {
+    const missileIdsSorted: BodyId[] = [];
+    for (const [id, b] of finalById) {
+      if (b.kind === 'missile') missileIdsSorted.push(id);
+    }
+    missileIdsSorted.sort((a, b) => a - b);
+    const shipIdsSorted = Array.from(state.ships.keys()).sort((a, b) => a - b);
+    for (let si = 0; si < shipIdsSorted.length; si += 1) {
+      const defenderId = shipIdsSorted[si]!;
+      const defender = state.ships.get(defenderId)!;
+      if (defender.pdAlive.length === 0) continue;
+      // A defender that boundary-exited this beat is unreachable to PD — its
+      // post-physics position is undefined. Skip.
+      const defenderPos = finalPositions.get(defenderId);
+      if (defenderPos === undefined) continue;
+      for (let pi = 0; pi < defender.pdAlive.length; pi += 1) {
+        if (!defender.pdAlive[pi]!) continue;
+        for (let mi = 0; mi < missileIdsSorted.length; mi += 1) {
+          const missileId = missileIdsSorted[mi]!;
+          const missilePos = finalPositions.get(missileId)!;
+          interceptCandidates.push({
+            defenderId,
+            defenderPosition: defenderPos,
+            pdIndex: pi,
+            missileId,
+            missilePosition: missilePos,
+          });
+        }
+      }
+    }
+  }
+  const interceptedResult =
+    interceptCandidates.length > 0
+      ? interceptMissiles(state.ships, interceptCandidates, state.seed, state.turn)
+      : { intercepted: [] as BodyId[] };
+  const interceptedMissiles = new Set<BodyId>(interceptedResult.intercepted);
+  // Attribute each intercepted missile to the FIRST eligible candidate in
+  // sorted order — deterministic, matches the enumeration above. Range and
+  // per-turn budget are what interceptMissiles applies; we replay the range
+  // gate here so the log entry attributes to the same defender that would
+  // have taken the shot. `used`-budget accounting isn't replayed (the log is
+  // one entry per intercepted missile, not one per shot fired).
+  const interceptLogEntries: CombatLogEntry[] = [];
+  if (interceptedMissiles.size > 0) {
+    const missileToDefender = new Map<BodyId, { defenderId: BodyId; chance: number }>();
+    for (let i = 0; i < interceptCandidates.length; i += 1) {
+      const c = interceptCandidates[i]!;
+      if (!interceptedMissiles.has(c.missileId)) continue;
+      if (missileToDefender.has(c.missileId)) continue;
+      const defender = state.ships.get(c.defenderId)!;
+      const pd = defender.ship.pointDefense[c.pdIndex]!;
+      if (distance(c.defenderPosition, c.missilePosition) > pd.interceptRange) continue;
+      missileToDefender.set(c.missileId, {
+        defenderId: c.defenderId,
+        chance: pd.interceptChance,
+      });
+    }
+    const interceptedSorted = Array.from(interceptedMissiles).sort((a, b) => a - b);
+    for (let i = 0; i < interceptedSorted.length; i += 1) {
+      const missileId = interceptedSorted[i]!;
+      const attr = missileToDefender.get(missileId);
+      if (attr === undefined) continue;
+      interceptLogEntries.push(
+        logIntercept({
+          turn: state.turn,
+          beat: 'movement',
+          sourceId: attr.defenderId,
+          targetId: missileId,
+          chance: attr.chance,
+          // Roll isn't visible at the loop layer — `interceptMissiles`
+          // returns only the id set. The intercept-succeeded outcome is
+          // recorded via `intercepted: true` → result 'intercept'; the roll
+          // scalar is a UI convenience, safely 0 for this beat.
+          roll: 0,
+          intercepted: true,
+        }),
+      );
+    }
+  }
+
   // ── Stage C — Contact processing ─────────────────────────────────────────
   // For every physics contact:
   //   • if idA or idB is a ship → apply collision damage to that ship.
@@ -256,6 +351,9 @@ export const runMovementBeat = (
     // Missile detonation: at most one detonation per missile per beat.
     const maybeDetonate = (missileId: BodyId): void => {
       if (detonatedMissiles.has(missileId)) return;
+      // An intercepted missile is destroyed BEFORE any contact processing —
+      // it never detonates (no AoE, no debris cascade).
+      if (interceptedMissiles.has(missileId)) return;
       const g = state.guidances.get(missileId);
       if (g === undefined) return;
       if (!detonatesOnContact(g, state.combat.missiles.spentRemainsArmed)) return;
@@ -278,8 +376,13 @@ export const runMovementBeat = (
     if (missileBodies.has(c.idB)) maybeDetonate(c.idB);
   }
 
-  // Missiles that detonated OR exited the arena leave the field this beat.
+  // Missiles that detonated, were intercepted, OR exited the arena leave the
+  // field this beat. `missileRemoved` is only consulted defensively by the
+  // caller for hazard bookkeeping; the assemble-new-bodies pass below reads
+  // `removedBodyIds` (which folds in `interceptedMissiles`) as its
+  // authoritative removal set.
   const missileRemoved = new Set<BodyId>(detonatedMissiles);
+  for (const mid of interceptedMissiles) missileRemoved.add(mid);
   for (let i = 0; i < boundaryHazardExits.length; i += 1) {
     missileRemoved.add(boundaryHazardExits[i]!); // includes debris too — filter below
   }
@@ -308,9 +411,12 @@ export const runMovementBeat = (
 
   // ── Stage E — Apply pass-1 damage (collision + missile AoE) ──────────────
   // Iterate targets in ascending id. Build the movement-beat log as we go.
+  // PD intercept entries (from Stage B.5) lead the log — the interception
+  // fires before contact processing chronologically, so its transcript entry
+  // sits before any resulting damage entry.
   const combats1 = new Map<BodyId, ShipCombat>();
   const inArenaDeaths: DestructionEvent[] = [];
-  const log: CombatLogEntry[] = [];
+  const log: CombatLogEntry[] = [...interceptLogEntries];
 
   const targetIdsSorted = Array.from(collisionBundles.keys()).sort((a, b) => a - b);
   for (let ti = 0; ti < targetIdsSorted.length; ti += 1) {
@@ -526,12 +632,14 @@ export const runMovementBeat = (
 
   // ── Stage H — Assemble the new body set ──────────────────────────────────
   // Start from physics survivors, remove destroyed ships (in-arena or boundary
-  // or secondary), remove detonated missiles, then add newly minted debris.
+  // or secondary), remove detonated OR intercepted missiles, then add newly
+  // minted debris.
   const removedBodyIds = new Set<BodyId>();
   for (let i = 0; i < inArenaDeaths.length; i += 1) removedBodyIds.add(inArenaDeaths[i]!.bodyId);
   for (let i = 0; i < boundaryDeaths.length; i += 1) removedBodyIds.add(boundaryDeaths[i]!.bodyId);
   for (let i = 0; i < secondaryDeaths.length; i += 1) removedBodyIds.add(secondaryDeaths[i]!.bodyId);
   for (const mid of detonatedMissiles) removedBodyIds.add(mid);
+  for (const mid of interceptedMissiles) removedBodyIds.add(mid);
 
   let nextBodyId = state.nextBodyId;
   const newDebrisBodies: DebrisBody[] = [];

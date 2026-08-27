@@ -18,11 +18,13 @@ import type {
   Body,
   BodyId,
   CombatConfig,
+  MissileBody,
   MovementPlan,
   SimFleet,
   SimShip,
 } from '../../../src/sim/types.js';
 import type { PhysicsConfig } from '../../../src/sim/physics/index.js';
+import type { MissileGuidance } from '../../../src/sim/rules/index.js';
 
 // ---- Fixtures --------------------------------------------------------------
 
@@ -212,6 +214,122 @@ describe('runMovementBeat — boundary vs in-arena death (FR-26)', () => {
     for (const [, b] of out.state.bodies) {
       expect(b.kind).not.toBe('debris');
     }
+  });
+});
+
+describe('runMovementBeat — point-defense interception (CP2)', () => {
+  it('intercepts an incoming missile: no AoE, missile removed, intercept log entry', () => {
+    // One defender with a PD turret guaranteed to hit (chance=1) at range 200.
+    // One incoming missile positioned inside the interceptRange with a small
+    // inbound velocity. The intercepted missile is destroyed BEFORE Stage C's
+    // contact processing, so its detonate-on-contact never fires — the
+    // defender takes zero AoE damage.
+    const smallArena: Arena = { center: { x: 0, y: 0, z: 0 }, radius: 5000 };
+    const defenderShip: SimShip = ship('Defender', {
+      pointDefense: [
+        { interceptRange: 300, interceptChance: 1, interceptsPerTurn: 1 },
+      ],
+    });
+    // Defender-only fleet 0; second fleet exists purely so `buildInitialState`
+    // has ≥2 fleets to place. The missile below is injected directly.
+    let state = buildInitialState(
+      cfg([
+        { fleetId: 0, ships: [defenderShip] },
+        fleet(1, ['Dummy']),
+      ], smallArena),
+    );
+    const defenderId: BodyId = 1;
+    // Move defender to origin; move the dummy fleet ship far away so it does
+    // not participate.
+    state = withBody(state, defenderId, { position: { x: 0, y: 0, z: 0 } });
+    state = withBody(state, 2, { position: { x: 4000, y: 0, z: 0 } });
+
+    // Inject a live missile body + guidance targeting the defender.
+    const missileId: BodyId = 999;
+    const missileBody: MissileBody = {
+      kind: 'missile',
+      id: missileId,
+      position: { x: 100, y: 0, z: 0 },  // 100 units — well inside PD range
+      velocity: { x: -1, y: 0, z: 0 },   // slow — stays inside range post-step
+      mass: 3,
+      radius: 5,
+    };
+    const bodies = new Map<BodyId, Body>(state.bodies);
+    bodies.set(missileId, missileBody);
+    const guidance: MissileGuidance = {
+      bodyId: missileId,
+      targetId: defenderId,
+      trackingBeatsLeft: 2,
+      rackDamage: 40,
+      aoeRadius: 60,
+      trackingTurnRate: 30,
+    };
+    const guidances = new Map<BodyId, MissileGuidance>(state.guidances);
+    guidances.set(missileId, guidance);
+    state = { ...state, bodies, guidances };
+
+    const out = runMovementBeat(state, []);
+
+    // Missile is gone from the field.
+    expect(out.state.bodies.has(missileId)).toBe(false);
+    // Guidance was dropped for the intercepted missile (bodyId no longer in
+    // bodiesOut ⇒ guidance filter drops it).
+    expect(out.state.guidances.has(missileId)).toBe(false);
+    // Defender took NO AoE damage — interception preceded any detonation.
+    expect(out.state.ships.get(defenderId)!.hull).toBe(100);
+    // The record's log contains an intercept entry for this missile.
+    const interceptEntries = out.record.log.filter(
+      (e) => e.beat === 'movement' && e.result === 'intercept' && e.targetId === missileId,
+    );
+    expect(interceptEntries.length).toBe(1);
+    expect(interceptEntries[0]!.sourceId).toBe(defenderId);
+    expect(interceptEntries[0]!.chance).toBe(1);
+  });
+
+  it('missile outside interceptRange is NOT intercepted', () => {
+    const smallArena: Arena = { center: { x: 0, y: 0, z: 0 }, radius: 5000 };
+    const defenderShip: SimShip = ship('Defender', {
+      pointDefense: [
+        { interceptRange: 50, interceptChance: 1, interceptsPerTurn: 1 },
+      ],
+    });
+    let state = buildInitialState(
+      cfg([
+        { fleetId: 0, ships: [defenderShip] },
+        fleet(1, ['Dummy']),
+      ], smallArena),
+    );
+    state = withBody(state, 1, { position: { x: 0, y: 0, z: 0 } });
+    state = withBody(state, 2, { position: { x: 4000, y: 0, z: 0 } });
+
+    // Missile is at 200 — far outside interceptRange=50.
+    const missileId: BodyId = 999;
+    const bodies = new Map<BodyId, Body>(state.bodies);
+    bodies.set(missileId, {
+      kind: 'missile',
+      id: missileId,
+      position: { x: 200, y: 0, z: 0 },
+      velocity: { x: 0, y: 0, z: 0 },
+      mass: 3,
+      radius: 5,
+    });
+    const guidances = new Map<BodyId, MissileGuidance>(state.guidances);
+    guidances.set(missileId, {
+      bodyId: missileId,
+      targetId: 1,
+      trackingBeatsLeft: 2,
+      rackDamage: 40,
+      aoeRadius: 60,
+      trackingTurnRate: 30,
+    });
+    state = { ...state, bodies, guidances };
+
+    const out = runMovementBeat(state, []);
+    // Missile survives (no intercept, no contact).
+    expect(out.state.bodies.has(missileId)).toBe(true);
+    // No intercept log entries at all.
+    const interceptEntries = out.record.log.filter((e) => e.result === 'intercept');
+    expect(interceptEntries.length).toBe(0);
   });
 });
 
