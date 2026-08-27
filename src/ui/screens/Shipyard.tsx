@@ -16,15 +16,20 @@ import { useComputed, useSignal } from '@preact/signals';
 import { useEffect, useMemo } from 'preact/hooks';
 
 import { useApp } from '../appContext.js';
+import type { ComponentDef, SlotType } from '../../catalog/index.js';
 import type { Build } from '../../domain/index.js';
 import { pointCost } from '../../domain/index.js';
+import { Tabs } from '../components/index.js';
 
 import { ChassisPicker } from './shipyard/ChassisPicker.js';
+import { ComponentPicker } from './shipyard/ComponentPicker.js';
 import { SlotBench } from './shipyard/SlotBench.js';
 import {
+  applySlot,
   buildLayout,
   chassisByClass,
   createFreshBuild,
+  fitErrorLabel,
   slotLabels,
   snapshot,
   type FitSnapshot,
@@ -36,6 +41,18 @@ import {
 // call-site.
 const AUTHORING_SCHEMA_VERSION = 1;
 
+/** The left column's five slot-type tabs + a leading CHASSIS pane. */
+type CatalogTab = 'chassis' | SlotType;
+
+const CATALOG_TABS = [
+  { id: 'chassis' as const, label: 'CHASSIS' },
+  { id: 'weapon' as const, label: 'WEAPON' },
+  { id: 'shield' as const, label: 'SHIELD' },
+  { id: 'missile' as const, label: 'MISSILE' },
+  { id: 'engine' as const, label: 'ENGINE' },
+  { id: 'special' as const, label: 'SPECIAL' },
+] as const;
+
 export function Shipyard() {
   const { catalog, route } = useApp();
 
@@ -45,21 +62,16 @@ export function Shipyard() {
 
   const workingBuild = useSignal<Build | null>(null);
   const selectedBay = useSignal<number | null>(null);
+  const catalogTab = useSignal<CatalogTab>('chassis');
 
-  // Route-arriving buildId is not yet wired (edit-existing lands in CP4). CP1
-  // handles the fresh path only — reading the field early keeps a placeholder
-  // useEffect symmetric with the CP4 hook shape.
+  // Route-arriving buildId is not yet wired (edit-existing lands in CP4).
   const currentRoute = route.value;
   const routeBuildId =
     currentRoute.name === 'shipyard' ? currentRoute.buildId : undefined;
 
   useEffect(() => {
-    if (routeBuildId === undefined) {
-      // Fresh path — the user picks a chassis to seed the build. Nothing to do
-      // eagerly; keep any current draft in place.
-      return;
-    }
-    // Edit-existing path lands in CP4. CP1 does not load the repo.
+    if (routeBuildId === undefined) return;
+    // Edit-existing path lands in CP4.
   }, [routeBuildId]);
 
   const pickChassis = (chassisId: string, chassisName: string) => {
@@ -72,7 +84,37 @@ export function Shipyard() {
     if (result.ok) {
       workingBuild.value = result.value;
       selectedBay.value = null;
+      // After chassis pick, stay on the catalog tab so the player sees their
+      // chosen chassis highlighted; the tab will auto-switch on bay select.
+      catalogTab.value = 'chassis';
     }
+  };
+
+  /** Auto-switch the catalog tab to match the selected bay's slot type. */
+  const selectBay = (index: number) => {
+    selectedBay.value = index;
+    const b = workingBuild.value;
+    if (b === null) return;
+    const layout = buildLayout(catalog, b);
+    const type = layout[index];
+    if (type !== undefined) catalogTab.value = type;
+  };
+
+  const clearBay = (index: number) => {
+    const b = workingBuild.value;
+    if (b === null) return;
+    workingBuild.value = applySlot(b, index, null);
+  };
+
+  const pickComponent = (component: ComponentDef) => {
+    const b = workingBuild.value;
+    const bay = selectedBay.value;
+    if (b === null || bay === null) return;
+    // Guard against a type/bay mismatch — the picker disables non-matches at
+    // input time, but if the tab was switched via keyboard we validate here.
+    const layout = buildLayout(catalog, b);
+    if (layout[bay] !== component.slotType) return;
+    workingBuild.value = applySlot(b, bay, component.id);
   };
 
   // ---- Fit snapshot (derived) --------------------------------------------
@@ -100,14 +142,43 @@ export function Shipyard() {
         >
           <span class="t-h2">CATALOG</span>
           <span class="grow" />
-          <span class="mono-xs">CHASSIS</span>
+          <span class="mono-xs">
+            {selectedBay.value === null
+              ? 'PICK A BAY TO FIT'
+              : `BAY #${String(selectedBay.value + 1)} · ${catalogTab.value.toUpperCase()}`}
+          </span>
+        </div>
+        <div style="background:var(--panel);overflow-x:auto">
+          <Tabs
+            tabs={CATALOG_TABS}
+            activeId={catalogTab.value}
+            onChange={(id) => {
+              catalogTab.value = id;
+            }}
+            aria-label="Slot type"
+          />
         </div>
         <div class="col-scroll" style="overflow-y:auto;overflow-x:hidden;flex:1 1 auto;min-height:0">
-          <ChassisPicker
-            groups={groups}
-            selectedId={workingBuild.value?.chassisId ?? ''}
-            onPick={(chassis) => pickChassis(chassis.id, chassis.name)}
-          />
+          {catalogTab.value === 'chassis' ? (
+            <ChassisPicker
+              groups={groups}
+              selectedId={workingBuild.value?.chassisId ?? ''}
+              onPick={(chassis) => pickChassis(chassis.id, chassis.name)}
+            />
+          ) : workingBuild.value !== null ? (
+            <ComponentPicker
+              catalog={catalog}
+              build={workingBuild.value}
+              slotType={catalogTab.value}
+              targetBay={selectedBay.value}
+              onPick={pickComponent}
+            />
+          ) : (
+            <p class="mono-xs c-dim" style="padding:16px">
+              PICK A CHASSIS FIRST — COMPONENT PICKER WAKES UP AFTER A HULL IS
+              ON THE BENCH.
+            </p>
+          )}
         </div>
       </section>
 
@@ -124,12 +195,8 @@ export function Shipyard() {
             build={workingBuild.value}
             snap={snap.value}
             selectedBay={selectedBay.value}
-            onSelectBay={(i) => {
-              selectedBay.value = i;
-            }}
-            onClearBay={() => {
-              // Wired in CP2 with withSlot(build, i, null).
-            }}
+            onSelectBay={selectBay}
+            onClearBay={clearBay}
           />
         )}
       </section>
@@ -158,12 +225,14 @@ export function Shipyard() {
             </span>
             <span class="t-h2" style="padding-bottom:3px">PTS</span>
           </div>
+          <ValidationBadge snap={snap.value} />
           <p class="mono-xs" style="margin:9px 0 0;line-height:1.5;color:var(--ink-dim)">
             <span class="c-amber">!</span> LEFTOVER POINTS ARE WASTED — THERE IS NO CONVERSION.
           </p>
         </div>
         <div class="col-scroll" style="overflow-y:auto;overflow-x:hidden;flex:1 1 auto;min-height:0;padding:12px 14px">
-          <p class="mono-xs c-dim" data-testid="shipyard-ledger-placeholder">
+          <ValidationPanel snap={snap.value} />
+          <p class="mono-xs c-dim" data-testid="shipyard-ledger-placeholder" style="margin-top:10px">
             DERIVED READOUT LANDS IN CP3.
           </p>
         </div>
@@ -200,12 +269,14 @@ function FittingBenchLoaded(props: {
   const chassis = catalog.chassis(build.chassisId);
   const chassisName = chassis?.name.toUpperCase() ?? build.chassisId.toUpperCase();
   const chassisClass = chassis?.classId.toUpperCase() ?? '';
+  const componentCount = build.slots.reduce<number>(
+    (n, s) => (s !== null ? n + 1 : n),
+    0,
+  );
 
   return (
     <>
-      <div
-        style="padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel)"
-      >
+      <div style="padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel)">
         <div style="display:flex;align-items:center;gap:10px">
           <label class="sr-only" for="shipyard-buildName">Build name</label>
           <input
@@ -238,7 +309,7 @@ function FittingBenchLoaded(props: {
           </span>
           <span class="grow" />
           <span class="mono-xs">
-            COMPONENT SUBTOTAL{' '}
+            {componentCount} of {build.slots.length} FITTED · COMPONENT SUBTOTAL{' '}
             <span class="c-amber" style="font-weight:700" data-testid="shipyard-component-subtotal">
               {snap === null ? 0 : componentsSubtotal(snap.build, catalog)}
             </span>
@@ -270,6 +341,83 @@ function FittingBenchLoaded(props: {
         </p>
       </div>
     </>
+  );
+}
+
+/**
+ * ✓ VALID FIT / ✕ N ISSUES — the single-line fit-legality chip. Sits under
+ * the point total so a swap that breaks the fit is visible without scrolling.
+ */
+function ValidationBadge(props: { snap: FitSnapshot | null }) {
+  const { snap } = props;
+  if (snap === null) {
+    return (
+      <div style="margin-top:8px">
+        <span class="chip" data-testid="shipyard-validation-badge">
+          NO BUILD
+        </span>
+      </div>
+    );
+  }
+  if (snap.errors.length === 0) {
+    return (
+      <div style="margin-top:8px">
+        <span
+          class="chip chip-green"
+          data-testid="shipyard-validation-badge"
+        >
+          ✓ VALID FIT
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div style="margin-top:8px">
+      <span
+        class="chip chip-red"
+        data-testid="shipyard-validation-badge"
+      >
+        ✕ {snap.errors.length} ISSUE{snap.errors.length === 1 ? '' : 'S'}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Full FitError list — every violation at once (FR-4). SlotBench rows already
+ * carry the bay id in their `data-testid`; this panel names the same ids in
+ * text so the UI reads them out for keyboard/screen-reader users.
+ */
+function ValidationPanel(props: { snap: FitSnapshot | null }) {
+  const { snap } = props;
+  if (snap === null || snap.errors.length === 0) return null;
+  const { catalog } = useApp();
+  const layout = buildLayout(catalog, snap.build);
+  const labels = slotLabels(layout);
+  return (
+    <div
+      class="panel"
+      style="border:1px solid rgba(255,46,99,.35);background:rgba(255,46,99,.05)"
+      data-testid="shipyard-validation-panel"
+    >
+      <div class="panel-hd">
+        <span class="t-h2 c-red">FIT ISSUES</span>
+        <span class="grow" />
+        <span class="mono-xs">EVERY PROBLEM AT ONCE · FR-4</span>
+      </div>
+      <div class="panel-bd stack">
+        {snap.errors.map((error, i) => (
+          <div
+            key={`${error.code}-${i}`}
+            class="mono-xs"
+            style="color:var(--ink);line-height:1.5"
+            data-testid={`shipyard-fit-error-${error.code}`}
+          >
+            <span class="c-red">▸</span> {fitErrorLabel(error, labels)}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

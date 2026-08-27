@@ -20,8 +20,10 @@ import { withSlot } from '../../../../src/domain/index.js';
 
 import {
   CLASS_ORDER,
+  applySlot,
   chassisByClass,
   createFreshBuild,
+  fitErrorLabel,
   slotLabels,
   snapshot,
 } from '../../../../src/ui/screens/shipyard/model.js';
@@ -224,5 +226,150 @@ describe('snapshot — empty fresh build is a legal fit at chassis cost (S05 CP1
     const snap = snapshot(catalog, next);
     expect(snap.errors).toEqual([]);
     expect(snap.cost).toBe(cruiser.pointCost + anyWeapon.pointCost);
+  });
+});
+
+// ---- CP2 — swap / cost / validation aggregation --------------------------
+
+describe('applySlot + snapshot — swap loop keeps FR-4 legality visible (S05 CP2)', () => {
+  it('clearing a bay to null yields a legal, cheaper fit (FR-4 empty-is-legal)', () => {
+    const cruiser = catalog.chassisOfClass('cruiser')[0]!;
+    const weapon = catalog.componentsForSlot('weapon')[0]!;
+    const fresh = createFreshBuild(
+      catalog,
+      cruiser.id,
+      'C',
+      CATALOG_SCHEMA_VERSION,
+      clock,
+    );
+    if (!fresh.ok) throw new Error('setup');
+    const fitted = applySlot(fresh.value, 0, weapon.id);
+    expect(snapshot(catalog, fitted).cost).toBe(
+      cruiser.pointCost + weapon.pointCost,
+    );
+    const cleared = applySlot(fitted, 0, null);
+    const snap = snapshot(catalog, cleared);
+    expect(snap.errors).toEqual([]);
+    expect(snap.cost).toBe(cruiser.pointCost);
+    // The slot is null again (immutable set — original fitted stays untouched).
+    expect(cleared.slots[0]).toBeNull();
+    expect(fitted.slots[0]).toBe(weapon.id);
+  });
+
+  it('component-in-wrong-slot surfaces ERR_SLOT_TYPE_MISMATCH with slot index', () => {
+    const cruiser = catalog.chassisOfClass('cruiser')[0]!;
+    const shield = catalog.componentsForSlot('shield')[0]!;
+    const fresh = createFreshBuild(
+      catalog,
+      cruiser.id,
+      'C',
+      CATALOG_SCHEMA_VERSION,
+      clock,
+    );
+    if (!fresh.ok) throw new Error('setup');
+    // Force a shield into a weapon bay (index 0 is a weapon bay for cruiser).
+    const bad = applySlot(fresh.value, 0, shield.id);
+    const snap = snapshot(catalog, bad);
+    expect(snap.errors.length).toBeGreaterThanOrEqual(1);
+    const typeErr = snap.errors.find((e) => e.code === 'ERR_SLOT_TYPE_MISMATCH');
+    expect(typeErr).toBeDefined();
+    expect(typeErr?.slotIndex).toBe(0);
+    expect(typeErr?.expected).toBe('weapon');
+    expect(typeErr?.actual).toBe('shield');
+    // Broken fit ⇒ no validated build ⇒ no stats.
+    expect(snap.validated).toBeNull();
+    expect(snap.stats).toBeNull();
+  });
+
+  it('multiple errors surface simultaneously — the UI paints every problem at once (FR-4)', () => {
+    const cruiser = catalog.chassisOfClass('cruiser')[0]!;
+    const shield = catalog.componentsForSlot('shield')[0]!;
+    const missile = catalog.componentsForSlot('missile')[0]!;
+    const fresh = createFreshBuild(
+      catalog,
+      cruiser.id,
+      'C',
+      CATALOG_SCHEMA_VERSION,
+      clock,
+    );
+    if (!fresh.ok) throw new Error('setup');
+    // Two independent bad slots.
+    let b = applySlot(fresh.value, 0, shield.id); // W1 ← shield
+    b = applySlot(b, 3, missile.id); // S1 ← missile
+    const snap = snapshot(catalog, b);
+    const codes = snap.errors.map((e) => e.code);
+    // Both mismatches are reported (never first-fail).
+    expect(codes).toContain('ERR_SLOT_TYPE_MISMATCH');
+    expect(codes.filter((c) => c === 'ERR_SLOT_TYPE_MISMATCH').length).toBe(2);
+    // Index metadata preserved.
+    const indices = snap.errors
+      .filter((e) => e.code === 'ERR_SLOT_TYPE_MISMATCH')
+      .map((e) => e.slotIndex);
+    expect(indices).toContain(0);
+    expect(indices).toContain(3);
+  });
+
+  it('pointBreakdown sums match pointCost across the full fit (invariant)', () => {
+    const cruiser = catalog.chassisOfClass('cruiser')[0]!;
+    const fresh = createFreshBuild(
+      catalog,
+      cruiser.id,
+      'C',
+      CATALOG_SCHEMA_VERSION,
+      clock,
+    );
+    if (!fresh.ok) throw new Error('setup');
+    let b = fresh.value;
+    // Fit multiple components to give the sum something to check.
+    b = applySlot(b, 0, catalog.componentsForSlot('weapon')[0]!.id);
+    b = applySlot(b, 1, catalog.componentsForSlot('weapon')[1]!.id);
+    b = applySlot(b, 3, catalog.componentsForSlot('shield')[0]!.id);
+    b = applySlot(b, 5, catalog.componentsForSlot('missile')[0]!.id);
+    b = applySlot(b, 7, catalog.componentsForSlot('engine')[0]!.id);
+    const snap = snapshot(catalog, b);
+    const slotSum = snap.breakdown.slotCosts.reduce<number>((acc, s) => acc + s.cost, 0);
+    expect(snap.breakdown.chassisCost + slotSum).toBe(snap.cost);
+    expect(snap.breakdown.total).toBe(snap.cost);
+  });
+});
+
+describe('fitErrorLabel — human-facing error copy (S05 CP2)', () => {
+  it('anchors slot-type mismatches to the bay label', () => {
+    const labels = slotLabels([
+      'weapon',
+      'weapon',
+      'weapon',
+      'shield',
+      'shield',
+      'missile',
+      'missile',
+      'engine',
+      'special',
+    ]);
+    const label = fitErrorLabel(
+      {
+        code: 'ERR_SLOT_TYPE_MISMATCH',
+        message: '…',
+        slotIndex: 3,
+        expected: 'shield',
+        actual: 'missile',
+      },
+      labels,
+    );
+    expect(label).toBe('S1 — WRONG TYPE · NEEDS SHIELD');
+  });
+
+  it('anchors unknown-component to the bay label', () => {
+    const labels = slotLabels(['weapon', 'engine', 'special']);
+    const label = fitErrorLabel(
+      {
+        code: 'ERR_UNKNOWN_COMPONENT',
+        message: '…',
+        slotIndex: 1,
+        id: 'ghost',
+      },
+      labels,
+    );
+    expect(label).toBe('E1 — UNKNOWN COMPONENT');
   });
 });

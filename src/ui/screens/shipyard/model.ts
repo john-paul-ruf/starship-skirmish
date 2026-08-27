@@ -42,6 +42,7 @@ import {
   refitDiff,
   slotTypesFor,
   validateFit,
+  withSlot,
 } from '../../../domain/index.js';
 import {
   NAME_MAX,
@@ -286,6 +287,52 @@ export const createFreshBuild = (
   tags: readonly string[] = [],
 ): Result<Build, FitError> =>
   emptyBuild(catalog, chassisId, name, freshMeta(catalog, schemaVersion, clock), tags);
+
+// ---- Fit edit --------------------------------------------------------------
+
+/**
+ * Immutable slot set. Thin façade over `domain.withSlot`; the screen calls
+ * this so the ownership of "the fit edit orchestration" stays in one file.
+ * `componentId === null` clears the bay (empty is legal, FR-4).
+ */
+export const applySlot = (
+  build: Build,
+  index: number,
+  componentId: string | null,
+): Build => withSlot(build, index, componentId);
+
+/**
+ * Human-facing text for a `FitError` code. `validateFit`'s own messages are
+ * "wire" — they name id and index in engineering terms. The Shipyard needs a
+ * short bay-anchored label ("W1 — wrong slot type", "unknown component"),
+ * so we own the map here. S06 (Share) may reuse this table when rendering
+ * import-preview error lines — the code→label mapping is stable per S05.
+ */
+export const fitErrorLabel = (
+  error: FitError,
+  labels: readonly string[],
+): string => {
+  const bay =
+    error.slotIndex !== undefined && labels[error.slotIndex] !== undefined
+      ? labels[error.slotIndex]
+      : null;
+  switch (error.code) {
+    case 'ERR_UNKNOWN_CHASSIS':
+      return 'UNKNOWN CHASSIS';
+    case 'ERR_UNKNOWN_CLASS':
+      return 'UNKNOWN CLASS';
+    case 'ERR_SLOT_COUNT':
+      return 'SLOT COUNT MISMATCH';
+    case 'ERR_UNKNOWN_COMPONENT':
+      return bay === null ? 'UNKNOWN COMPONENT' : `${bay} — UNKNOWN COMPONENT`;
+    case 'ERR_SLOT_TYPE_MISMATCH': {
+      const bayLabel = bay === null ? 'SLOT' : bay;
+      const expected =
+        error.expected !== undefined ? error.expected.toUpperCase() : 'MATCHING TYPE';
+      return `${bayLabel} — WRONG TYPE · NEEDS ${expected}`;
+    }
+  }
+};
 
 // ---- Save orchestration ----------------------------------------------------
 
