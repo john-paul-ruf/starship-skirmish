@@ -45,6 +45,18 @@ export type Route =
  */
 export type ToastKind = 'default' | 'warn' | 'danger';
 
+/**
+ * One entry in the toast queue. `id` is a monotonically-incrementing string
+ * so preact's keyed diff picks up churn cleanly. The shell renders the
+ * current entries via `toasts` (a ReadonlySignal on `AppServices`); screens
+ * only ever call `toast(msg, kind)` — they never construct these directly.
+ */
+export interface ToastItem {
+  readonly id: string;
+  readonly msg: string;
+  readonly kind: ToastKind;
+}
+
 // ---- Services -------------------------------------------------------------
 
 /**
@@ -69,6 +81,8 @@ export interface AppServices {
   readonly route: ReadonlySignal<Route>;
   /** Reduced-motion preference — toggled via the topbar; persisted to prefs. */
   readonly reducedMotion: Signal<boolean>;
+  /** Current toast queue — the shell renders it; screens never read this. */
+  readonly toasts: ReadonlySignal<readonly ToastItem[]>;
   /** Push a new route to `location.hash`. `hashchange` writes the signal. */
   navigate(to: Route): void;
   /** Enqueue a toast. Duration + host lifecycle belong to the shell. */
