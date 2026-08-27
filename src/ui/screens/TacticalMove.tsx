@@ -22,6 +22,7 @@ import { useApp } from '../appContext.js';
 import { useMatch } from '../matchContext.js';
 
 import { ArcPlotter } from './tacticalMove/ArcPlotter.js';
+import { CommitBar } from './tacticalMove/CommitBar.js';
 import { Roster } from './tacticalMove/Roster.js';
 import { Viewport, type GhostArc } from './tacticalMove/Viewport.js';
 import {
@@ -32,6 +33,7 @@ import {
   plotArc,
   setCoast,
   toDeltaV,
+  toMovementPlans,
   type PlanDraft,
 } from './tacticalMove/model.js';
 import type { Body, BodyId, Vec3 } from '../../sim/index.js';
@@ -111,6 +113,8 @@ export function TacticalMove() {
     )}:${Math.round(selDraft.magnitude)}:${String(view === null ? 0 : view.turn)}`;
   }
 
+  const doomedNames = rows.filter((r) => r.alive && exitIds.has(r.bodyId)).map((r) => r.name);
+
   // ---- Handlers ------------------------------------------------------------
   const editSelected = (fn: (d: PlanDraft) => PlanDraft): void => {
     if (selId === null) return;
@@ -119,6 +123,15 @@ export function TacticalMove() {
     const next = new Map(drafts.value);
     next.set(selId, fn(current));
     drafts.value = next;
+  };
+
+  // COMMIT (§4.3): assemble the blind plans and resolve the player's movement
+  // promise. The controller collects plans against a fresh blind view (the
+  // player view carries no opponent plan), resolves the beat, and enters
+  // 'movement-resolve' with the beat to animate. Every arc is budget-clamped in
+  // `toMovementPlans` — over-spend cannot reach the plan (§4.4).
+  const onCommit = (): void => {
+    match.commitMovement(toMovementPlans(draftList, budgetOf));
   };
 
   return (
@@ -183,21 +196,14 @@ export function TacticalMove() {
             )}
           </div>
 
-          <div class="tm-commit-dock panel-ft" data-testid="commit-dock">
-            <div class="tm-gate mono-xs" data-testid="commit-gate">
-              COMMIT MOVEMENT · <span class="c-hi">{String(gate.plannedCount)}</span>/
-              {String(gate.total)} PLANNED
-            </div>
-            <div class="tm-blind-contract mono-xs">
-              <span class="tm-no-timer" data-testid="no-timer">
-                <span class="tm-no-timer-dot" aria-hidden="true" />
-                NO TIMER
-              </span>
-              <span class="tm-blind-line" data-testid="blind-commit">
-                OPPONENT PLANS ARE NOT OBSERVABLE UNTIL RESOLUTION.
-              </span>
-            </div>
-          </div>
+          {isPlan ? (
+            <CommitBar
+              gate={gate}
+              hostile={exitIds.size > 0}
+              doomedNames={doomedNames}
+              onCommit={onCommit}
+            />
+          ) : null}
         </aside>
       </div>
     </section>
@@ -232,6 +238,7 @@ const TM_STYLES = `
   .tm-canvas { display: block; width: 100%; height: 100%; }
   .tm-viewport-degraded { flex-direction: column; gap: var(--s2); padding: var(--s5);
                           align-items: flex-start; justify-content: center; }
+  .tm-skip { position: absolute; right: var(--s3); top: var(--s3); z-index: 4; }
 
   .tm-plan-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 

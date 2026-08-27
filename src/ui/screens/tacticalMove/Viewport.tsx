@@ -194,6 +194,16 @@ export function Viewport({
   return (
     <div class="tm-viewport" data-testid="viewport">
       <canvas class="tm-canvas" ref={canvasRef} />
+      {movementBeat !== null ? (
+        <button
+          type="button"
+          class="btn btn-sm tm-skip"
+          data-testid="resolve-skip"
+          onClick={() => playbackRef.current?.skip()}
+        >
+          SKIP ▸▸
+        </button>
+      ) : null}
     </div>
   );
 }
