@@ -1,0 +1,29 @@
+{
+  "kind": "match",
+  "name": "seed-2-mixed-tier",
+  "seed": {
+    "hi": 510494097,
+    "lo": 543819029
+  },
+  "budget": 25,
+  "fleetTiers": [
+    "rookie",
+    "veteran",
+    "ace"
+  ],
+  "outcome": {
+    "kind": "victory",
+    "fleetId": 2,
+    "turns": 8
+  },
+  "turnDigests": [
+    "83c44e3a",
+    "855fb3f3",
+    "4330797d",
+    "ce98e6a2",
+    "263dedc2",
+    "0bcbca8a",
+    "89963d3e",
+    "fb2a32fd"
+  ]
+}
