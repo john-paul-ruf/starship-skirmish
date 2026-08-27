@@ -64,6 +64,12 @@ describe('combatConfigFromTuning — every tuning field maps faithfully', () => 
     );
   });
 
+  it('destruction.cascadeToNextMovement threads through from tuning', () => {
+    expect(cfg.destruction.cascadeToNextMovement).toBe(
+      catalog.tuning.destruction.cascadeToNextMovement,
+    );
+  });
+
   it('missiles + shields booleans/numbers pass through unchanged', () => {
     expect(cfg.missiles.trackingBeats).toBe(catalog.tuning.missiles.trackingBeats);
     expect(cfg.missiles.spentRemainsArmed).toBe(
@@ -74,6 +80,12 @@ describe('combatConfigFromTuning — every tuning field maps faithfully', () => 
     );
     expect(cfg.shields.regenTicksRegardlessOfDamage).toBe(
       catalog.tuning.shields.regenTicksRegardlessOfDamage,
+    );
+  });
+
+  it('missiles.launchClearsLauncher threads through from tuning', () => {
+    expect(cfg.missiles.launchClearsLauncher).toBe(
+      catalog.tuning.missiles.launchClearsLauncher,
     );
   });
 
@@ -109,11 +121,13 @@ describe('combatConfigFromTuning — every tuning field maps faithfully', () => 
           'mega-destroyer':
             catalog.tuning.destruction.aoeDamageByClass['mega-destroyer'],
         },
+        cascadeToNextMovement: catalog.tuning.destruction.cascadeToNextMovement,
       },
       missiles: {
         trackingBeats: catalog.tuning.missiles.trackingBeats,
         spentRemainsArmed: catalog.tuning.missiles.spentRemainsArmed,
         reacquireOnTargetLoss: catalog.tuning.missiles.reacquireOnTargetLoss,
+        launchClearsLauncher: catalog.tuning.missiles.launchClearsLauncher,
       },
       shields: {
         regenTicksRegardlessOfDamage:

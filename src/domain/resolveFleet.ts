@@ -288,11 +288,13 @@ export const combatConfigFromTuning = (tuning: Tuning): CombatConfig => ({
       tuning.destruction.aoeDamageByClass,
       'aoeDamageByClass',
     ),
+    cascadeToNextMovement: tuning.destruction.cascadeToNextMovement,
   },
   missiles: {
     trackingBeats: tuning.missiles.trackingBeats,
     spentRemainsArmed: tuning.missiles.spentRemainsArmed,
     reacquireOnTargetLoss: tuning.missiles.reacquireOnTargetLoss,
+    launchClearsLauncher: tuning.missiles.launchClearsLauncher,
   },
   shields: {
     regenTicksRegardlessOfDamage: tuning.shields.regenTicksRegardlessOfDamage,
