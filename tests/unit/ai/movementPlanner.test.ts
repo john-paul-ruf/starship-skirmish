@@ -536,6 +536,71 @@ describe('planShipMovement — respects the per-ship deltaV budget', () => {
   });
 });
 
+// ---- Finite-thrust plan shape (D-BOT-SAME-MODEL, SESSION-03) -------------
+//
+// Fairness (FR-17 / Custom Rule 4): bots fly the SAME model as the player.
+// Each planShipMovement result carries a single-segment finite-thrust schedule
+// (`segments: [{ deltaV }]`) whose `deltaV` matches the chosen ladder rung.
+// The plan's top-level `deltaV` remains populated for documentation/fallback —
+// the resolver ignores it when `segments` is present (D-ADDITIVE-PLAN).
+
+describe('planShipMovement — emits a single-segment finite-thrust plan', () => {
+  const p = shipProfile('X');
+
+  it('each plan carries exactly one segment whose deltaV equals the selected Δv', () => {
+    const view = buildView(
+      0,
+      [
+        { bodyId: 1, fleetId: 0, position: of(-100, 50, 0), view: shipView(1, 0, 100, 60, p) },
+        { bodyId: 2, fleetId: 1, position: of(300, -80, 20), view: shipView(2, 1, 100, 60, p) },
+      ],
+      { center: of(0, 0, 0), radius: 5000 },
+    );
+    for (const tier of ['rookie', 'veteran', 'ace'] as const) {
+      const self = view.bodies.find((b) => b.id === 1)!;
+      const plan = planShipMovement(self, view, tier, PHYSICS, 80);
+      expect(plan.segments).toBeDefined();
+      expect(plan.segments!).toHaveLength(1);
+      // Single-segment burn delivers the chosen Δv unchanged.
+      expect(plan.segments![0]!.deltaV).toEqual(plan.deltaV);
+    }
+  });
+
+  it('planFleetMovement plans all carry a single-segment schedule (fairness)', () => {
+    const view = buildView(
+      0,
+      [
+        { bodyId: 1, fleetId: 0, position: of(-100, 0, 0), view: shipView(1, 0, 100, 60, p) },
+        { bodyId: 3, fleetId: 0, position: of(100, 0, 0), view: shipView(3, 0, 100, 60, p) },
+        { bodyId: 5, fleetId: 1, position: of(0, 200, 0), view: shipView(5, 1, 100, 60, p) },
+      ],
+      { center: of(0, 0, 0), radius: 5000 },
+    );
+    const plans = planFleetMovement(view, 'veteran', PHYSICS);
+    expect(plans).toHaveLength(2);
+    for (const plan of plans) {
+      expect(plan.segments).toBeDefined();
+      expect(plan.segments!).toHaveLength(1);
+      expect(plan.segments![0]!.deltaV).toEqual(plan.deltaV);
+    }
+  });
+
+  it('coasting plan (no enemies) still carries one segment with ZERO Δv', () => {
+    const view = buildView(
+      0,
+      [
+        { bodyId: 1, fleetId: 0, position: of(0, 0, 0), view: shipView(1, 0, 100, 60, p) },
+      ],
+      { center: of(0, 0, 0), radius: 5000 },
+    );
+    const plan = planShipMovement(view.bodies[0]!, view, 'rookie', PHYSICS, 80);
+    expect(plan.deltaV).toEqual({ x: 0, y: 0, z: 0 });
+    expect(plan.segments).toBeDefined();
+    expect(plan.segments!).toHaveLength(1);
+    expect(plan.segments![0]!.deltaV).toEqual({ x: 0, y: 0, z: 0 });
+  });
+});
+
 // Ensure imports we alias-reference stay referenced (silences unused-import
 // warnings on future refactors of the fixture builders).
 void distance;

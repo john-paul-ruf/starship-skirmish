@@ -314,6 +314,14 @@ export const cruiseSpeedFor = (
  *      `passesLookahead(horizon)` for the veteran/ace 2-/3-beat coast veto.
  *   5. Pick the lowest-rank safe candidate. If none is safe (forced situation),
  *      pick the fallback with the most in-bounds sub-steps (ties → rank ASC).
+ *
+ * D-BOT-SAME-MODEL (finite-thrust-movement SESSION-03 / FR-17 / Custom Rule 4):
+ * the emitted plan carries a **single-segment** finite-thrust schedule so bots
+ * fly the SAME model as the player — a tier is decision quality only, never a
+ * stat/movement-model advantage. `segments: [{ deltaV: chosen.deltaV }]` is one
+ * burn delivering the chosen Δv over the beat; `deltaV` remains populated
+ * (documentation/fallback — the resolver ignores it when `segments` is present,
+ * D-ADDITIVE-PLAN). Multi-waypoint bot tactics are an explicit non-goal.
  */
 export const planShipMovement = (
   self: Body,
@@ -351,7 +359,11 @@ export const planShipMovement = (
     }
   }
   const chosen = bestSafe ?? bestFallback!;
-  return { bodyId: self.id, deltaV: chosen.deltaV };
+  return {
+    bodyId: self.id,
+    deltaV: chosen.deltaV,
+    segments: [{ deltaV: chosen.deltaV }],
+  };
 };
 
 // ---------------------------------------------------------------------------
