@@ -23,6 +23,7 @@ import type {
   Vec3,
 } from '../sim/index.js';
 import type { MovementBeatRecord } from '../sim/index.js';
+import { type BlastFx, makeBlast } from './explosionFx.js';
 import { bodyKindToGlyph, type HazardInput } from './hazards.js';
 import { clamp01, easeInOutQuad, lerpBodyAt, projectileAt, type LerpedBody } from './interp.js';
 import type { TrailLayer } from './trail.js';
@@ -385,26 +386,38 @@ export const attachTracePlayer = (view: TacticalView): TracePlayer => {
     // Shot beams (shooter→target, colored by result) sequence over the beat; each
     // beam SWEEPS its endpoint out over the first half of its per-shot window, lands
     // (or falls short, for misses) with a head-flash keyed to `result`, then fades.
-    // AoE rings + kill flashes land in the final fifth of the beat.
+    // Kill flashes + detonation blasts land in the final fifth of the beat — a bigger
+    // hull ⇒ bigger blast radius (`AOE_RING_RADIUS` encodes class scale). The old
+    // static AoE ring (visibility toggle at ≥ 0.8) is replaced by `makeBlast`, driven
+    // over the finale window so a detonation reads as an expanding shockwave, not a pop.
     const group = new Group();
     const beams: BeamFx[] = [];
     for (const entry of shots) {
       const beam = makeBeam(view, entry);
       if (beam !== null) beams.push(beam);
     }
-    const finale: FxHandle[] = [];
+    const kills: FxHandle[] = [];
+    const blasts: BlastFx[] = [];
     for (const dead of record.destroyed) {
-      finale.push(makeKillFlash(dead));
-      if (dead.detonates) finale.push(makeAoeRing(dead));
+      // Boundary deaths (detonates=false — FR-26) get only a kill flash: they leave the
+      // arena, no AoE. In-arena deaths get flash + animated blast at the class radius.
+      kills.push(makeKillFlash(dead));
+      if (dead.detonates) {
+        blasts.push(
+          makeBlast(dead.position, { radius: AOE_RING_RADIUS[dead.chassisClass] }),
+        );
+      }
     }
     for (const fx of beams) group.add(fx.object);
-    for (const fx of finale) group.add(fx.object);
+    for (const fx of kills) group.add(fx.object);
+    for (const fx of blasts) group.add(fx.object);
     if (group.children.length > 0) scene.add(group);
 
     const disposeFx = (): void => {
       scene.remove(group);
       for (const fx of beams) fx.dispose();
-      for (const fx of finale) fx.dispose();
+      for (const fx of kills) fx.dispose();
+      for (const fx of blasts) fx.dispose();
       group.clear();
     };
 
@@ -424,8 +437,15 @@ export const attachTracePlayer = (view: TacticalView): TracePlayer => {
           const localT = span <= 0 ? 1 : clamp01((tNorm - windowStart) / span);
           beams[i]!.renderAt(localT);
         }
-        const finaleShown = tNorm >= 0.8;
-        for (const fx of finale) fx.object.visible = finaleShown;
+        // Kill flashes retain the binary visibility toggle (a peach sprite pop). Blasts
+        // drive over the finale window — hidden before it opens, terminal (opacity ~0)
+        // at `tNorm = 1`, so `skip()`/reduced-motion (which lands on renderAt(1)) never
+        // freezes a half-expanded shockwave (FR-19 outcome-invariance).
+        const finaleShown = tNorm >= ATTACK_FINALE_START;
+        for (const fx of kills) fx.object.visible = finaleShown;
+        const finaleSpan = 1 - ATTACK_FINALE_START;
+        const blastLocalT = finaleSpan <= 0 ? 1 : (tNorm - ATTACK_FINALE_START) / finaleSpan;
+        for (const fx of blasts) fx.renderAt(blastLocalT);
         view.scene.render();
       },
       cleanup: disposeFx,
@@ -454,7 +474,6 @@ interface BeamFx extends FxHandle {
 }
 
 const KILL_FLASH_COLOR = 0xffd0a0;
-const AOE_RING_COLOR = 0xff8a3d;
 /** Muzzle flash color — warm white; keyed to shooter, not resolution. */
 const MUZZLE_FLASH_COLOR = 0xfff0c0;
 /** Fraction of the shot window spent sweeping the beam outward; the remainder fades. */
@@ -470,7 +489,9 @@ const AOE_RING_RADIUS: Readonly<Record<DestructionEvent['chassisClass'], number>
   cruiser: 80,
   'mega-destroyer': 120,
 };
-const RING_SEGMENTS = 48;
+/** Fraction of the attack beat reserved for the finale — kill flashes pop, blasts
+ *  expand — from `tNorm ≥ ATTACK_FINALE_START` through `tNorm = 1`. */
+const ATTACK_FINALE_START = 0.8;
 
 /**
  * Return `1` for shot resolutions that LAND on the target (produce a head-flash), `0`
@@ -783,40 +804,4 @@ const makeKillFlash = (dead: DestructionEvent): FxHandle => {
   sprite.position.set(dead.position.x, dead.position.y, dead.position.z);
   sprite.visible = false;
   return { object: sprite, dispose: () => material.dispose() };
-};
-
-/** A horizontal AoE ring at an in-arena detonation. */
-const makeAoeRing = (dead: DestructionEvent): FxHandle => {
-  const radius = AOE_RING_RADIUS[dead.chassisClass];
-  const pts: number[] = [];
-  for (let i = 0; i <= RING_SEGMENTS; i += 1) {
-    const a = (i / RING_SEGMENTS) * Math.PI * 2;
-    pts.push(
-      dead.position.x + Math.cos(a) * radius,
-      dead.position.y,
-      dead.position.z + Math.sin(a) * radius,
-    );
-  }
-  return buildLine(pts, AOE_RING_COLOR, 1.4);
-};
-
-const buildLine = (positions: readonly number[], color: number, linewidth: number): FxHandle => {
-  const geometry = new LineGeometry();
-  geometry.setPositions(positions as number[]);
-  const material = new LineMaterial({
-    color,
-    linewidth,
-    transparent: true,
-    opacity: 0.9,
-    depthTest: true,
-  });
-  const line = new Line2(geometry, material);
-  line.visible = false;
-  return {
-    object: line,
-    dispose: () => {
-      geometry.dispose();
-      material.dispose();
-    },
-  };
 };

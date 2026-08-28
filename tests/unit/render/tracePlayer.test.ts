@@ -18,6 +18,7 @@ import { projectileAt } from '../../../src/render/interp.js';
 import type {
   AttackBeatRecord,
   CombatLogEntry,
+  DestructionEvent,
   MovementBeatRecord,
 } from '../../../src/sim/index.js';
 import type { Body } from '../../../src/sim/index.js';
@@ -66,11 +67,19 @@ class FakeScheduler {
   }
 }
 
+/** Anything Object3D-shaped enough for the tests — has `.children` and `.visible`. */
+interface Object3DLike {
+  readonly children: Object3DLike[];
+  visible: boolean;
+}
+
 interface FakeView {
   readonly view: TacticalView;
   readonly positions: Map<number, { x: number; y: number; z: number }>;
   readonly opacities: Map<number, number>;
   readonly hazardSyncs: number[];
+  /** Objects handed to `scene.add()` this playback, in call order. */
+  readonly sceneAdds: Object3DLike[];
   renderCount: number;
 }
 
@@ -78,10 +87,18 @@ const makeFakeView = (): FakeView => {
   const positions = new Map<number, { x: number; y: number; z: number }>();
   const opacities = new Map<number, number>();
   const hazardSyncs: number[] = [];
+  const sceneAdds: Object3DLike[] = [];
   const state = { renderCount: 0 };
   const view = {
     scene: {
-      context: { scene: { add: vi.fn(), remove: vi.fn() } },
+      context: {
+        scene: {
+          add: (obj: Object3DLike) => {
+            sceneAdds.push(obj);
+          },
+          remove: vi.fn(),
+        },
+      },
       ships: {
         setPosition: (id: number, x: number, y: number, z: number) => {
           positions.set(id, { x, y, z });
@@ -106,6 +123,7 @@ const makeFakeView = (): FakeView => {
     positions,
     opacities,
     hazardSyncs,
+    sceneAdds,
     get renderCount() {
       return state.renderCount;
     },
@@ -501,10 +519,18 @@ describe('playAttack state machine', () => {
     const positions = new Map<number, { x: number; y: number; z: number }>();
     const opacities = new Map<number, number>();
     const hazardSyncs: number[] = [];
+    const sceneAdds: Object3DLike[] = [];
     const state = { renderCount: 0 };
     const view = {
       scene: {
-        context: { scene: { add: vi.fn(), remove: vi.fn() } },
+        context: {
+          scene: {
+            add: (obj: Object3DLike) => {
+              sceneAdds.push(obj);
+            },
+            remove: vi.fn(),
+          },
+        },
         ships: {
           setPosition: (id: number, x: number, y: number, z: number) => {
             positions.set(id, { x, y, z });
@@ -529,6 +555,7 @@ describe('playAttack state machine', () => {
       positions,
       opacities,
       hazardSyncs,
+      sceneAdds,
       get renderCount() {
         return state.renderCount;
       },
@@ -634,6 +661,84 @@ describe('playAttack state machine', () => {
     expect(skip.onDone).toHaveBeenCalledTimes(1);
     expect(full.sched.hasPending()).toBe(false);
     expect(skip.sched.hasPending()).toBe(false);
+  });
+
+  // CP2 — a detonating attack death should draw an ANIMATED blast (Group with
+  // core sprite + shockwave ring), not the old static Line2 ring toggled visible at
+  // ≥ 0.8. Structural discriminator: `makeBlast` returns a Group holding 2 children;
+  // the pre-CP2 `makeAoeRing` returned a bare `Line2` (Object3D with no children).
+  const detonatingDeath = (position: {
+    x: number;
+    y: number;
+    z: number;
+  }): DestructionEvent => ({
+    bodyId: 99,
+    chassisClass: 'fighter',
+    position,
+    velocity: { x: 0, y: 0, z: 0 },
+    cause: 'aoe',
+    detonates: true,
+  });
+
+  it('CP2 — a detonating attack death adds an animated blast group (not a static ring)', () => {
+    const sched = new FakeScheduler();
+    const fake = makeAttackFake();
+    // No shots — the finale is just the killflash + the blast for the detonating death.
+    const rec: AttackBeatRecord = {
+      log: [],
+      destroyed: [detonatingDeath({ x: 10, y: 0, z: 0 })],
+      launchedMissileIds: [],
+    };
+    attachTracePlayer(fake.view).playAttack(rec, {
+      durationMs: 200,
+      clock: sched.clock,
+      raf: sched.raf,
+      cancelRaf: sched.cancel,
+    });
+    sched.runToEnd(20);
+
+    // One group added — the combined finale group with kill flash + blast.
+    expect(fake.sceneAdds.length).toBe(1);
+    const finaleGroup = fake.sceneAdds[0]!;
+    // Kill flash is a bare Sprite (children.length === 0); blast is a Group with two
+    // children (core Sprite + shockwave Line2). Exactly one blast expected.
+    const blastGroups = finaleGroup.children.filter((c) => c.children.length === 2);
+    expect(blastGroups.length).toBe(1);
+    // Bare kill flash Sprite is also in the group (no children).
+    const bareChildren = finaleGroup.children.filter((c) => c.children.length === 0);
+    expect(bareChildren.length).toBe(1);
+  });
+
+  it('CP2 — a non-detonating (boundary) attack death adds NO blast (FR-26)', () => {
+    const sched = new FakeScheduler();
+    const fake = makeAttackFake();
+    const rec: AttackBeatRecord = {
+      log: [],
+      destroyed: [
+        {
+          bodyId: 99,
+          chassisClass: 'fighter',
+          position: { x: 0, y: 0, z: 0 },
+          velocity: { x: 0, y: 0, z: 0 },
+          cause: 'boundary',
+          detonates: false,
+        },
+      ],
+      launchedMissileIds: [],
+    };
+    attachTracePlayer(fake.view).playAttack(rec, {
+      durationMs: 200,
+      clock: sched.clock,
+      raf: sched.raf,
+      cancelRaf: sched.cancel,
+    });
+    sched.runToEnd(20);
+
+    // Group is added because the kill flash is still present, but no blast in it.
+    expect(fake.sceneAdds.length).toBe(1);
+    const finaleGroup = fake.sceneAdds[0]!;
+    expect(finaleGroup.children.filter((c) => c.children.length === 2).length).toBe(0);
+    expect(finaleGroup.children.filter((c) => c.children.length === 0).length).toBe(1);
   });
 
   it('a shot whose shooter or target has no known position is silently skipped', () => {
@@ -777,10 +882,18 @@ describe('intercept FX in playMovement (CP3)', () => {
     const positions = new Map<number, { x: number; y: number; z: number }>();
     const opacities = new Map<number, number>();
     const hazardSyncs: number[] = [];
+    const sceneAdds: Object3DLike[] = [];
     const state = { renderCount: 0 };
     const view = {
       scene: {
-        context: { scene: { add: vi.fn(), remove: vi.fn() } },
+        context: {
+          scene: {
+            add: (obj: Object3DLike) => {
+              sceneAdds.push(obj);
+            },
+            remove: vi.fn(),
+          },
+        },
         ships: {
           setPosition: (id: number, x: number, y: number, z: number) => {
             positions.set(id, { x, y, z });
@@ -806,6 +919,7 @@ describe('intercept FX in playMovement (CP3)', () => {
       positions,
       opacities,
       hazardSyncs,
+      sceneAdds,
       get renderCount() {
         return state.renderCount;
       },
