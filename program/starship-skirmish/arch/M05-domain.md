@@ -193,3 +193,13 @@ New function (added to `src/domain/resolveFleet.ts`, re-exported from `src/domai
 - `combatConfigFromTuning(tuning: Tuning): CombatConfig` — the tuning → sim-combat-config seam. Mirrors `physicsConfigFromTuning`. Narrows the catalog's `Record<string, number>` per-class tables to `Record<ChassisClass, number>` for `debrisPerDestruction`, `aoeRadiusByClass`, `aoeDamageByClass`; throws `RangeError` on a missing class key (same fail-loud posture as `resolveArena` on an illegal budget). Reads only existing `tuning.json` fields — no catalog / tuning-schema change.
 
 No `Tuning` field is added, removed, or retyped. F4 S04's `createMatch` will assemble `MatchConfig { seed, fleets, arena, physics, combat }` on top of `physicsConfigFromTuning` + `combatConfigFromTuning`.
+
+<!-- tactical-attack-mock-parity SESSION-01 -->
+## M05 · Domain — production resolver populates identity
+
+`src/domain/resolveShip` now emits `chassis` on `SimShip` and `display` on every
+structured component (`weapons[]`, `missiles[]`, `pointDefense[]`, `decoys[]`)
+by copying `{id, name}` straight from the already-validated catalog definitions.
+Slot-derived array order is unchanged; downstream `weaponIndex` /
+`missileIndex` / `CalledShotTarget.special.index` continue to address the same
+entries. Numeric mapping is byte-for-byte identical.

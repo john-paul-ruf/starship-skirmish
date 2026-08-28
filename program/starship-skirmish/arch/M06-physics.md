@@ -293,3 +293,18 @@ so `sim/physics` never sees an angle (D-PHYSICS-VEC3-ONLY holds end-to-end).
 > `PhysicsConfig.maxAccel` is owned by NO session in this feature. Without it,
 > producers that emit `segments` deterministically fall back to impulsive-at-k=0
 > (no curve). Downstream S02/S04 must land it within their own reasoning or block.
+
+<!-- tactical-attack-mock-parity SESSION-01 -->
+## M06 · Sim shared types — display identity seam (SESSION-01, tactical-attack-mock-parity)
+
+Additive, behavior-free identity carried across the `domain → sim` seam so M14
+can render authored chassis / component names (see `mocks/tactical-attack.html`).
+
+- **New exported interface** `SimDisplayIdentity { readonly id: string; readonly name: string }` in `src/sim/types.ts`. Display-only: forbidden from any rule / physics / AI-score / RNG-key / digest / trace-digest input.
+- **Extended interfaces (all fields OPTIONAL for legacy-fixture compatibility, ALWAYS populated by `domain.resolveShip`):**
+  - `SimShip.chassis?: SimDisplayIdentity`
+  - `SimWeapon.display?: SimDisplayIdentity`
+  - `SimMissileRack.display?: SimDisplayIdentity`
+  - `SimPointDefense.display?: SimDisplayIdentity`
+  - `SimDecoy.display?: SimDisplayIdentity`
+- **No change** to existing numeric fields, array orders, digest inputs, ordinal / share-token wire format, or any catalog / lockfile.
