@@ -673,3 +673,241 @@ justifies it. Vow 3.)*
    rename and the same prune with the same commits).
 3. `FORGE.md`, `MU.md`, `ENSO.md`, `JIKIJITSU.md` — byte-identical,
    not touched.
+
+---
+
+## 2026-08-28 — Cycle 5 — `tactical-attack-mock-parity`
+
+**Envelope in:** Final Report at
+`program/starship-skirmish/prompts/tactical-attack-mock-parity/FINAL-REPORT.md`;
+3/3 sessions `done` (S01–S03) across two waves (S01 ∥ S02, then S03);
+10 Mu checkpoint commits (S01 2/2, S02 3/3, S03 5/5 via Mu→Enso
+delegation); 2 Jikijitsu arch commits (`ccd42b2` — M05+M06 identity
+seam; `42b0bb8` — M13 labels + wire range shell). Post-merge unit
+**1578 pass / 0 fail** across 104 files; determinism 94/94; SESSION-01
+targeted 12/12; SESSION-02 focused render 42/42; lint clean; build
+clean; Chromium tactical-attack e2e **14/14 pass, three stable runs**
+with a reviewed real-M13-render screenshot baseline; app-side
+typecheck clean. Same pre-existing encyclopedia `TS6142`
+(`tsconfig.node.json` + `--jsx`) still red at HEAD — now cycle 5 of
+independent observation. Zero lease violations, zero checkpoint
+shortfalls, zero wave-plan corrections.
+
+### Reconciled this run
+
+- **`arch/M13-render.md`** — pf-01 SESSION-07 fragment declares the
+  `RangeShell` interface with `readonly mesh: Mesh` in an inline
+  TypeScript block. This cycle's tactical-attack-mock-parity SESSION-02
+  fragment (`42b0bb8`, appended further down the same file) widened
+  `mesh` to `Object3D` (concrete value is now a `Group` of three
+  orthogonal great-circle `LineLoop`s). The new fragment already carries
+  a full "Before / After" delta at landing — that IS the reconciliation
+  form Roshi normally does. Added a small forward-pointing "**Superseded
+  (mesh only)**" note after the pf-01 code block so a reader who lands
+  there via grep (`createRangeShell` / `RangeShell.mesh`) is pointed
+  down to the current shape without me editing the pf-01 fragment body
+  (same discipline as cycle-3 D-INFOTIP-TOPLAYER and cycle-4
+  `.ta-bench-scroll` → `.ta-plan-scroll`). Grounded in
+  `src/render/range.ts` (Group with three LineLoops), commit `42b0bb8`,
+  and the SESSION-02 handoff verbatim in STATE.md.
+- **`arch/M14-ui.md`** — pf-05 SESSION-04 fragment's "Ship-by-ship
+  bench parity (Attack)" subsection describes `.ta-ship-group` +
+  `.ta-plan-scroll` (a single right-column scroll wrapping inspector
+  + bench + combat-log). This cycle's SESSION-03 replaced that pattern
+  with D-TA-RAIL-SHOOTER (a literal three-column frame whose right rail
+  renders exactly ONE active player shooter, with a fixed header + fixed
+  commit footer and the fire-card body as the rail's sole scroller).
+  Grep-verified `.ta-ship-group` and `.ta-plan-scroll` no longer appear
+  anywhere in `src/`. Added a forward-pointing "**Superseded**" note
+  after the pf-05 subsection pointing to the new fragment — did NOT
+  edit the pf-05 body itself (same discipline as prior cycles: the
+  pf-05 fragment was true at its landing; retroactively editing it
+  rewrites history worse than the drift it fixes). Grounded in current
+  source at `src/ui/screens/TacticalAttack.tsx`,
+  `src/ui/screens/tacticalAttack/WeaponBench.tsx`,
+  `src/ui/screens/tacticalAttack/model.ts` (with explicit
+  `D-TA-RAIL-SHOOTER` comments in each), and commits
+  `75b9c58` / `2025968` / `20ad611` / `af5de0d` / `4a69d79`.
+- **`arch/M14-ui.md`** — appended a new
+  `SESSION-03 · tactical-attack-mock-parity · M14 tactical-attack rebuild
+  delta` fragment at end of file. Jikijitsu stapled no M14 arch commit
+  for this session (the M05/M06 identity seam and the M13 primitives
+  landed as their own fragments; the M14 rebuild fit inside the
+  existing surface — Jikijitsu's call was correct for mid-run). The
+  Final Report §Architecture impact §M14 UI item and STATE.md §Design
+  decisions block explicitly name load-bearing contracts a future
+  reader would otherwise have to re-derive from handoff notes — same
+  pattern as cycle-4's combined pf-05 SESSION-03+04 fragment. Fragment
+  captures: (a) new file `FieldOverlay.tsx`; (b) new pure model
+  selectors (`activeShooterOf`, `liveFireSlots`, range-preview /
+  fire-solution / AoE / projection selectors); (c) **D-TA-RAIL-SHOOTER**
+  (one active shooter in the rail with the full behaviour rules);
+  (d) **D-TA-THREE-COLUMN** (literal three-column frame + bounded
+  side tracks); (e) **D-TA-NO-BOTTOM-PLAN** (combat log center-only,
+  hardening for Attack); (f) **D-TA-WIRE-RANGE +
+  D-TA-LIVE-OVERLAYS + D-TA-HIT-CHANCE-SINGLE-SOURCE** (single-sourcing
+  and live-derivation rules); (g) **D-TA-VISUAL-GATE +
+  D-TA-NO-DEFERRED-BROWSER** (M19 gate rules); (h) Not-touched surface
+  and known scoped gaps from Final Report §Residual gap. Grounded in
+  the Final Report + STATE.md verbatim + current source (grep of
+  `D-TA-RAIL-SHOOTER` in the tacticalAttack UI files).
+
+### Not reconciled — deliberately
+
+- **`arch/M05-domain.md` SESSION-01 fragment (identity seam) and
+  `arch/M06-physics.md` SESSION-01 fragment (SimDisplayIdentity)** —
+  both landed at `ccd42b2` as clean single-session fragments that
+  describe additive-only, behavior-free, digest-neutral extensions.
+  Fragments read consistently against current source (grep of
+  `SimDisplayIdentity` in `src/sim/types.ts` and `chassis?` /
+  `display?` shape in `resolveShip`). No cross-fragment contradiction
+  surfaced. No reconciliation needed.
+- **`arch/M13-render.md` `TrailLayer` opts** — already reconciled
+  cycle 1; no render trail work this cycle.
+- **`arch/M11-trace.md` `AttackBeatRecord.launchedMissileIds` gap** —
+  memorialised cycle 1; still an open note for a future M11 lease.
+  This cycle did no sim/trace work.
+- **`arch/M14-ui.md` per-session block structure** — kept intact for
+  the sixth consecutive cycle. Fragments still compose additively;
+  the two new forward-pointing supersession notes and the new
+  SESSION-03 fragment do not contradict each other or any body above
+  them. File is now ~800 lines and remains readable in session-
+  timeline order. Vow-2 bolt-on-vs-edit tension weighed again and
+  resolved the same way: capture the new delta in-place with explicit
+  forward pointers to what it supersedes; do not rewrite prior
+  fragment bodies.
+- **Module Registry `M14` Key Files** — reads `screens/*,
+  components/*, tokens.css`. New file `FieldOverlay.tsx` landed
+  inside `screens/*` wildcard; no drift signal.
+- **Module Registry `M13` "Key Files (planned)"** — cycle 1 flagged
+  drift; cycle 4 added a file (`explosionFx.ts`) inside the
+  `(planned)` hedge; cycle 5 added no new render file (only widened
+  an existing one — `range.ts` mesh type; and semantically extended
+  `labels.ts`). Both fragments explicitly grounded in
+  `arch/M13-render.md`. Sixth-consecutive cycle holding the
+  `(planned)` hedge — not promoting to as-built on the strength of no
+  active reader mis-step.
+- **`FORGE-CONFIG.md` Conventions / Custom Rules** — no additions
+  this cycle. The one item still at threshold (encyclopedia
+  typecheck baseline, now 5/3+) is owner scheduling, not a
+  convention-shaped recurrence. Nothing else clears the "3 cycles is
+  signal AND recurrence is convention-shaped" bar (Vow 4).
+
+### Registry updated
+
+**No.** No new module, no path scope change, no `catalog/**` edit,
+no change to any `Owns` list this cycle.
+
+### Conventions added to `FORGE-CONFIG.md`
+
+**None** this cycle (Vow 4: repetition across ≥3 cycles is the
+threshold, AND the recurrence must be convention-shaped).
+
+### Proposed for the framework — with cycle count
+
+*(These go here, NOT into `FORGE.md`/`MU.md`/`ENSO.md`/`JIKIJITSU.md`.
+Roshi recommends; a human folds them in by hand once the count
+justifies it. Vow 3.)*
+
+- **[cycles: 5/3+ — STILL OPEN, ESCALATE HARDER] Owner hygiene —
+  encyclopedia typecheck baseline.** Cycles 3, 4, and now 5 all
+  crossed the promote threshold; a one-line M01 fix was recommended
+  and NOT scheduled. Cycle 5: `tests/unit/ui/encyclopedia/export.test.ts:31`
+  (TS6142; `BackupBanner.tsx` under `tsconfig.node` with `--jsx`
+  unset) is still red at HEAD. Final Report §Residual gap #3 names it
+  explicitly and says "A separate M01 toolchain session is required
+  because `tsconfig.node.json` was outside every lease." Every Mu
+  this cycle inherited it as baseline noise. The cure remains
+  unchanged: add `"jsx": "preserve"` to `tsconfig.node.json` (or
+  narrow its `include` to exclude `.tsx`-importing test files) in one
+  green-tree commit under M01. **Not a framework change — an owner
+  scheduling ask.** Five consecutive cycles of independent triage on
+  the same one-line defect is a lot of Mu-hours across the program.
+  If cycle 6 sees it again, this note should escalate to a top-of-log
+  banner rather than a bullet.
+- **[cycles: 2/3+ · HELD] Verification-gate reachability —
+  Playwright `webServer` provisioning.** Cycles 1–2 flagged
+  `test:e2e` structurally unreachable in the Mu sandbox; cycle 3
+  saw the fix land; cycle 4 showed MIXED signal (S03 pass, S04
+  deferred). Cycle 5 shows a positive signal: SESSION-03's Mu→Enso
+  delegation ran the browser gate 14/14 pass across three stable
+  runs, and the Final Report codified **D-TA-NO-DEFERRED-BROWSER**
+  as a per-feature design decision ("A missing dev server is a
+  blocker to resolve during the session, not a permissible deferred
+  verification note"). This cycle's execution suggests Enso
+  environments provision dev servers correctly; a per-feature
+  decision closes the escape hatch on the Mu side. Not incrementing
+  past 2/3+ this cycle — the observed behaviour matches the
+  cycle-3 infra fix, and D-TA-NO-DEFERRED-BROWSER treats this as a
+  spawn-time signal rather than a framework rule. Hold; if cycle 6
+  shows another "worker had no dev server" defer, restart the tally
+  at 3/3+ and recommend Jikijitsu's Orchestration Envelope declare
+  dev-server availability per lease.
+- **[cycles: 1/3+] Forge granularity — route M14-heavy screen
+  rebuilds with browser gates to Enso from spawn.** Final Report
+  §Granularity feedback explicitly says: "SESSION-03's title,
+  M14-heavy write set, screenshot comparison, viewport geometry, and
+  browser-baseline gate were strong spawn-time signals for direct
+  Enso routing. The mid-flight Mu→Enso delegation completed safely,
+  but future plans should route equivalent sessions to Enso before
+  launch." This is a Forge decomposition hint, not a framework rule
+  yet. First observation of this specific pattern (M14 + browser
+  gate + visual review) — one cycle is noise. Watch cycle 6+ for
+  repeat; if a similar session is Mu-routed and mid-flight
+  delegates again, this becomes a repeated pattern and a
+  Forge-facing recommendation ("features that carry a browser
+  visual gate SHOULD spawn directly on Enso"). Held at 1/3+.
+- **[cycles: 2/3+ · HELD] Enso-brush transport reliability — new
+  observation.** Cycle 4 noted the internal await transport failed
+  and Mu's recovery contract handled it cleanly (pf-05 SESSION-03).
+  Cycle 5 shows the SAME pattern once more: "The first long Zen
+  await reached its transport timeout while the worker remained
+  active; the durable handle reattached successfully without
+  restart or lost checkpoints." (Final Report §Orchestration §Wave 2.)
+  Second observation of the same failure mode; both times the
+  durable-handle reattach recovered without loss. Increment to
+  2/3+. Still framing this as tool-layer transport reliability, not
+  a framework doc issue — but if cycle 6 sees the same pattern a
+  third time, this crosses the threshold and warrants a note in
+  the tool-layer's own tracking (not `MU.md` / `ENSO.md`, which are
+  contract docs, not transport docs).
+- **[cycles: 1/3+ · HELD from cycle 2] Forge granularity — "stuck
+  / can't proceed" playtest notes may hide latent bugs.** Cycle 5
+  is a design-parity feature, not a playtest-feedback cycle;
+  pattern could not recur.
+- **[cycles: 1/3+ · HELD from cycle 1] Sim-record extensions
+  before their render consumer.** Cycle 5 did no `sim/trace` work;
+  the coupling could not recur. Held.
+
+### Verification (Roshi's output is prose)
+
+1. Every claim traces to git or the attached record. The M13 mesh
+   widening is verifiable in `src/render/range.ts` (Group with three
+   orthogonal `LineLoop`s) and at commit `42b0bb8`. The
+   `.ta-ship-group` / `.ta-plan-scroll` disappearance is verifiable
+   via `grep -rn 'ta-ship-group\|ta-plan-scroll' src/` returning no
+   matches. `D-TA-RAIL-SHOOTER` appears explicitly as an inline
+   comment in `src/ui/screens/TacticalAttack.tsx:102-110` and
+   `src/ui/screens/tacticalAttack/WeaponBench.tsx:3,67`. The 10
+   checkpoint commits + 2 arch commits are verifiable via
+   `git log --oneline` between `1c406dd` (STATE update at end) and
+   `cb03785` (cycle-4 Roshi commit). The "1578 pass / 0 fail" and
+   the 14/14 e2e + 3-stable-runs numbers are verbatim from Final
+   Report §Verification. The pre-existing encyclopedia TS6142 is
+   Final Report §Residual gap #3 verbatim.
+2. Re-read after writing: the three new supersession/reconciliation
+   notes in `arch/M13-render.md` and `arch/M14-ui.md` do NOT edit
+   the fragment bodies they supersede — they add trailing
+   forward-pointer subsections that read as "as of
+   tactical-attack-mock-parity, this became X" without falsifying
+   "at pf-01 / pf-05 landing, this was Y." The new
+   tactical-attack-mock-parity SESSION-03 M14 fragment cross-
+   references (a) the M13 SESSION-02 mesh widening, (b) the pf-05
+   SESSION-04 `.ta-plan-scroll` supersession note, (c) the pf-04
+   SESSION-01 `weaponOutOfRange` selector, (d) the pf-02 SESSION-04
+   §20 fixed-frame contract, and (e) the M05/M06 SESSION-01 identity
+   seam — all five reads verified against the corresponding
+   fragments. No contradiction between the new fragment and any
+   prior-fragment supersession note.
+3. `FORGE.md`, `MU.md`, `ENSO.md`, `JIKIJITSU.md` — byte-identical,
+   not touched.

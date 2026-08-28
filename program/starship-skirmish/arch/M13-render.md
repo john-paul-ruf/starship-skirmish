@@ -248,6 +248,16 @@ types-only + `three` freely; screens reach the factory through the same
 `createTacticalView` / `attachTracePlayer`, so the entry bundle stays
 three-free (verified against `dist/assets/index-*.js`).
 
+**Superseded (mesh only):** `tactical-attack-mock-parity` SESSION-02 (fragment
+further down this file) widens `RangeShell.mesh` from `Mesh` to `Object3D`;
+the concrete value is now a `Group` of three orthogonal great-circle
+`LineLoop`s. Property name, factory signature, and lifecycle (`setRadius` /
+`setCenter` / `setVisible` / `setQuality` / `dispose`) are unchanged, and the
+sole in-repo consumers (`scene.add(mesh)` / `scene.remove(mesh)`) accept
+`Object3D`, so no downstream edit was required at the widening. A reader
+grepping for the interface type should treat the block above as the pf-01
+landing shape and read the SESSION-02 delta for the current one.
+
 <!-- SESSION-01 · playtest-feedback-02 · M13 render delta -->
 
 ### playtest-feedback-02 SESSION-01 — arch delta (M13 render)

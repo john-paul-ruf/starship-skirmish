@@ -662,6 +662,19 @@ OF RANGE is announced by the existing `weaponOutOfRange` predicate
 (pf-04 SESSION-01 fragment above), with the shooter/target range
 comparison that matches `sim/rules/attack.ts`'s strict `>`.
 
+**Superseded:** `tactical-attack-mock-parity` SESSION-03 (fragment further
+down this file) replaces the ship-by-ship bench and its single-scroll
+right-column plan wrap (`.ta-plan-scroll` around inspector + bench + log)
+with **D-TA-RAIL-SHOOTER** — a literal three-column frame whose right rail
+renders exactly ONE active player shooter. `.ta-ship-group` and
+`.ta-plan-scroll` no longer appear in `src/` (grep-verified); the
+`.ta-card` weapon-card treatment (`is-set` / `is-msl` / `is-oor`) survives
+verbatim as per-slot cards INSIDE the rail. The combat log stays under the
+center column only (D-TA-NO-BOTTOM-PLAN — unchanged from pf-02 for Attack).
+`hitChanceBarFill` / `weaponOutOfRange` / `MatchController.hitChanceFor`
+single-sourcing all still hold. A reader who lands here for a per-shooter
+row layout should read the SESSION-03 delta for the current one.
+
 ### Cross-screen READ contract preserved
 
 `src/ui/screens/tacticalMove/**` continues to read `lastResolvedLogRows`
@@ -681,3 +694,183 @@ Wave-2 concurrency contract (a stability contract, not a serialization
 `model.ts`. The Module Registry `M14` `Key Files` column
 (`screens/*, components/*, tokens.css`) still describes the surface
 faithfully — no drift signal.
+
+<!-- SESSION-03 · tactical-attack-mock-parity · M14 tactical-attack rebuild delta -->
+## M14 UI — tactical-attack rebuild delta (SESSION-03 · tactical-attack-mock-parity)
+
+Jikijitsu stapled no M14 arch commit for this session (the M05/M06 identity
+seam and the M13 label/range primitives landed as their own fragments in
+`arch/M05-domain.md`, `arch/M06-physics.md`, and `arch/M13-render.md`, and
+the Attack screen work fit inside the existing M14 surface). The Final
+Report's §Architecture impact §M14 UI item and the §Design decisions block
+in `prompts/tactical-attack-mock-parity/STATE.md` name the load-bearing
+contracts explicitly, so this reconciliation captures them in-place — the
+same discipline pf-05 cycle-4 applied when Jikijitsu stapled no M14 fragment
+for the concurrent Move+Attack shell work.
+
+### New file (in-lease)
+
+`src/ui/screens/tacticalAttack/FieldOverlay.tsx` — SVG overlay layer mounted
+above the tactical `Viewport`, `pointer-events:none` so it never steals
+canvas or roster clicks. Consumes projected screen coordinates from
+`TacticalView.worldToScreen` (M13 seam already exposed since pf-01) plus
+the field-solution / range / AoE data the new model selectors surface.
+Decorative overlay SVG is `aria-hidden`; state cues (assignment, out of
+range, friendly-in-AoE) are conveyed as text pills alongside colour, per
+the never-color-alone contract §M14 already carried.
+
+### New pure model selectors (public, node-only, three-free)
+
+Additive to `src/ui/screens/tacticalAttack/model.ts` — no existing
+selector renamed or retyped, blind-commit intact (all read the local
+player's `BlindMatchView` + own staged assignments only):
+
+- **`activeShooterOf(shooters, id)`** — validates the screen-local
+  `activeShooterId` signal against the current live-shooter list each
+  render, and falls back to the lowest-body-ID living player ship when
+  the prior shooter has disappeared (roster-clicked enemy or wreck ⇒
+  focus/inspection changes, active shooter does not; see D-TA-RAIL-SHOOTER
+  below). Node-only import shape (Attack screen wires `useSignal<BodyId|null>`).
+- **`liveFireSlots(shooter)`** — the ordered set of launchable weapon
+  and missile slots the rail renders as cards. Static mock has five
+  cards; production returns four when the rail should not paint spent or
+  empty racks — this is the sole intentional gap between mock and
+  production and is called out under Residual gap §4 of the Final Report
+  (a slot-eligibility rule change, not a visual parity gap; blocked on
+  design intent, not on this session).
+- **Range-preview / fire-solution / AoE / projection selectors** — pure
+  functions of `(view, activeShooterId, stagedAssignments)` used by
+  `FieldOverlay.tsx` to render every weapon envelope, firing-solution
+  line, midpoint pill, and AoE ring for the active shooter without a
+  React `useEffect` (no Preact hooks, per the M14 stateless model rule
+  established in S02). Each selector reads through
+  `MatchController.hitChanceFor(...).final` for percentage pills and
+  through the M13 seam for screen projection; no gameplay formula or
+  render integrator is added at the UI layer.
+
+### D-TA-RAIL-SHOOTER — one active shooter in the right rail
+
+The right fire rail renders exactly ONE active player shooter, not every
+shooter fleet-wide. Screen-local `activeShooterId` signal governs which
+ship's `liveFireSlots` fill the rail. Behaviour rules (verbatim from
+Final Report §Active-shooter behavior):
+
+- Active shooter and focused/inspected body are distinct signals.
+- On entry (or when the prior shooter disappears), the lowest-body-ID
+  living player ship becomes active. `activeShooterOf` validates each render.
+- Clicking a living player ship in the roster or canvas changes BOTH
+  focus and active shooter.
+- Clicking an enemy or wreck changes inspection/focus only; the last
+  valid player shooter remains active.
+- Assignments are keyed fleet-wide by shooter+slot, so switching
+  shooters does not discard staged plans; commit legality and counts
+  remain fleet-wide (blind commit unchanged — staged plans are the
+  local player's own; opponent pending plans stay unreachable per §6.3).
+- Production cards use authored chassis / weapon / missile / point-defense
+  / decoy identity via the M05/M06 SESSION-01 identity seam (`ship.chassis`,
+  `weapon.display`, etc.). Synthetic / legacy fixtures retain the
+  textual fallbacks the S01 handoff specified
+  (`ship.chassis?.name ?? ship.chassisClass.toUpperCase()` and
+  `weapon.display?.name ?? 'WEAPON'` etc.), so hand-authored
+  deterministic tests keep passing without importing catalog identity.
+
+### D-TA-THREE-COLUMN — literal three-column frame
+
+The Attack screen is three siblings: left all-fleet roster (~288px) /
+fluid center tactical stage / right fire rail (~344px). Bounded side
+tracks equivalent to `minmax(260px, 288px) / minmax(0, 1fr) /
+minmax(320px, 344px)` at both 1920×1080 and 1280×720. This supersedes
+the earlier `.ta-plan-scroll` single-right-column stack (pf-05 SESSION-04
+above); grep-verified that `.ta-ship-group` and `.ta-plan-scroll` no
+longer appear anywhere in `src/`. The fire-card body is the rail's
+SOLE vertical scroller — header and commit footer remain fixed within
+the rail (contained + pinned, extending the pf-02 SESSION-04 §20
+`.app-main.is-fixed-frame` contract).
+
+### D-TA-NO-BOTTOM-PLAN — combat log center-only, no full-width plan
+
+No weapon bench or commit control lives below the tactical field or
+spans the page. The combat log stays under the CENTER column only (this
+is a hardening for Attack — pf-02 SESSION-04 already mounted the log
+below the Attack viewport; the change is that the pf-05 SESSION-04
+Attack "single right-column scroll wrapping inspector + bench +
+combat-log" pattern is superseded and the right column no longer carries
+the log at all). Move is unaffected — its own persistent log strip
+under the plan column (pf-03 SESSION-02) still lives in its own scoped
+`TM_STYLES` and is not touched by this feature.
+
+### D-TA-WIRE-RANGE + D-TA-LIVE-OVERLAYS + D-TA-HIT-CHANCE-SINGLE-SOURCE
+
+Read together, these keep the render seam honest and the single-source
+rule intact:
+
+- Every live weapon on the active shooter emits one line-only range
+  envelope (via the M13 SESSION-02 `RangeShell.mesh: Object3D` widening
+  — the three-orthogonal-`LineLoop` group under `Group`) plus a DOM
+  label; the real harness shows three envelopes. Missile AoE remains a
+  separate red/dashed overlay, not a range shell.
+- Boundary labels, range labels, firing-solution lines, midpoint
+  percentage/status pills, selected-body callout, active missile AoE
+  ring + `FRIENDLY IN AoE` warning, fleet/body-class legend, and beat/
+  turn HUD all derive from current state and the local player's staged
+  assignments. Production JSX contains no hardcoded ship, distance, or
+  percentage from the mock (verified against the browser harness which
+  pins distinct controller-derived values 68% / 41% / 77%).
+- Percentage pills and rail meters format only `hitChanceFor(...).final`
+  (D-HITCHANCE-SEAM / D-HITCHANCE / architecture §13.3 — unchanged). Out
+  of range and missile lines show explicit non-percent states via the
+  `weaponOutOfRange` predicate from pf-04 SESSION-01. No competing
+  formula added at the UI layer.
+
+### D-TA-VISUAL-GATE + D-TA-NO-DEFERRED-BROWSER — M19 gate rules
+
+Test-shape decisions this session codified explicitly (see
+`arch/M17-harness.md` peers for the physics/combat determinism
+patterns). Both are per-feature test-gate rules, not framework changes:
+
+- **D-TA-VISUAL-GATE:** completion requires real shipped CSS, real
+  M13 rendering (not a render stub), exact bounding-box checks at
+  1920×1080 and 1280×720, side-by-side mock review, and a reviewed
+  Chromium screenshot baseline. The committed baseline
+  `tests/e2e/tacticalAttack.spec.ts-snapshots/attack-plan-1920-chromium-darwin.png`
+  is unmasked and passes three consecutive runs at threshold `0.2` +
+  `maxDiffPixelRatio: 0.02` for deterministic engine antialiasing.
+- **D-TA-NO-DEFERRED-BROWSER:** the e2e/visual gate may not be marked
+  done without execution. A missing dev server is a blocker to resolve
+  during the session, not a permissible "deferred verification" note.
+  This session's Mu→Enso delegation ran the browser gate 14/14 pass,
+  three stable runs, in-lease.
+
+### Not touched
+
+`src/sim/**`, `src/sim/trace/**`, `src/sim/rules/**`, `src/ai/**`,
+`src/ui/styles/components.css`, `src/ui/styles/tokens.css`,
+`src/ui/components/**`, `src/ui/components/roster/**`,
+`src/ui/matchContext.ts`, `MatchController` signatures. All new CSS
+scopes live inside the file-scoped `TA_STYLES` block on
+`TacticalAttack.tsx`; the new `FieldOverlay.tsx` file lives under
+`src/ui/screens/tacticalAttack/` (M14 `screens/*` wildcard — no
+Module Registry `Key Files` drift signal). `hitChanceFor(...).final`
+remains the sole hit-chance source (architecture §13.3). Blind commit,
+deterministic-core boundaries, persistence, catalog schema, share/JSON
+wire formats, and migration surfaces are all unchanged.
+
+### Known scoped gaps (from Final Report §Residual gap — informational)
+
+Recorded here so a future reader doesn't re-derive them from the report:
+
+- The committed screenshot baseline is macOS-specific
+  (`-chromium-darwin.png`); enabling this assertion on Linux CI needs a
+  `-chromium-linux` baseline or an explicit platform scope on the
+  screenshot step.
+- Very large weapon radii can project a top-edge range label above the
+  viewport; overflow clips it safely, and the fleet-zoom live scene
+  keeps the current three envelope labels visible.
+- The rail reports four launchable fire slots where the static mock
+  shows five, because `liveFireSlots` excludes empty/spent racks. No
+  visual-parity slot-eligibility rule was invented; if design requires
+  empty/spent racks to remain visible in the rail count, Forge should
+  plan that behavior as a separate feature.
+- `tests/unit/ui/encyclopedia/export.test.ts` still exposes the
+  unrelated `TS6142` node-config baseline — outside every lease this
+  cycle (see ROSHI-LOG cycle 5).
