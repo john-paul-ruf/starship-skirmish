@@ -90,7 +90,7 @@ export const previewToken = (catalog: Catalog, token: string): Preview => {
       status: 'error',
       error: {
         code: 'ERR_BAD_MAGIC',
-        message: 'No token supplied. Paste a share link or open one from clipboard.',
+        message: 'No token supplied. Paste an import link or open one from clipboard.',
       },
     };
   }
