@@ -142,19 +142,53 @@ export interface Arena {
 export type ChassisClass = 'fighter' | 'frigate' | 'cruiser' | 'mega-destroyer';
 
 /**
+ * Behavior-free identity carried alongside the numeric sim structs.
+ *
+ * The tactical UI, combat log, and post-match readouts (M14) need to render the
+ * chassis and per-slot component names authored in the catalog. Those strings
+ * cannot ride on `SimShip.name` alone (that is the player-chosen build name, not
+ * the chassis) and the sim boundary forbids `sim → catalog`, so the identity has
+ * to cross the seam as part of the resolved sim profile.
+ *
+ * This shape is intentionally minimal and READ-ONLY:
+ *   • `id` is the catalog's permanent id (e.g. `cru-hammerhead`, `wpn-pulse-array`).
+ *   • `name` is the catalog's authored display string.
+ *
+ * Callers must treat these fields as DISPLAY-ONLY. They are forbidden from
+ * appearing in any rule / physics / AI-score / RNG-key / digest / trace-digest
+ * input — the only supported use is human-readable labelling in `render/` / `ui/`
+ * (architecture §4). The absence of a coupling here is the enforcement.
+ */
+export interface SimDisplayIdentity {
+  readonly id: string;
+  readonly name: string;
+}
+
+/**
  * Base weapon stats. The full hit-chance formula (range/evasion/decoy) lives in
  * `sim/rules` and is not duplicated in data or UI (Ruling H).
+ *
+ * `display` is OPTIONAL at the type boundary for legacy-fixture compatibility —
+ * hand-authored deterministic unit fixtures may construct a `SimWeapon` literal
+ * without identity, and the sim rulebook must remain byte-for-byte identical
+ * when it is absent. Production resolution (`domain.resolveShip`) ALWAYS
+ * populates it; UI consumers may rely on that guarantee while still keeping a
+ * textual fallback for malformed / legacy inputs.
  */
 export interface SimWeapon {
   readonly range: number;
   readonly damage: number;
   readonly shotsPerTurn: number;
   readonly accuracy: number;
+  /** Display-only. See `SimDisplayIdentity`. Absent on legacy fixtures. */
+  readonly display?: SimDisplayIdentity;
 }
 
 /**
  * A launcher's per-rack stats. `bodyMass`/`bodyRadius` describe ONE missile in
  * flight (collidable); the rack's own carried mass is folded into `SimShip.mass`.
+ *
+ * See `SimWeapon` for why `display` is optional at the type boundary.
  */
 export interface SimMissileRack {
   readonly ammo: number;
@@ -164,24 +198,36 @@ export interface SimMissileRack {
   readonly trackingTurnRate: number;
   readonly bodyMass: number;
   readonly bodyRadius: number;
+  /** Display-only. See `SimDisplayIdentity`. Absent on legacy fixtures. */
+  readonly display?: SimDisplayIdentity;
 }
 
-/** Point-defense turret stats. Interception logic is a `sim/rules` concern (F4). */
+/**
+ * Point-defense turret stats. Interception logic is a `sim/rules` concern (F4).
+ *
+ * See `SimWeapon` for why `display` is optional at the type boundary.
+ */
 export interface SimPointDefense {
   readonly interceptRange: number;
   readonly interceptChance: number;
   readonly interceptsPerTurn: number;
+  /** Display-only. See `SimDisplayIdentity`. Absent on legacy fixtures. */
+  readonly display?: SimDisplayIdentity;
 }
 
 /**
  * Decoy launcher stats. A per-turn timed effect — `evasionBonus` is applied by
  * `sim/rules` during the beat a decoy is fired, NOT folded into a static
  * evasion number (see the design note in `src/domain/derivedStats.ts`).
+ *
+ * See `SimWeapon` for why `display` is optional at the type boundary.
  */
 export interface SimDecoy {
   readonly charges: number;
   readonly evasionBonus: number;
   readonly durationTurns: number;
+  /** Display-only. See `SimDisplayIdentity`. Absent on legacy fixtures. */
+  readonly display?: SimDisplayIdentity;
 }
 
 /**
@@ -193,6 +239,13 @@ export interface SimShip {
   /** Local roster id — the durable Build.id, NOT the share-token ordinal. */
   readonly buildId: string;
   readonly name: string;
+  /**
+   * Display-only chassis identity (catalog id + authored name). Optional at the
+   * type boundary for legacy-fixture compatibility (hand-built unit fixtures
+   * that don't need chassis labels); ALWAYS populated by `domain.resolveShip`.
+   * See `SimDisplayIdentity` for the display-only contract.
+   */
+  readonly chassis?: SimDisplayIdentity;
   /** Keys `tuning.hazards.debrisPerDestruction` and `tuning.destruction.*ByClass`. */
   readonly chassisClass: ChassisClass;
   /** Total mass — chassis + Σ component (§2.3). Used in momentum + delta-V budget. */
