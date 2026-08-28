@@ -10,7 +10,7 @@
 // The pacing state machine takes an injectable clock + raf so it unit-tests
 // deterministically in the node env; the three.js buffer pushes are screen-e2e.
 
-import { Color, Group, Sprite, SpriteMaterial } from 'three';
+import { AdditiveBlending, Color, Group, type Object3D, Sprite, SpriteMaterial } from 'three';
 import { Line2 } from 'three/examples/jsm/lines/Line2.js';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
@@ -19,10 +19,11 @@ import type {
   CombatLogEntry,
   CombatLogResult,
   DestructionEvent,
+  Vec3,
 } from '../sim/index.js';
 import type { MovementBeatRecord } from '../sim/index.js';
 import { bodyKindToGlyph, type HazardInput } from './hazards.js';
-import { easeInOutQuad, lerpBodyAt, type LerpedBody } from './interp.js';
+import { clamp01, easeInOutQuad, lerpBodyAt, projectileAt, type LerpedBody } from './interp.js';
 import type { TrailLayer } from './trail.js';
 import type { TacticalView } from './types.js';
 
@@ -291,10 +292,12 @@ export const attachTracePlayer = (view: TacticalView): TracePlayer => {
     const shots = record.log;
     const durationMs = opts.durationMs ?? defaultAttackDurationMs(shots.length);
 
-    // Shot beams (shooter→target, colored by result) sequence over the beat; AoE rings
-    // for in-arena detonations + kill flashes land at the end.
+    // Shot beams (shooter→target, colored by result) sequence over the beat; each
+    // beam SWEEPS its endpoint out over the first half of its per-shot window, lands
+    // (or falls short, for misses) with a head-flash keyed to `result`, then fades.
+    // AoE rings + kill flashes land in the final fifth of the beat.
     const group = new Group();
-    const beams: FxHandle[] = [];
+    const beams: BeamFx[] = [];
     for (const entry of shots) {
       const beam = makeBeam(view, entry);
       if (beam !== null) beams.push(beam);
@@ -321,10 +324,15 @@ export const attachTracePlayer = (view: TacticalView): TracePlayer => {
       raf: opts.raf ?? rafDefault,
       cancelRaf: opts.cancelRaf ?? cancelDefault,
       renderAt: (tNorm) => {
-        // Reveal beams in order; finale FX appear in the last fifth of the beat.
-        const revealed = Math.floor(tNorm * beams.length + 1e-6);
-        for (let i = 0; i < beams.length; i += 1) {
-          beams[i]!.object.visible = tNorm >= 1 || i < revealed;
+        // Drive each beam through its per-shot window. The window for shot `i` runs
+        // `[i / N, (i + 1) / N]` — sequencing preserved from the pre-CP1 reveal loop.
+        const n = beams.length;
+        for (let i = 0; i < n; i += 1) {
+          const windowStart = n === 0 ? 0 : i / n;
+          const windowEnd = n === 0 ? 1 : (i + 1) / n;
+          const span = windowEnd - windowStart;
+          const localT = span <= 0 ? 1 : clamp01((tNorm - windowStart) / span);
+          beams[i]!.renderAt(localT);
         }
         const finaleShown = tNorm >= 0.8;
         for (const fx of finale) fx.object.visible = finaleShown;
@@ -346,12 +354,23 @@ export const attachTracePlayer = (view: TacticalView): TracePlayer => {
 
 /** A transient scene object plus its geometry/material disposer. */
 interface FxHandle {
-  readonly object: Line2 | Sprite;
+  readonly object: Object3D;
   dispose(): void;
+}
+
+/** An animated per-shot beam FX. Drives itself over `localT ∈ [0,1]` (its shot window). */
+interface BeamFx extends FxHandle {
+  renderAt(localT: number): void;
 }
 
 const KILL_FLASH_COLOR = 0xffd0a0;
 const AOE_RING_COLOR = 0xff8a3d;
+/** Muzzle flash color — warm white; keyed to shooter, not resolution. */
+const MUZZLE_FLASH_COLOR = 0xfff0c0;
+/** Fraction of the shot window spent sweeping the beam outward; the remainder fades. */
+const BEAM_SWEEP_FRAC = 0.5;
+/** How far a MISS beam extends toward the target before fading — reads as "fell short". */
+const MISS_ENDPOINT_FRAC = 0.62;
 /** Nominal AoE ring radius per class (world units). True per-class AoE radius lives in
  *  `CombatConfig`, which the record does not carry, so playback draws a class-scaled
  *  legibility ring — bigger hull ⇒ bigger blast read. */
@@ -363,16 +382,135 @@ const AOE_RING_RADIUS: Readonly<Record<DestructionEvent['chassisClass'], number>
 };
 const RING_SEGMENTS = 48;
 
-/** Build one shot beam shooter→target, or `null` if either endpoint is already gone. */
-const makeBeam = (view: TacticalView, entry: CombatLogEntry): FxHandle | null => {
-  const from = view.scene.ships.positionOf(entry.sourceId);
-  const to = view.scene.ships.positionOf(entry.targetId);
-  if (from === null || to === null) return null;
-  return buildLine(
-    [from.x, from.y, from.z, to.x, to.y, to.z],
-    beamColorFor(entry.result),
-    1.6,
-  );
+/**
+ * Return `1` for shot resolutions that LAND on the target (produce a head-flash), `0`
+ * for those that don't — misses and boundary-exits fall short and fade silently.
+ */
+const beamLandsFor = (result: CombatLogResult): boolean => {
+  switch (result) {
+    case 'hit':
+    case 'crit':
+    case 'kill':
+    case 'intercept':
+      return true;
+    default:
+      return false; // miss / boundary-exit
+  }
+};
+
+/**
+ * Build one animated shot beam shooter→target, or `null` if either endpoint is already
+ * gone. Composed of three transient objects:
+ *   • a `Line2` beam whose endpoint sweeps out over the shot's window,
+ *   • a `Sprite` muzzle flash that pops at the shooter as the beam ignites, and
+ *   • a `Sprite` head flash that lands at the target on hits/crits/kills/intercepts.
+ * Misses leave the head flash hidden and the beam endpoint falls short (see
+ * `MISS_ENDPOINT_FRAC`), so "what missed" reads visibly without a landing pop.
+ */
+const makeBeam = (view: TacticalView, entry: CombatLogEntry): BeamFx | null => {
+  const fromPos = view.scene.ships.positionOf(entry.sourceId);
+  const toPos = view.scene.ships.positionOf(entry.targetId);
+  if (fromPos === null || toPos === null) return null;
+
+  const color = beamColorFor(entry.result);
+  const lands = beamLandsFor(entry.result);
+  const from: Vec3 = { x: fromPos.x, y: fromPos.y, z: fromPos.z };
+  const to: Vec3 = { x: toPos.x, y: toPos.y, z: toPos.z };
+  // Miss endpoint is a fixed fraction of the way to the target; hits sweep the full path.
+  const endEnd: Vec3 = lands
+    ? to
+    : {
+        x: from.x + (to.x - from.x) * MISS_ENDPOINT_FRAC,
+        y: from.y + (to.y - from.y) * MISS_ENDPOINT_FRAC,
+        z: from.z + (to.z - from.z) * MISS_ENDPOINT_FRAC,
+      };
+
+  const group = new Group();
+
+  const geometry = new LineGeometry();
+  geometry.setPositions([from.x, from.y, from.z, from.x, from.y, from.z]);
+  const material = new LineMaterial({
+    color,
+    linewidth: 1.6,
+    transparent: true,
+    opacity: 0,
+    depthTest: true,
+  });
+  const line = new Line2(geometry, material);
+  line.visible = false;
+  group.add(line);
+
+  const muzzleMat = new SpriteMaterial({
+    color: new Color(MUZZLE_FLASH_COLOR),
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: AdditiveBlending,
+  });
+  const muzzle = new Sprite(muzzleMat);
+  muzzle.position.set(from.x, from.y, from.z);
+  muzzle.visible = false;
+  group.add(muzzle);
+
+  const headMat = new SpriteMaterial({
+    color: new Color(color),
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: AdditiveBlending,
+  });
+  const head = new Sprite(headMat);
+  head.position.set(endEnd.x, endEnd.y, endEnd.z);
+  head.visible = false;
+  group.add(head);
+
+  return {
+    object: group,
+    renderAt: (localT: number) => {
+      // Before the window opens, everything hidden. After it closes, everything faded.
+      if (localT <= 0) {
+        line.visible = false;
+        muzzle.visible = false;
+        head.visible = false;
+        return;
+      }
+
+      // ── Beam sweep + opacity ──
+      // Endpoint grows from shooter → endEnd over the first BEAM_SWEEP_FRAC of the
+      // window (eased); the remainder holds full-extent while opacity fades out.
+      const sweepT = clamp01(localT / BEAM_SWEEP_FRAC);
+      const tip = projectileAt(from, endEnd, sweepT);
+      geometry.setPositions([from.x, from.y, from.z, tip.x, tip.y, tip.z]);
+      // Triangular opacity ramp — rises with sweep, falls after landing.
+      const beamAlpha = localT <= BEAM_SWEEP_FRAC
+        ? 0.9 * (localT / BEAM_SWEEP_FRAC)
+        : 0.9 * (1 - (localT - BEAM_SWEEP_FRAC) / (1 - BEAM_SWEEP_FRAC));
+      material.opacity = Math.max(0, beamAlpha);
+      line.visible = material.opacity > 0.01;
+
+      // ── Muzzle flash — bright at ignition, gone by ~30% of the window. ──
+      const muzzleAlpha = localT < 0.3 ? 1 - localT / 0.3 : 0;
+      muzzleMat.opacity = muzzleAlpha;
+      muzzle.visible = muzzleAlpha > 0.01;
+
+      // ── Head flash — only for landing shots; peaks at landing then fades. ──
+      if (!lands || localT < BEAM_SWEEP_FRAC) {
+        headMat.opacity = 0;
+        head.visible = false;
+      } else {
+        // Peak at localT ≈ BEAM_SWEEP_FRAC, decay linearly to 0 at localT = 1.
+        const decay = (localT - BEAM_SWEEP_FRAC) / (1 - BEAM_SWEEP_FRAC);
+        headMat.opacity = Math.max(0, 1 - decay);
+        head.visible = headMat.opacity > 0.01;
+      }
+    },
+    dispose: () => {
+      geometry.dispose();
+      material.dispose();
+      muzzleMat.dispose();
+      headMat.dispose();
+    },
+  };
 };
 
 /** A brief flash sprite at a death position. */

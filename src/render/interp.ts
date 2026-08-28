@@ -40,6 +40,20 @@ const lerpVec3 = (a: Vec3, b: Vec3, t: number): Vec3 => ({
 });
 
 /**
+ * Eased position on the segment `from → to` at `tNorm ∈ [0,1]`. Uses `easeInOutQuad`
+ * so the projectile accelerates out and settles in — the same cadence movement uses.
+ *
+ * `tNorm = 0` returns `from` exactly; `tNorm = 1` returns `to` exactly (the ease
+ * anchors on 0/1). Component-wise monotonic between the endpoints along each axis.
+ *
+ * Pure — no side effects, no WebGL — so it unit-tests in the node env. Used by the
+ * attack-beat beam sweep (endpoint shooter → target across the shot's window) and
+ * available to future projectile FX.
+ */
+export const projectileAt = (from: Vec3, to: Vec3, tNorm: number): Vec3 =>
+  lerpVec3(from, to, easeInOutQuad(tNorm));
+
+/**
  * Playback cadence easing — a symmetric ease so a movement resolve accelerates then
  * settles ("the beat lands with a thud", Gate 1 §0). Endpoints are fixed: `0→0`, `1→1`,
  * which is what keeps `skip` (jump to `tNorm=1`) outcome-identical to a full play.

@@ -7,12 +7,19 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   attachTracePlayer,
+  beamColorFor,
+  defaultAttackDurationMs,
   defaultMovementDurationMs,
   MIN_MOVEMENT_MS,
   MS_PER_SUBSTEP,
 } from '../../../src/render/TracePlayer.js';
 import type { RafSchedule } from '../../../src/render/TracePlayer.js';
-import type { MovementBeatRecord } from '../../../src/sim/index.js';
+import { projectileAt } from '../../../src/render/interp.js';
+import type {
+  AttackBeatRecord,
+  CombatLogEntry,
+  MovementBeatRecord,
+} from '../../../src/sim/index.js';
 import type { Body } from '../../../src/sim/index.js';
 import type { TrailLayer } from '../../../src/render/trail.js';
 import type { TacticalView } from '../../../src/render/types.js';
@@ -416,5 +423,227 @@ describe('playMovement state machine', () => {
 
     expect(onDone).not.toHaveBeenCalled();
     expect(sched.hasPending()).toBe(false);
+  });
+});
+
+// ---- CP1: beam palette + projectile helper + attack outcome invariance -------
+
+describe('beamColorFor palette (CP1 lock)', () => {
+  // Locking the exact palette so the "beam color reads the result" cue never drifts
+  // silently. If a hue moves, this test forces the change to be explicit.
+  it('returns the exact per-result hues', () => {
+    expect(beamColorFor('crit')).toBe(0xffef6b);
+    expect(beamColorFor('kill')).toBe(0xff2d2d);
+    expect(beamColorFor('hit')).toBe(0xff6b6b);
+    expect(beamColorFor('intercept')).toBe(0x6bd7ff);
+    expect(beamColorFor('miss')).toBe(0x51637a);
+    expect(beamColorFor('boundary-exit')).toBe(0x51637a);
+  });
+});
+
+describe('projectileAt (CP1 sweep helper)', () => {
+  const from = { x: 0, y: 0, z: 0 };
+  const to = { x: 100, y: 20, z: -40 };
+
+  it('anchors on the endpoints exactly', () => {
+    expect(projectileAt(from, to, 0)).toEqual(from);
+    expect(projectileAt(from, to, 1)).toEqual(to);
+  });
+
+  it('is monotonic per axis across tNorm 0 → 1 (beam endpoint never regresses)', () => {
+    // Sweep endpoint must NEVER retreat; the visual read of "beam growing" depends on it.
+    let prev = projectileAt(from, to, 0);
+    for (let i = 1; i <= 10; i += 1) {
+      const t = i / 10;
+      const cur = projectileAt(from, to, t);
+      // Each axis is monotone in the sign of (to - from).
+      expect(cur.x).toBeGreaterThanOrEqual(prev.x); // to.x > from.x
+      expect(cur.y).toBeGreaterThanOrEqual(prev.y); // to.y > from.y
+      expect(cur.z).toBeLessThanOrEqual(prev.z); // to.z < from.z (going more negative)
+      prev = cur;
+    }
+  });
+
+  it('clamps tNorm outside [0,1] to the endpoints', () => {
+    expect(projectileAt(from, to, -0.5)).toEqual(from);
+    expect(projectileAt(from, to, 1.5)).toEqual(to);
+  });
+});
+
+describe('defaultAttackDurationMs (CP1 sequencing lock)', () => {
+  it('scales with shot count but never below the floor', () => {
+    // If either constant changes, the per-shot sequencing "reads as motion" tuning
+    // it was picked for shifts — force the change to be explicit.
+    expect(defaultAttackDurationMs(0)).toBe(160); // MIN_ATTACK_MS
+    expect(defaultAttackDurationMs(1)).toBe(160); // 1 · 90 = 90 → floor
+    expect(defaultAttackDurationMs(4)).toBe(360); // 4 · 90
+  });
+});
+
+describe('playAttack state machine', () => {
+  // Attack playback exercises the record end-to-end via the fake scheduler. The
+  // fake view's `positionOf` returns real Vector3-shaped points so `makeBeam` builds
+  // beams (empty otherwise).
+  interface AttackFakeView extends FakeView {
+    setShipPosition(id: number, at: { x: number; y: number; z: number }): void;
+  }
+  const makeAttackFake = (): AttackFakeView => {
+    const shipXY = new Map<number, { x: number; y: number; z: number }>();
+    const positions = new Map<number, { x: number; y: number; z: number }>();
+    const opacities = new Map<number, number>();
+    const hazardSyncs: number[] = [];
+    const state = { renderCount: 0 };
+    const view = {
+      scene: {
+        context: { scene: { add: vi.fn(), remove: vi.fn() } },
+        ships: {
+          setPosition: (id: number, x: number, y: number, z: number) => {
+            positions.set(id, { x, y, z });
+          },
+          setOpacity: (id: number, alpha: number) => {
+            opacities.set(id, alpha);
+          },
+          positionOf: (id: number) => shipXY.get(id) ?? null,
+        },
+        hazards: {
+          sync: (inputs: readonly unknown[]) => {
+            hazardSyncs.push(inputs.length);
+          },
+        },
+        render: () => {
+          state.renderCount += 1;
+        },
+      },
+    } as unknown as TacticalView;
+    return {
+      view,
+      positions,
+      opacities,
+      hazardSyncs,
+      get renderCount() {
+        return state.renderCount;
+      },
+      setShipPosition: (id, at) => {
+        shipXY.set(id, at);
+      },
+    };
+  };
+
+  const shot = (sourceId: number, targetId: number, result: CombatLogEntry['result']): CombatLogEntry => ({
+    turn: 1,
+    beat: 'attack',
+    source: 'weapon',
+    sourceId,
+    targetId,
+    result,
+    chance: 0.5,
+    roll: result === 'miss' ? 0.9 : 0.1,
+    damage: result === 'miss' ? 0 : 10,
+    shieldBefore: 0,
+    shieldAfter: 0,
+    hullBefore: 100,
+    hullAfter: result === 'kill' ? 0 : 90,
+  });
+
+  const attackRecord = (log: readonly CombatLogEntry[]): AttackBeatRecord => ({
+    log,
+    destroyed: [],
+    launchedMissileIds: [],
+  });
+
+  it('fires onDone once and lands on the final frame (fade-out)', () => {
+    const sched = new FakeScheduler();
+    const fake = makeAttackFake();
+    fake.setShipPosition(1, { x: 0, y: 0, z: 0 });
+    fake.setShipPosition(2, { x: 100, y: 0, z: 0 });
+    const player = attachTracePlayer(fake.view);
+    const onDone = vi.fn();
+
+    player.playAttack(attackRecord([shot(1, 2, 'hit'), shot(1, 2, 'miss')]), {
+      durationMs: 200,
+      clock: sched.clock,
+      raf: sched.raf,
+      cancelRaf: sched.cancel,
+      onDone,
+    });
+
+    sched.runToEnd(20);
+
+    expect(onDone).toHaveBeenCalledTimes(1);
+    // The RAF ran, therefore the scene rendered — otherwise the beam FX would be
+    // asserted directly, but our fakes don't expose Group internals.
+    expect(fake.renderCount).toBeGreaterThan(0);
+  });
+
+  it('skip() and a full play both settle to onDone once, no pending raf (FR-19 spirit)', () => {
+    // We can't inspect Three material opacity through the fake view (no scene tree),
+    // so the outcome-invariance lock here is on the PLAYBACK contract: both paths
+    // must fire onDone exactly once and end with the raf loop stopped. Combined with
+    // the projectile-monotonic + palette locks, this pins the visible-final state
+    // reachable by skip and full-play to the same terminal frame (both call
+    // renderAt(1) via createPlayback.finish).
+    const runFull = () => {
+      const sched = new FakeScheduler();
+      const fake = makeAttackFake();
+      fake.setShipPosition(1, { x: 0, y: 0, z: 0 });
+      fake.setShipPosition(2, { x: 50, y: 0, z: 0 });
+      const onDone = vi.fn();
+      attachTracePlayer(fake.view).playAttack(
+        attackRecord([shot(1, 2, 'crit'), shot(1, 2, 'miss')]),
+        {
+          durationMs: 200,
+          clock: sched.clock,
+          raf: sched.raf,
+          cancelRaf: sched.cancel,
+          onDone,
+        },
+      );
+      sched.runToEnd(15);
+      return { onDone, sched };
+    };
+    const runSkip = () => {
+      const sched = new FakeScheduler();
+      const fake = makeAttackFake();
+      fake.setShipPosition(1, { x: 0, y: 0, z: 0 });
+      fake.setShipPosition(2, { x: 50, y: 0, z: 0 });
+      const onDone = vi.fn();
+      attachTracePlayer(fake.view)
+        .playAttack(attackRecord([shot(1, 2, 'crit'), shot(1, 2, 'miss')]), {
+          durationMs: 200,
+          clock: sched.clock,
+          raf: sched.raf,
+          cancelRaf: sched.cancel,
+          onDone,
+        })
+        .skip();
+      return { onDone, sched };
+    };
+
+    const full = runFull();
+    const skip = runSkip();
+    expect(full.onDone).toHaveBeenCalledTimes(1);
+    expect(skip.onDone).toHaveBeenCalledTimes(1);
+    expect(full.sched.hasPending()).toBe(false);
+    expect(skip.sched.hasPending()).toBe(false);
+  });
+
+  it('a shot whose shooter or target has no known position is silently skipped', () => {
+    // makeBeam returns null when either endpoint is missing — the beam array shrinks
+    // but the beat still resolves cleanly. Regression guard for stale-id shots.
+    const sched = new FakeScheduler();
+    const fake = makeAttackFake();
+    // Only ship 1 has a known position; ship 2 is absent → the beam is dropped.
+    fake.setShipPosition(1, { x: 0, y: 0, z: 0 });
+    const player = attachTracePlayer(fake.view);
+    const onDone = vi.fn();
+    player.playAttack(attackRecord([shot(1, 2, 'hit')]), {
+      durationMs: 100,
+      clock: sched.clock,
+      raf: sched.raf,
+      cancelRaf: sched.cancel,
+      onDone,
+    });
+    sched.runToEnd(20);
+    expect(onDone).toHaveBeenCalledTimes(1);
   });
 });
