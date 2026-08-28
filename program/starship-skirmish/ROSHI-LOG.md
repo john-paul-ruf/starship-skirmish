@@ -453,3 +453,223 @@ recommends; a human folds them in by hand once the count justifies it. Vow
    two files via reciprocal cross-references.
 3. `FORGE.md`, `MU.md`, `ENSO.md`, `JIKIJITSU.md` — byte-identical, not
    touched.
+
+---
+
+## 2026-08-28 — Cycle 4 — `playtest-feedback-05`
+
+**Envelope in:** Final Report at
+`program/starship-skirmish/prompts/playtest-feedback-05/FINAL-REPORT.md`;
+4/4 sessions `done` (S01–S04) across two rolling waves (S01 ∥ S02, then
+S03 ∥ S04 overlapping S02); 14 Mu checkpoint commits (S01 2/2, S02 4/4,
+S03 4/4, S04 4/4); 1 Jikijitsu arch commit (`e302d93`,
+`arch/M13-render.md` — the S02 `explosionFx` fragment). Post-merge unit
+**1526 pass / 0 fail** — S01 cleared the pf-04 RED
+`inMatchLayout.test.ts` `liveLogRows` line by exactly the mechanism the
+cycle-3 ROSHI-LOG framework proposal recommended. App-side typecheck
+clean, lint clean, build clean; Move CP4 velocity-readout e2e passed
+(the 3 pre-existing "Set to Coast" chromium timeouts reproduced on
+baseline, unchanged); Attack e2e authored but deferred (no dev server
+in that worker); Render e2e deferred (blast behaviour covered in unit
+tests). Same pre-existing encyclopedia `TS6142`
+(`tsconfig.node.json` + `--jsx`) still red at HEAD — now cycle 4 of
+independent observation. Zero lease violations, zero checkpoint
+shortfalls, zero wave-plan corrections.
+
+### Reconciled this run
+
+- **`arch/M14-ui.md`** — pf-02 SESSION-04 fragment carried a load-bearing
+  list of scoped classes that included `.ta-bench-scroll`. Cycle 4
+  SESSION-04 CP4 renamed that class to `.ta-plan-scroll` in-lease.
+  Added a forward-pointing **Superseded** note under that class list;
+  did NOT edit the original fragment body (same cycle-3 discipline
+  applied to the InfoTip §19 CSS reconciliation — retroactively
+  editing a fragment that was true at its landing rewrites history
+  worse than the drift it fixes). Grounded in
+  `src/ui/screens/TacticalAttack.tsx:430,527,594` and commit
+  `76dbddd`.
+- **`arch/M14-ui.md`** — pf-04 SESSION-01 fragment's `lastResolvedLogRows`
+  "Supersedes" note said `liveLogRows` was "still referenced by two
+  test files" and "A prune is a follow-up lease, not landed here." That
+  follow-up lease landed this cycle (pf-05 SESSION-04 CP4 pruned the
+  selector + its 5-test block; pf-05 SESSION-01 resolved the
+  cross-screen `inMatchLayout.test.ts` reference by exactly the
+  D-LAYOUT-TEST-DECOUPLE mechanism cycle-3 ROSHI-LOG had recommended).
+  Updated the note in-place with a **Prune landed** subsection —
+  additive, not a rewrite, records the actual resolution. Grounded in
+  `src/ui/screens/tacticalAttack/model.ts:458-465`,
+  `tests/unit/ui/tacticalAttack/combatLog.test.ts:13`, and commits
+  `76dbddd` / `e00833e` / `6c861ea`.
+- **`arch/M14-ui.md`** — appended a compact combined `SESSION-03 +
+  SESSION-04 · playtest-feedback-05` M14 tactical-screen delta
+  fragment. Jikijitsu stapled no S03 or S04 arch commit this cycle
+  (both sessions fit inside the existing M14 surface — Jikijitsu's
+  call was correct for mid-run), but the Final Report explicitly names
+  four items under `Architecture impact` that a future reader would
+  otherwise have to re-derive from STATE.md handoffs: (1) the two new
+  pure model helpers `velocityReadout` (S03 tacticalMove/model.ts) and
+  `hitChanceBarFill` (S04 tacticalAttack/model.ts); (2)
+  **D-IMMERSIVE-GRID-COLLAPSE** — the shared `.is-immersive` scoped
+  grid-collapse pattern both screens now use for in-frame FULL FIELD
+  mode; (3) **D-COMMIT-PER-SCREEN-REF** — CommitBar contained + pinned
+  on both screens but positioned per each screen's endorsed reference
+  (top on Move, bottom on Attack); (4) the ship-by-ship bench parity
+  wiring that keeps hit-chance single-sourced through `hitChanceFor`
+  (architecture §13.3 intact). Cross-screen READ contract explicitly
+  noted preserved. All prose grounded in the Final Report §Architecture
+  impact + handoff notes verbatim in STATE.md + current source at
+  `src/ui/screens/tacticalMove/model.ts:448-456` and
+  `src/ui/screens/tacticalAttack/model.ts:418-419`.
+
+### Not reconciled — deliberately
+
+- **`arch/M13-render.md` SESSION-02 · playtest-feedback-05 fragment** —
+  Jikijitsu's `e302d93` staple lists a small internal-only public
+  surface for `explosionFx.ts` and explicitly notes the barrel is
+  untouched. Fragment reads consistently against current source
+  (`src/render/explosionFx.ts` matches signatures + `not re-exported
+  from src/render/index.ts` is verifiable). No reconciliation needed.
+- **`arch/M11-trace.md` `AttackBeatRecord.launchedMissileIds` gap**
+  memorialised cycle 1 — this cycle did no sim/trace work; the gap
+  stays open pending a future M11 lease. Nothing to touch.
+- **`arch/M14-ui.md` per-session block structure** — kept intact for the
+  fifth consecutive cycle. Fragments still compose additively; no
+  contradiction across bodies (only the two just-resolved via forward
+  pointers). File is now ~640 lines and remains readable in
+  session-timeline order. The Vow-2 bolt-on-vs-edit tension was
+  weighed for the pf-05 delta and resolved toward one combined
+  SESSION-03 + SESSION-04 fragment rather than two per-session
+  fragments — the same feature, coherent as one description of the
+  shared tactical-screen surface as it now stands.
+- **Module Registry `M14` Key Files** — reads `screens/*,
+  components/*, tokens.css`. New helpers landed inside the
+  `screens/*` wildcard; no drift signal.
+- **Module Registry `M13` "Key Files (planned)"** — cycle 1 flagged
+  drift, cycle 2 held, cycle 3 held (no render work), cycle 4 ADDED a
+  file (`explosionFx.ts`) but the Jikijitsu arch fragment explicitly
+  notes it is NOT barrel-exported (module-internal). A reader today
+  finds it via the arch fragment, not via the registry. The
+  `(planned)` hedge still reads honestly. Fifth-consecutive cycle
+  holding — not promoting from a plan-time snapshot to an as-built
+  list on the strength of no active reader mis-step.
+- **`FORGE-CONFIG.md` Conventions / Custom Rules** — no additions this
+  cycle. The two items at 3/3+ (encyclopedia typecheck baseline;
+  shared-test literal-lock) are: (a) not a convention (owner
+  scheduling), and (b) actively resolved by orchestration execution
+  this cycle rather than by a convention edit. Neither fits the
+  Conventions / Custom Rules shape.
+
+### Registry updated
+
+**No.** No new module, no path scope change, no `catalog/**` edit, no
+change to any `Owns` list this cycle.
+
+### Conventions added to `FORGE-CONFIG.md`
+
+**None** this cycle (Vow 4: repetition across ≥3 cycles is the
+threshold, AND the recurrence must be convention-shaped).
+
+### Proposed for the framework — with cycle count
+
+*(These go here, NOT into `FORGE.md`/`MU.md`/`ENSO.md`/`JIKIJITSU.md`.
+Roshi recommends; a human folds them in by hand once the count
+justifies it. Vow 3.)*
+
+- **[cycles: 4/3+ — STILL OPEN, ESCALATE] Owner hygiene —
+  encyclopedia typecheck baseline.** Cycle 3 crossed the promote
+  threshold; a one-line M01 fix was recommended and NOT scheduled.
+  Cycle 4: `tests/unit/ui/encyclopedia/export.test.ts:31` (TS6142;
+  `BackupBanner.tsx` under `tsconfig.node` with `--jsx` unset) is
+  still red at HEAD. Final Report Residual Gap #1 names it
+  explicitly. Every Mu this cycle inherited it as baseline noise. The
+  cure remains a one-line M01 change (add `"jsx": "preserve"` to
+  `tsconfig.node.json`, or narrow its `include` to exclude
+  `.tsx`-importing test files) plus one green-tree commit. **Not a
+  framework change — an owner scheduling ask.** Escalation this cycle
+  is prose only; the recommendation shape is unchanged from cycle 3.
+- **[RESOLVED · was 2/3+] Shared/unowned test files that lock literal
+  cross-screen source strings.** Cycle 2 flagged the near-miss (S01
+  dodged via a legacy-alias trick); cycle 3 showed the full burn
+  (pf-04 shipped 1-red with no session empowered to fix). Cycle 4:
+  the pf-05 Forge decomposition allocated a dedicated S01 lease
+  (`tests/unit/ui/inMatchLayout.test.ts`) whose sole purpose was
+  precisely D-LAYOUT-TEST-DECOUPLE — dropping every literal-string
+  assertion out of the shared file and reducing it to shell-frame
+  coverage. That fix landed at CP2, cleared the pf-04 RED, and
+  unblocked the Wave-2 S03 ∥ S04 concurrency (both screens' scoped
+  layout tests moved inside their own leases). Orchestration
+  execution resolved this without a framework change: Forge saw the
+  pattern in the pf-04 Final Report + cycle-3 ROSHI-LOG and
+  decomposed accordingly. **Retired**; if the pattern ever recurs
+  under new orchestration, restart the tally at 1/3+.
+- **[cycles: 2/3+ · HELD from cycle 3] Verification-gate
+  reachability — Playwright `webServer` provisioning.** Cycles 1 and
+  2 flagged `test:e2e` structurally unreachable in the Mu sandbox;
+  cycle 3 saw the fix land (`playwright.config.ts` `webServer`
+  block) and receded to "resolved by concrete infra." Cycle 4:
+  MIXED signal — S03 Move e2e (CP4 velocity-readout) PASSED, but S04
+  Attack e2e was authored and DEFERRED because "that worker had no
+  dev server" (Final Report §Verification results). Same fix
+  present, per-worker provisioning still inconsistent. Not
+  incremented past the cycle-1/cycle-2 count because the infra
+  itself is in place; the observed variance appears to be per-Mu
+  sandbox environment, not per-repo config. Hold at 2/3+ with a
+  note: if cycle 5 shows the same "worker had no dev server"
+  variance on another feature, upgrade the tally to 3/3+ and
+  recommend Jikijitsu's Orchestration Envelope explicitly declare
+  dev-server availability per lease.
+- **[cycles: 1/3+ · HELD from cycle 2] Forge granularity — "stuck /
+  can't proceed" playtest notes may hide latent bugs.** Cycle 4 had
+  no "stuck / can't proceed" flavoured feedback (all six items were
+  UX pain / render clarity / layout polish, none a hard block).
+  Pattern did not recur; held.
+- **[cycles: 1/3+ · HELD from cycle 1] Sim-record extensions before
+  their render consumer.** Cycle 4 did no sim/trace work; S02's
+  render-only explosion FX was DELIBERATELY scoped as a
+  render-render-only visualisation of the AoE the sim already emits
+  (`D-BLAST-RENDER-ONLY` — Final Report §Follow-up 1 flags mechanic-
+  extension as a separate feature). Coupling could not recur.
+  Held.
+- **[cycles: 1/3+] Enso-brush transport reliability — new observation
+  (do NOT promote yet).** Final Report §Granularity feedback for
+  Forge notes S03 "used Mu's internal Enso brush pass for its first
+  three checkpoints. The internal await transport failed, but Mu
+  resumed checkpoint 4 under its recovery contract and returned one
+  complete session handoff." Jikijitsu's own framing: "runtime
+  plumbing issue, not a lease or checkpoint granularity defect." I
+  agree — this is transport reliability inside Mu's tool layer, not
+  a framework doc issue. NOT a proposed change to
+  `MU.md`/`ENSO.md`; noting only so cycle 5+ can compare if the
+  same transport surface fails again.
+
+### Verification (Roshi's output is prose)
+
+1. Every claim traces to git or the attached record. The
+   `.ta-bench-scroll` → `.ta-plan-scroll` rename is verifiable at
+   `src/ui/screens/TacticalAttack.tsx:430,527,594` and commit
+   `76dbddd`. The `liveLogRows` prune is verifiable at
+   `src/ui/screens/tacticalAttack/model.ts:458-465`,
+   `tests/unit/ui/tacticalAttack/combatLog.test.ts:13`, and commits
+   `76dbddd` (prune) / `e00833e` (S01 CP2) / `6c861ea` (S01 CP1). The
+   two new pure helpers exist at
+   `src/ui/screens/tacticalMove/model.ts:448-456` and
+   `src/ui/screens/tacticalAttack/model.ts:418-419`. The single arch
+   commit is `git log -1 --stat -- program/starship-skirmish/arch/`
+   → `e302d93`. The "1526 pass / 0 fail" number and the "Attack e2e
+   deferred (no dev server in that worker)" and encyclopedia TS6142
+   claims are verbatim from Final Report §Verification results and
+   §Residual gap. The D-LAYOUT-TEST-DECOUPLE resolution executes the
+   cycle-3 ROSHI-LOG proposal verbatim (cross-reference the
+   [cycles: 2/3+] bullet under cycle 3's Proposed section).
+2. Re-read after writing: the two forward-pointing supersession
+   notes in `arch/M14-ui.md` do NOT edit the fragment bodies they
+   supersede — they add trailing subsections that read as "as of
+   pf-05, this became X" without falsifying "at pf-02/pf-04 landing,
+   this was Y." The new pf-05 M14 tactical-screen delta cross-
+   references the pf-02 SESSION-04 §20 shell-frame contract and the
+   pf-04 SESSION-01 `weaponOutOfRange` selector correctly (both
+   reads verified). No contradiction between the new fragment and
+   the two prior-fragment supersession notes (they name the same
+   rename and the same prune with the same commits).
+3. `FORGE.md`, `MU.md`, `ENSO.md`, `JIKIJITSU.md` — byte-identical,
+   not touched.

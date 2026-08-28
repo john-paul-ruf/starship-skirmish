@@ -367,6 +367,12 @@ Tactical screens' scoped `<style>` tags carry the column-level rules
 `.tm-layout > [data-testid="fleet-roster"]` + `.tm-roster` on
 `TacticalMove.tsx`).
 
+**Superseded** (`.ta-bench-scroll` only): `playtest-feedback-05` SESSION-04
+CP4 renamed `.ta-bench-scroll` → `.ta-plan-scroll` in-lease (Attack's right
+column now wraps inspector + bench + combat-log in ONE scroll, matching the
+Move screen's pattern from the same feature). Scoped-style discipline
+unchanged; every other class named here still holds.
+
 ### Cross-screen import
 
 `tacticalAttack/model.ts` + `TacticalAttack.tsx` now import from the
@@ -526,12 +532,19 @@ SESSION-02 on the Move screen — this signature is that session's contract.
   happened, not what is still being planned.
 
 **Supersedes** the `liveLogRows(trace, currentTurn)` selector introduced by
-playtest-feedback-02 · SESSION-04 (earlier in this file). `liveLogRows` is
+playtest-feedback-02 · SESSION-04 (earlier in this file). `liveLogRows` was
 LEFT exported at S01's request as an atomic swap point for SESSION-02, then
-consumed there — it is now dead in `src/**` but still referenced by two
-test files (`tests/unit/ui/tacticalAttack/combatLog.test.ts` and the
-cross-screen `tests/unit/ui/inMatchLayout.test.ts`). A prune is a follow-up
-lease, not landed here.
+consumed there.
+
+**Prune landed:** `playtest-feedback-05` SESSION-04 CP4 removed the dead
+`liveLogRows` selector from `src/ui/screens/tacticalAttack/model.ts` along
+with its 5-test block in `tests/unit/ui/tacticalAttack/combatLog.test.ts`.
+The cross-screen `tests/unit/ui/inMatchLayout.test.ts` reference was
+resolved in the same feature by SESSION-01 (D-LAYOUT-TEST-DECOUPLE — the
+shared, unowned test now covers the shell frame only and no longer
+literal-locks per-screen source strings). `lastResolvedLogRows` is the
+sole log-surface selector as of this feature's landing; Move (SESSION-03)
+already reads only it.
 
 ### D-INFOTIP-TOPLAYER — InfoTip escape-clip (SESSION-03 · playtest-feedback-04)
 
@@ -555,3 +568,116 @@ source.
   browsers without anchor-positioning support fall through to a legible
   static position (never hidden — NFR-A11y intent preserved).
 - Vnode shape unchanged. Hooks-free. Component tests untouched.
+
+<!-- SESSION-03 + SESSION-04 · playtest-feedback-05 · M14 tactical-screen delta -->
+## M14 UI — tactical-screen delta (SESSION-03 + SESSION-04 · playtest-feedback-05)
+
+Two screen sessions (S03 Move, S04 Attack) ran concurrently after S01
+decoupled the shared literal-locking `inMatchLayout.test.ts`
+(D-LAYOUT-TEST-DECOUPLE — the S01 handoff, Final Report §Verification, and
+the pf-04 · cycle 3 ROSHI-LOG proposal that framed the fix). Jikijitsu
+stapled no arch commit for either — both fit inside the existing M14
+surface — but the reconciliation below captures four items the Final
+Report explicitly names under `Architecture impact` so a future reader
+does not have to re-derive them from handoff notes.
+
+### New pure model helpers (public, node-only, three-free)
+
+- **`velocityReadout(v: Vec3 | null): VelocityReadout | null`** —
+  `src/ui/screens/tacticalMove/model.ts`. Returns
+  `{ speed, bearing, pitch }` from a world-space velocity triple; renders
+  the plotter's `VEL {n} m/s · BEARING {bbb} / {±p}°` line + a Newtonian
+  one-liner. Uses `Math.sqrt` + `sim/mathx.atan2` — the arithmetic-only
+  polynomial approximation `sim/mathx` already exports (`sim/**` ban-list
+  scoped, `ui` outside it, no transcendental import in ui). Zero-vector →
+  `{0,0,0}`. **No new sim math; no new sim field.** The existing VX/VY/VZ
+  triple is preserved as a dim companion line.
+- **`hitChanceBarFill(final: number): 'ok' | 'dv' | 'hot'`** —
+  `src/ui/screens/tacticalAttack/model.ts`. Presentation transform of
+  `HitChanceBreakdown.final` for the ship-by-ship bench's `<Meter>` bar.
+  Thresholds **mirror `hitChanceTone` verbatim** — a 66% shot reads
+  green in BOTH channels. **D-HITCHANCE-SEAM intact / architecture §13.3
+  intact:** the to-hit formula still lives once in `sim/rules/damage.ts`
+  and reaches the UI only through `MatchController.hitChanceFor`
+  (`arch/M09-rules.md`, `arch/M16-app.md` pf-04 fragment); this helper
+  never recomputes a `%`.
+
+### D-IMMERSIVE-GRID-COLLAPSE — in-frame full-field mode (both screens)
+
+Both tactical screens grew a `FULL FIELD` / `RESTORE` toggle on
+`CameraHud` that flips a screen-local `fullscreen` signal, which adds
+`.is-immersive` to the outer shell (`.tm-shell.is-immersive` /
+`.ta-shell.is-immersive`). The `.is-immersive` rules collapse the
+screen's grid to the tactical stage and hide the side panels + plan
+scroll + CommitBar; the header (with the RESTORE button) stays
+visible. Esc restores.
+
+- **Scoped to each screen's `<style>` block** (`TM_STYLES` / `TA_STYLES`);
+  no `styles/components.css` edit, no `styles/tokens.css` edit — the
+  scoped-style discipline that keeps Move ∥ Attack disjoint (recorded
+  pf-02 / pf-03 / pf-04) holds.
+- **Bounded by the fixed frame.** The pf-02 SESSION-04 `.app-main.is-fixed-frame`
+  contract (§20 above) is the outer container the collapse lives inside;
+  immersive mode is NOT a `position: fixed` escape.
+- **No browser Fullscreen API dependency.** In-app immersive maximize
+  keeps the mode testable (unit + e2e) and portable. If the owner ever
+  asks for OS-level `requestFullscreen()`, it can layer over the current
+  toggle without unwinding this pattern (Open Question §3 in the
+  feature's STATE.md).
+- **A11y:** the toggle button is a real `<button aria-pressed>` with a
+  text label (`FULL FIELD` / `RESTORE`) plus the `⤢` / `⤡` glyph
+  (never-color-alone / FR-13).
+
+### D-COMMIT-PER-SCREEN-REF — CommitBar position, contained + pinned
+
+Both screens keep the CommitBar **inside its right panel** and **pinned**
+(never a full-page-width bottom bar) — a hardening of the pf-02
+SESSION-04 §20 `.app-main.is-fixed-frame` contract into per-screen
+scoped classes. Vertical position differs by owner reference and is
+deliberate:
+
+- **Move (SESSION-03):** CommitBar mounted at the **top** of the right
+  panel (owner note: "if you pin commit movement, it should be at the
+  top of the panel"). `.tm-plan-scroll` wraps inspector + plotter +
+  combat-log below it. Nested `.log` internal scroll neutralised via a
+  scoped descendant override — never a `components.css` edit.
+- **Attack (SESSION-04):** CommitBar at the **bottom** of the right
+  column, contained by `.panel-ft { flex: none }` in `.ta-col-r`
+  (endorsed mock, screenshot 7). `.ta-plan-scroll` (renamed from
+  `.ta-bench-scroll` in the same session — see pf-02 · SESSION-04
+  supersession note above) wraps the ship-by-ship bench above it.
+
+Each screen was built to its own endorsed reference rather than guessing
+a global rule; the owner may confirm consistency (Open Question §2 in
+the feature's STATE.md).
+
+### Ship-by-ship bench parity (Attack)
+
+`.ta-ship-group` + `.ta-card` treatment with left-border modifiers
+(`is-set` / `is-msl` / `is-oor`) landed in `TA_STYLES` only. Each row
+shows an absolute `RANGE {d} / {r}` readout + a hit-chance `<Meter>` bar
+sourced from `MatchController.hitChanceFor().breakdown.final` via the new
+`hitChanceBarFill` helper above (no to-hit math added to the UI). OUT
+OF RANGE is announced by the existing `weaponOutOfRange` predicate
+(pf-04 SESSION-01 fragment above), with the shooter/target range
+comparison that matches `sim/rules/attack.ts`'s strict `>`.
+
+### Cross-screen READ contract preserved
+
+`src/ui/screens/tacticalMove/**` continues to read `lastResolvedLogRows`
++ `CombatLogPanel` + `nameByBodyId` from `src/ui/screens/tacticalAttack/**`
+and `src/ui/screens/postMatch/**`. Signatures of those cross-screen
+imports were **not** changed by either SESSION-03 or SESSION-04; the
+Wave-2 concurrency contract (a stability contract, not a serialization
+— see pf-05 STATE.md) held cleanly.
+
+### Not touched
+
+`src/sim/**`, `src/sim/trace/**`, `src/sim/rules/**`,
+`src/ui/styles/components.css`, `src/ui/styles/tokens.css`,
+`src/ui/components/**`, `src/ui/components/roster/**`,
+`MatchController` signatures. All new CSS lives inside `TM_STYLES` /
+`TA_STYLES`; all new pure helpers live inside each screen's own
+`model.ts`. The Module Registry `M14` `Key Files` column
+(`screens/*, components/*, tokens.css`) still describes the surface
+faithfully — no drift signal.
