@@ -1033,3 +1033,209 @@ describe('intercept FX in playMovement (CP3)', () => {
     expect(full.fake.positions.get(1)).toEqual(skip.fake.positions.get(1));
   });
 });
+
+// ---- CP3: blast FX in the movement beat (contacts + in-arena detonations) ---
+
+describe('blast FX in playMovement (CP3)', () => {
+  // A movement-beat blast has the same structural discriminator as an attack blast:
+  // `makeBlast` returns a Group holding a core Sprite + a shockwave Line2 (children.length
+  // === 2). The pre-CP3 bare `CONTACT_FLASH_COLOR` sprite (children.length === 0) and the
+  // silent-vanish for `destroyed[]` in movement are what CP3 replaces.
+
+  const movementDeath = (position: {
+    x: number;
+    y: number;
+    z: number;
+  }): DestructionEvent => ({
+    bodyId: 42,
+    chassisClass: 'fighter',
+    position,
+    velocity: { x: 0, y: 0, z: 0 },
+    cause: 'aoe',
+    detonates: true,
+  });
+
+  it('CP3 — a destroyed entry with detonates:true adds a blast at its position', () => {
+    // A detonating in-arena death (missile hits ship → AoE detonation) must show an
+    // expanding shockwave, not silently vanish. The blast group we add is separate
+    // from the contact-blast group, so a record with ONLY a detonating death produces
+    // exactly one added group with exactly one blast in it.
+    const sched = new FakeScheduler();
+    const fake = makeFakeView();
+    const rec: MovementBeatRecord = {
+      subStepCount: 1,
+      keyframes: [[ship(1, 0)], [ship(1, 10)]],
+      contacts: [],
+      log: [],
+      destroyed: [movementDeath({ x: 5, y: 0, z: 0 })],
+      removedHazardIds: [],
+    };
+    attachTracePlayer(fake.view).playMovement(rec, {
+      durationMs: 100,
+      clock: sched.clock,
+      raf: sched.raf,
+      cancelRaf: sched.cancel,
+    });
+    sched.runToEnd(20);
+
+    // Exactly one group added (the death-blast group). No contact-blast group, no
+    // missile-tracer group, no intercept group — all guarded by `.children.length > 0`.
+    expect(fake.sceneAdds.length).toBe(1);
+    const g = fake.sceneAdds[0]!;
+    // Contains one blast (Group with 2 children — core + ring).
+    expect(g.children.length).toBe(1);
+    expect(g.children[0]!.children.length).toBe(2);
+  });
+
+  it('CP3 — a destroyed entry with detonates:false (boundary) adds NO blast (FR-26)', () => {
+    // Boundary deaths leave the arena — no AoE. Matches the sim (`sim/rules/
+    // destruction.ts:45` `detonate` returns null for detonates=false).
+    const sched = new FakeScheduler();
+    const fake = makeFakeView();
+    const rec: MovementBeatRecord = {
+      subStepCount: 1,
+      keyframes: [[ship(1, 0)], [ship(1, 10)]],
+      contacts: [],
+      log: [],
+      destroyed: [
+        {
+          bodyId: 42,
+          chassisClass: 'fighter',
+          position: { x: 0, y: 0, z: 0 },
+          velocity: { x: 0, y: 0, z: 0 },
+          cause: 'boundary',
+          detonates: false,
+        },
+      ],
+      removedHazardIds: [],
+    };
+    attachTracePlayer(fake.view).playMovement(rec, {
+      durationMs: 100,
+      clock: sched.clock,
+      raf: sched.raf,
+      cancelRaf: sched.cancel,
+    });
+    sched.runToEnd(20);
+    // Nothing added — no contacts, no detonating deaths, no missiles, no intercepts.
+    expect(fake.sceneAdds.length).toBe(0);
+  });
+
+  it('CP3 — a contact adds a blast at contact.point (not a bare sprite)', () => {
+    // One contact in the record → one contact-blast group added; that group holds one
+    // blast (Group with 2 children — core Sprite + ring Line2). Structural discriminator:
+    // the pre-CP3 bare `CONTACT_FLASH_COLOR` Sprite would have children.length === 0.
+    const sched = new FakeScheduler();
+    const fake = makeFakeView();
+    const rec: MovementBeatRecord = {
+      subStepCount: 2,
+      keyframes: [[ship(1, 0), ship(2, 20)], [ship(1, 10), ship(2, 20)]],
+      contacts: [
+        {
+          subStep: 0,
+          toi: 0.5,
+          idA: 1,
+          idB: 2,
+          normal: { x: 1, y: 0, z: 0 },
+          point: { x: 15, y: 0, z: 0 },
+          relSpeedNormal: 30,
+          damage: 5,
+        },
+      ],
+      log: [],
+      destroyed: [],
+      removedHazardIds: [],
+    };
+    attachTracePlayer(fake.view).playMovement(rec, {
+      durationMs: 100,
+      clock: sched.clock,
+      raf: sched.raf,
+      cancelRaf: sched.cancel,
+    });
+    sched.runToEnd(20);
+    expect(fake.sceneAdds.length).toBe(1);
+    const g = fake.sceneAdds[0]!;
+    expect(g.children.length).toBe(1);
+    expect(g.children[0]!.children.length).toBe(2); // Group (core + ring), not bare Sprite
+  });
+
+  it('CP3 — skip() with contacts + detonating deaths lands the same final state (FR-19)', () => {
+    // Full play vs skip: both must fire onDone once and land ships on the final keyframe.
+    // Blasts are transient (torn down in cleanup), so they can never diverge sim outcome.
+    const buildRec = (): MovementBeatRecord => ({
+      subStepCount: 2,
+      keyframes: [
+        [ship(1, 0), ship(2, 40)],
+        [ship(1, 10), ship(2, 40)],
+        [ship(1, 20), ship(2, 40)],
+      ],
+      contacts: [
+        {
+          subStep: 1,
+          toi: 0.9,
+          idA: 1,
+          idB: 2,
+          normal: { x: 1, y: 0, z: 0 },
+          point: { x: 30, y: 0, z: 0 },
+          relSpeedNormal: 25,
+          damage: 3,
+        },
+      ],
+      log: [],
+      destroyed: [movementDeath({ x: 20, y: 0, z: 0 })],
+      removedHazardIds: [],
+    });
+
+    const runFull = () => {
+      const sched = new FakeScheduler();
+      const fake = makeFakeView();
+      const onDone = vi.fn();
+      attachTracePlayer(fake.view).playMovement(buildRec(), {
+        durationMs: 100,
+        clock: sched.clock,
+        raf: sched.raf,
+        cancelRaf: sched.cancel,
+        onDone,
+      });
+      sched.runToEnd(20);
+      return { onDone, sched, fake };
+    };
+    const runSkip = () => {
+      const sched = new FakeScheduler();
+      const fake = makeFakeView();
+      const onDone = vi.fn();
+      attachTracePlayer(fake.view)
+        .playMovement(buildRec(), {
+          durationMs: 100,
+          clock: sched.clock,
+          raf: sched.raf,
+          cancelRaf: sched.cancel,
+          onDone,
+        })
+        .skip();
+      return { onDone, sched, fake };
+    };
+    const full = runFull();
+    const skip = runSkip();
+    expect(full.onDone).toHaveBeenCalledTimes(1);
+    expect(skip.onDone).toHaveBeenCalledTimes(1);
+    expect(full.sched.hasPending()).toBe(false);
+    expect(skip.sched.hasPending()).toBe(false);
+    expect(full.fake.positions.get(1)).toEqual(skip.fake.positions.get(1));
+    expect(full.fake.positions.get(2)).toEqual(skip.fake.positions.get(2));
+  });
+
+  it('CP3 — a record with neither contacts nor destroyed adds no blast overhead', () => {
+    // Regression guard: the pre-CP3 codepath had a `flashes` Group; if contacts was
+    // empty, the group was NOT added. Same guarantee post-CP3 — no phantom scene adds.
+    const sched = new FakeScheduler();
+    const fake = makeFakeView();
+    attachTracePlayer(fake.view).playMovement(record(), {
+      durationMs: 100,
+      clock: sched.clock,
+      raf: sched.raf,
+      cancelRaf: sched.cancel,
+    });
+    sched.runToEnd(20);
+    expect(fake.sceneAdds.length).toBe(0);
+  });
+});

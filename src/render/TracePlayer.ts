@@ -191,13 +191,30 @@ const createPlayback = (deps: PlaybackDeps): Playback => {
   };
 };
 
-const CONTACT_FLASH_COLOR = 0xfff0c0;
+/** Fraction of the beat reserved for detonation blasts on in-arena deaths. Deaths are
+ *  applied after motion, so their blast starts in the last part of the beat and lands
+ *  terminal (opacity ~0) at `tNorm = 1` — skip/reduced-motion stays outcome-invariant. */
+const MOVEMENT_DEATH_START = 0.7;
+
+/** Minimum playback span for a contact blast, in beat-normalized units. A very-late
+ *  contact (`subStep = last`, `toi ≈ 1`) has almost no beat left; pulling its start
+ *  earlier by this amount guarantees the blast is visibly present at least this long
+ *  before `tNorm = 1` (session guidance: "a blast that starts a hair early is fine,
+ *  one that never appears is not"). */
+const MIN_CONTACT_BLAST_SPAN = 0.35;
+
+/** Contact-blast radius range (world units) and reference closing-speed used to scale
+ *  the read. A gentle graze reads smaller than a full ram; a full ram lands near the
+ *  fighter-class detonation size (~30). Speed is `StepContact.relSpeedNormal`. */
+const CONTACT_BLAST_MIN_RADIUS = 6;
+const CONTACT_BLAST_MAX_RADIUS = 30;
+const CONTACT_BLAST_REF_SPEED = 40;
 
 /**
  * Attach the playback engine to a live `TacticalView`. Movement playback pushes
  * interpolated transforms into the SESSION-02 instance buffers (`scene.ships` /
- * `scene.hazards`), overlays transient collision flashes into `scene.context.scene`,
- * and renders through `scene.render()`.
+ * `scene.hazards`), overlays transient contact + detonation blasts, missile tracers,
+ * and PD-intercept FX into `scene.context.scene`, and renders through `scene.render()`.
  */
 export const attachTracePlayer = (view: TacticalView): TracePlayer => {
   const scene = view.scene.context.scene;
@@ -228,24 +245,57 @@ export const attachTracePlayer = (view: TacticalView): TracePlayer => {
     const keyframes = record.keyframes;
     const durationMs = opts.durationMs ?? defaultMovementDurationMs(keyframes.length);
 
-    // Transient collision flashes at each recorded contact point.
-    const flashes = new Group();
-    for (const contact of record.contacts) {
-      const material = new SpriteMaterial({
-        color: new Color(CONTACT_FLASH_COLOR),
-        transparent: true,
-        depthWrite: false,
-      });
-      const sprite = new Sprite(material);
-      sprite.position.set(contact.point.x, contact.point.y, contact.point.z);
-      flashes.add(sprite);
+    // CP3 — every recorded contact becomes an animated blast at its impact point. The
+    // pre-CP3 bare `CONTACT_FLASH_COLOR` sprite (which faded linearly across the whole
+    // beat) is replaced by `makeBlast`, sized + intensified by collision energy so a
+    // gentle graze reads smaller than a full ram ("explosions on collisions of anything").
+    // Each blast's local window starts near the recorded contact instant `(subStep + toi)
+    // / subStepCount` — pulled earlier when needed so a late-beat contact still has
+    // MIN_CONTACT_BLAST_SPAN of play time before `tNorm = 1` (session guidance).
+    interface ContactBlast {
+      readonly fx: BlastFx;
+      readonly windowStart: number;
     }
-    if (flashes.children.length > 0) scene.add(flashes);
+    const contactBlasts: ContactBlast[] = [];
+    const contactBlastGroup = new Group();
+    const subN = Math.max(1, record.subStepCount);
+    for (const contact of record.contacts) {
+      const rawStart = (contact.subStep + contact.toi) / subN;
+      const startClamped = clamp01(rawStart);
+      const windowStart = Math.min(startClamped, Math.max(0, 1 - MIN_CONTACT_BLAST_SPAN));
+      const energy = Math.max(0, contact.relSpeedNormal);
+      const speedNorm = Math.min(1, energy / CONTACT_BLAST_REF_SPEED);
+      const radius =
+        CONTACT_BLAST_MIN_RADIUS + (CONTACT_BLAST_MAX_RADIUS - CONTACT_BLAST_MIN_RADIUS) * speedNorm;
+      const intensity = 0.5 + 0.5 * speedNorm;
+      const fx = makeBlast(contact.point, { radius, intensity });
+      contactBlasts.push({ fx, windowStart });
+      contactBlastGroup.add(fx.object);
+    }
+    if (contactBlastGroup.children.length > 0) scene.add(contactBlastGroup);
 
-    const disposeFlashes = (): void => {
-      scene.remove(flashes);
-      for (const child of flashes.children) (child as Sprite).material.dispose();
-      flashes.clear();
+    // CP3 — every detonating in-arena death (missile-vs-ship AoE, ship rams, secondary
+    // AoE) becomes an expanding blast at the death position. Boundary deaths
+    // (`detonates: false`, FR-26) leave the arena and get NO blast — matches the sim.
+    // Deaths land after motion, so their blast plays in the last `1 - MOVEMENT_DEATH_
+    // START` of the beat and is terminal (opacity ~0) at `tNorm = 1`.
+    const deathBlasts: BlastFx[] = [];
+    const deathBlastGroup = new Group();
+    for (const dead of record.destroyed) {
+      if (!dead.detonates) continue;
+      const fx = makeBlast(dead.position, { radius: AOE_RING_RADIUS[dead.chassisClass] });
+      deathBlasts.push(fx);
+      deathBlastGroup.add(fx.object);
+    }
+    if (deathBlastGroup.children.length > 0) scene.add(deathBlastGroup);
+
+    const disposeBlasts = (): void => {
+      if (contactBlastGroup.children.length > 0) scene.remove(contactBlastGroup);
+      for (const b of contactBlasts) b.fx.dispose();
+      contactBlastGroup.clear();
+      if (deathBlastGroup.children.length > 0) scene.remove(deathBlastGroup);
+      for (const b of deathBlasts) b.dispose();
+      deathBlastGroup.clear();
     };
 
     // CP2 — Missile tracers. The AttackBeatRecord's launchedMissileIds carries no
@@ -318,7 +368,7 @@ export const attachTracePlayer = (view: TacticalView): TracePlayer => {
     };
 
     const cleanupAll = (): void => {
-      disposeFlashes();
+      disposeBlasts();
       disposeTracers();
       disposeIntercepts();
     };
@@ -356,9 +406,20 @@ export const attachTracePlayer = (view: TacticalView): TracePlayer => {
           const currentIdx = Math.min(Math.floor(easedT * (n - 1)), n - 1);
           if (currentIdx > lastKeyframeIdx) flushKeyframes(currentIdx);
         }
-        // Fade flashes out over the beat; strongest at the start, gone by the end.
-        const flashAlpha = 1 - tNorm;
-        for (const child of flashes.children) (child as Sprite).material.opacity = flashAlpha;
+        // CP3 — contact blasts: each blast's localT is the beat progress since its
+        // recorded impact instant, normalized against `1 - windowStart`. Hidden before
+        // its window opens (localT ≤ 0) and terminal (opacity ~0) at `tNorm = 1`, so
+        // skip/reduced-motion lands clean.
+        for (const cb of contactBlasts) {
+          const span = 1 - cb.windowStart;
+          const localT = span <= 0 ? 1 : (tNorm - cb.windowStart) / span;
+          cb.fx.renderAt(localT);
+        }
+        // CP3 — death blasts play across the final `1 - MOVEMENT_DEATH_START` of the
+        // beat; before that window opens they are hidden; at `tNorm = 1` they are spent.
+        const deathSpan = 1 - MOVEMENT_DEATH_START;
+        const deathLocalT = deathSpan <= 0 ? 1 : (tNorm - MOVEMENT_DEATH_START) / deathSpan;
+        for (const fx of deathBlasts) fx.renderAt(deathLocalT);
         // Drive per-missile tracers off the same interpolated body list — position on
         // the missile head, tail streamed BACK along the velocity vector. Missiles not
         // present this frame (removed / never spawned yet) stay hidden.
