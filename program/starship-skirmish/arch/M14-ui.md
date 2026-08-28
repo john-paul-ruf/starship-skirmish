@@ -376,7 +376,7 @@ module-boundary lint change. Motivation: `postMatch/model.ts` is the
 canonical `ResolutionTrace → LogRow[]` derivation and there is no
 architectural gain to duplicating it under `tacticalAttack/`.
 
-<!-- SESSION-03 -->
+<!-- SESSION-03 · playtest-feedback-03 · M14 shipyard delta -->
 ### M14 (ui) — Shipyard per-item info copy · D-CATALOG-COPY-UI-SIDE
 
 New screen-local module `src/ui/screens/shipyard/catalogInfo.ts` — the
@@ -433,7 +433,7 @@ outside `src/ui/screens/shipyard/**`; the pickers import `InfoTip` from
 the components barrel READ-ONLY (no barrel edit — SESSION-01 concurrency).
 No `components.css` edit. No `catalog/**` edit (FR-1 additive-only).
 
-<!-- SESSION-02 -->
+<!-- SESSION-02 · playtest-feedback-03 · M14 tactical-move delta -->
 ### M14 (ui) — TacticalMove default-plan semantics + persistent combat log
 
 Two additive notes from `playtest-feedback-03` SESSION-02. Neither adds nor
