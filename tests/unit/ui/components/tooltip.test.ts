@@ -21,6 +21,15 @@ import {
   type GlossaryKey,
 } from '../../../../src/ui/components/glossary.js';
 
+// The barrel re-exports InfoTip + GLOSSARY (S06 CP2). Screens must be able to
+// reach both from the components index — a stray `import from './tooltip.js'`
+// in a screen bypasses the M14 D-IOC-SEAM. This alias assertion is here so
+// the barrel wiring is exercised by the same suite that owns the primitive.
+import {
+  InfoTip as InfoTipFromBarrel,
+  GLOSSARY as GlossaryFromBarrel,
+} from '../../../../src/ui/components/index.js';
+
 type VNodeLike = { type: unknown; props: Record<string, unknown> };
 
 const asVNode = (v: unknown): VNodeLike => {
@@ -130,5 +139,17 @@ describe('GLOSSARY — one entry per DerivedStats field, keyed by concept (S06 C
       expect(value).not.toContain('<');
       expect(value).not.toContain('>');
     }
+  });
+});
+
+// ---- Barrel re-export (CP2) ----------------------------------------------
+
+describe('components barrel — InfoTip + GLOSSARY are on the public surface (S06 CP2)', () => {
+  it('re-exports InfoTip as the same function reference', () => {
+    expect(InfoTipFromBarrel).toBe(InfoTip);
+  });
+
+  it('re-exports GLOSSARY as the same object reference', () => {
+    expect(GlossaryFromBarrel).toBe(GLOSSARY);
   });
 });

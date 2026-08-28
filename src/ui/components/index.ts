@@ -91,3 +91,11 @@ export type {
   DesktopGateProps,
   ErrorFallbackProps,
 } from './chrome.js';
+
+// ---- InfoTip primitive + glossary (playtest-feedback-01 · S06) ------------
+// Stateless, CSS-revealed tooltip + the plain-language definitions the
+// derived-stats panel shows the player. Screens import both from this barrel.
+export { InfoTip } from './tooltip.js';
+export type { InfoTipProps } from './tooltip.js';
+export { GLOSSARY } from './glossary.js';
+export type { GlossaryKey } from './glossary.js';
