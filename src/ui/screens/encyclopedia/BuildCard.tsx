@@ -37,6 +37,7 @@ export interface BuildCardProps {
   readonly onDuplicate: (id: string) => void;
   readonly onDelete: (id: string) => void;
   readonly onExport: (id: string) => void;
+  readonly onShare: (id: string) => void;
   readonly onRefit: (id: string) => void;
   readonly onKeepAsIs: (id: string) => void;
   /**
@@ -56,6 +57,7 @@ export function BuildCard({
   onDuplicate,
   onDelete,
   onExport,
+  onShare,
   onRefit,
   onKeepAsIs,
   refitDismissed,
@@ -254,6 +256,18 @@ export function BuildCard({
           data-testid="card-export"
         >
           ⭱ EXPORT
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm"
+          disabled={failed || undefined}
+          onClick={() => {
+            onShare(entry.id);
+          }}
+          title={failed ? 'Failed builds cannot be shared.' : 'Share as a token or link.'}
+          data-testid="card-share"
+        >
+          ⤳ SHARE
         </button>
         <div class="grow" />
         <button

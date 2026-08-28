@@ -364,6 +364,7 @@ export function Encyclopedia() {
               onDuplicate={onDuplicate}
               onDelete={onDelete}
               onExport={onExportOne}
+              onShare={() => undefined}
               onRefit={onRefit}
               onKeepAsIs={onKeepAsIs}
               refitDismissed={isRefitDismissed(entry)}
@@ -633,6 +634,15 @@ const ENC_STYLES = `
 
   .enc-modal-preview { padding: var(--s3); display: flex; flex-direction: column; gap: 4px; }
   .enc-modal-ft { display: flex; align-items: center; gap: var(--s2); width: 100%; }
+
+  .enc-share-row { display: flex; align-items: center; gap: var(--s2); }
+  .enc-share-value { flex: 1 1 auto; min-width: 0;
+                     padding: 4px 6px;
+                     background: rgba(30,44,60,.35);
+                     border: 1px solid rgba(30,44,60,.6);
+                     border-radius: var(--r);
+                     overflow-wrap: anywhere; word-break: break-all;
+                     user-select: all; -webkit-user-select: all; }
 
   .enc-refit-banner { align-items: flex-start; }
   .enc-refit-acts { display: flex; gap: 4px; margin-top: 6px; }
