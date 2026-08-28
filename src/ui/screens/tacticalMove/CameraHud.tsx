@@ -8,6 +8,12 @@
 // `camera.resetToFleetView()`), so any change to focus behavior in one place
 // carries to the other for free.
 //
+// playtest-feedback-02 SESSION-03 CP2 adds a movement-keys hint line so the
+// WASD / arrow / Q-E translation shipped in camera.ts is discoverable without a
+// tutorial. Text-only — no new prop from Viewport.tsx (which this HUD does not
+// own), and no import of `three`; the screen's key handling stays inside the
+// render layer where the canvas listener lives.
+//
 // The HUD is a real, focusable button cluster (never `role="button"` on a div,
 // never a color-only cue): `<button>` elements carry `aria-keyshortcuts` naming
 // the R / F bindings, and a text hint below spells out the drag / pan / focus
@@ -53,6 +59,9 @@ export function CameraHud({ canFocus, onReset, onFocus }: CameraHudProps) {
         >
           ◎ FOCUS SELECTION · F
         </button>
+      </div>
+      <div class="mono-xs c-dim tm-cam-hud-hint" data-testid="cam-hud-move-hint">
+        WASD / ⭤ MOVE · Q E ELEV
       </div>
       <div class="mono-xs c-dim tm-cam-hud-hint" data-testid="cam-hud-hint">
         DRAG ORBIT · SHIFT PAN · F FOCUS

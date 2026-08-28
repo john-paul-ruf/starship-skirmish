@@ -6,6 +6,12 @@
 // out `DRAG ORBIT · SHIFT PAN · F FLEET VIEW` — the interaction is discoverable
 // without color, key labels carried on shipped `.kbd` chrome (never-color-alone).
 //
+// playtest-feedback-02 SESSION-03 CP2 adds a movement-keys hint line so the
+// WASD / arrow / Q-E translation shipped in camera.ts is discoverable without a
+// tutorial. Text-only, matches this screen's existing `.kbd` chip vocabulary,
+// and does not extend the prop contract — the hosting Viewport.tsx (owned by
+// neither session) needs no edit.
+//
 // A pure presentational island: it never touches the render layer itself. The
 // hosting Viewport passes down `onReset` / `onFocus` closures that live over the
 // dynamically-imported render — this HUD stays reachable in the degraded (no
@@ -59,6 +65,9 @@ export function CameraHud(props: CameraHudProps) {
         >
           ◎ FOCUS
         </button>
+      </div>
+      <div class="mono-xs c-dim" style="letter-spacing:.06em">
+        <span class="kbd">WASD</span> / <span class="kbd">⭤</span> MOVE · <span class="kbd">Q</span> <span class="kbd">E</span> ELEV
       </div>
       <div class="mono-xs c-dim" style="letter-spacing:.06em">
         DRAG ORBIT · <span class="kbd">SHIFT</span> PAN · <span class="kbd">F</span> FLEET VIEW
