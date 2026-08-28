@@ -480,3 +480,49 @@ Dependency direction unchanged: `ui` reads `sim` types only via `matchContext`
 (`screens/tacticalMove → screens/tacticalAttack`,
 `screens/tacticalMove → screens/postMatch`) mirrors the existing
 `screens/tacticalAttack → screens/postMatch` seam and stays within M14.
+
+<!-- SESSION-01 · playtest-feedback-04 · M14 tactical-attack delta (incl. M16 hitChanceFor note — Roshi to redistribute) -->
+# SESSION-01 — arch delta
+
+## M14 — UI · tactical-attack model (`src/ui/screens/tacticalAttack/model.ts`)
+
+Two new pure selectors added to the public surface:
+
+### `weaponOutOfRange(view, shooterId, weaponIndex, targetId): boolean`
+
+True when the chosen target sits BEYOND the shooter's weapon range — the
+resolver in `sim/rules/attack.ts` refuses that shot outright
+(`if (range > weapon.range) continue;`), so the bench must announce it as
+OUT OF RANGE instead of the (now-honest) 0% published by `hitChanceFor`.
+
+- A range **comparison** (`mathx.distance` vs `weapon.range`), NOT a to-hit
+  number — arch §13.3 single-source rule intact (a gate, not a second formula).
+- Missile slots → `false` (no line-of-sight envelope; AoE is a separate channel).
+- Missing shooter view / missing body / unknown weapon index → `false`.
+- Strict `>` — mirrors the resolver: distance === weapon.range still fires.
+
+### `lastResolvedLogRows(trace): { rows: readonly LogRow[]; turn: number | null }`
+
+The newest fully-resolved turn's log rows (newest-first) + its turn number.
+`{ rows: [], turn: null }` before any turn has resolved. Consumed by
+SESSION-02 on the Move screen — this signature is that session's contract.
+
+- Reads `trace.turns[trace.turns.length - 1]` (turns are pushed ascending
+  per FR-28; never re-sort).
+- Rows flatten via the canonical `flattenCombatLog` walk (movement then
+  attack) then reverse to newest-first.
+- Blind-commit intact: the trace only accumulates resolved beats.
+- Rationale: the trace batches a turn at turn-end
+  (`controller.ts::driveTurn`), so during any player-facing phase of turn N
+  the newest resolved turn is N−1 — a `currentTurn` filter (see legacy
+  `liveLogRows`) reads empty the whole time. Surface what actually
+  happened, not what is still being planned.
+
+## M16 — App · match controller (`src/app/match/controller.ts`)
+
+`hitChanceFor` now mirrors the resolver's out-of-range refusal in addition
+to the pre-existing `targetEvasion` composition — a shot ordered past
+`weapon.range` returns `{ base: weapon.accuracy, rangeFactor: 0,
+velocityFactor: 0, evasionFactor: 0, final: 0 }` instead of a HIT_FLOOR-
+clamped 5%. In-range HIT_FLOOR behaviour is unchanged (a genuine 5% for
+low-odds shots still applies).
