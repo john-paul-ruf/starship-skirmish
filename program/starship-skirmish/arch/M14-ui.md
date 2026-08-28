@@ -263,3 +263,42 @@ The barrel imports a `.tsx` file; tests avoid pulling the barrel and
 instead import `./model.js` directly, so `tsconfig.node.json`'s no-JSX
 graph is not disturbed (matches the `screens/postMatch/model.ts`
 precedent).
+
+<!-- SESSION-06 · playtest-feedback-01 · M14 public-API delta -->
+
+### M14 (ui) — components barrel · additions
+
+`src/ui/components/index.ts` gains two new public entries from files added
+this session. Both are stateless (no `preact/hooks` imports) and follow the
+existing `h()`-factory authoring pattern — `verbatimModuleSyntax`-safe
+`export { ... }` / `export type { ... }` re-exports (no `export *`).
+
+- `InfoTip(props: InfoTipProps): VNode` — CSS-revealed info-tooltip primitive
+  (source: `src/ui/components/tooltip.ts`). Trigger is a real focusable
+  `<button type="button">` carrying `aria-describedby={id}`; the popup is a
+  `<span id role="tooltip" class="tip-pop">`. Reveal is CSS-only —
+  `.tip:hover .tip-pop` + `.tip:focus-within .tip-pop` — so the component
+  works keyboard-first without JS state. The M14 no-hooks contract is
+  preserved by construction.
+- `InfoTipProps` — `{ readonly id: string; readonly label: string;
+  readonly class?: string; readonly children?: ComponentChildren; }`.
+- `GLOSSARY: Record<GlossaryKey, string>` — plain-language definitions for
+  every `DerivedStats` field the Shipyard renders, plus `expectedDpt` and
+  `weaponSpec` for the PER-WEAPON sub-table (source:
+  `src/ui/components/glossary.ts`). Copy is grounded in
+  `src/domain/derivedStats.ts` so a rename over there surfaces here as a
+  stale key.
+- `GlossaryKey` — union of the eleven definition keys.
+
+CSS delta: `src/ui/styles/components.css` appends a `19. INFOTIP` section
+(`.tip`, `.tip-dot`, `.tip-pop`) — additive-only, all values sourced from
+existing tokens; no existing rule is edited and no token is redefined. `.tip-pop`
+uses `z-index: 40`, below the existing `.scrim` (100) / `.modal` (101) layer.
+
+First consumer: `src/ui/screens/shipyard/StatsPanel.tsx` — every derived-stat
+row and the PER-WEAPON header now carries an `InfoTip` sourced from
+`GLOSSARY`. Screens outside the Shipyard remain unchanged this session
+(follow-ups: Skirmish setup, Tactical Attack hit-chance breakdown,
+Encyclopedia storage rail — each is that screen's own future lease).
+
+Dependency direction: unchanged. Components import from `preact` only.
