@@ -1035,6 +1035,14 @@ body.rm .sweeper {
      the absolute layout). */
   bottom: calc(anchor(--tip-anchor top) + 6px);
   left: anchor(--tip-anchor left);
+  /* Defensive flip for edge cases: a tip on the topmost row of a short
+     viewport would otherwise clip against viewport top, and one at the
+     right edge of a narrow viewport would spill past viewport right.
+     `flip-block` / `flip-inline` tell supporting engines to try the
+     opposite side when the default position overflows the viewport.
+     Unsupporting engines ignore the property → the default position
+     stands (still fixed-layer, still escaping every scroll clip). */
+  position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
   z-index: 40;
   min-width: 180px;
   max-width: 280px;
