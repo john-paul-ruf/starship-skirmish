@@ -1020,3 +1020,46 @@ body.rm .sweeper {
   opacity: 1;
   visibility: visible;
 }
+
+/* ---------- 20. IN-MATCH SHELL FRAME (playtest-feedback-02 · S04) ------ */
+/* The whole-page-scrolls bug: `.app-shell` / `.app-main` had no height and
+   no overflow, so a tall roster or bench dragged the tactical viewport off
+   screen. Fix per mocks/tactical-attack.html (`.shell{height:100vh}` +
+   `.work{min-height:0}`): pin the shell at the viewport height, let each
+   screen own its own internal scroll. Gated at ≥1024px because below that
+   `DesktopGate` (components/chrome.ts) short-circuits — the frame rules
+   would otherwise fight the mobile fallback.
+
+   Two overflow modes on `.app-main`:
+     • DEFAULT — non-tactical screens (Encyclopedia, Shipyard, PostMatch,
+       …) flow naturally and scroll THE MAIN AREA when their content
+       exceeds the frame. Their internal chrome (Shipyard columns, etc.)
+       already scrolls internally where it needs to.
+     • `.is-fixed-frame` — tactical routes (tactical-move / tactical-attack)
+       pin the whole frame: no page scroll, side panels and content
+       regions scroll internally. Toggled in App.tsx by route. */
+@media (min-width: 1024px) {
+  .app-shell {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .app-main {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .app-main.is-fixed-frame {
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  /* Direct flex children of the fixed frame (MatchChrome header, the
+     tactical screen root) may need to shrink below their content height
+     so the child's internal scroll can take over. */
+  .app-main.is-fixed-frame > * {
+    min-height: 0;
+  }
+}

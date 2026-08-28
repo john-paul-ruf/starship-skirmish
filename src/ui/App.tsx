@@ -99,6 +99,18 @@ const useDesktopViewport = () => {
   return viewportOk;
 };
 
+// ---- App-main frame class -------------------------------------------------
+//
+// playtest-feedback-02 · S04. Tactical routes pin the whole shell — no page
+// scroll, side panels scroll independently, the 3D viewport stays fixed
+// (mocks/tactical-attack.html `.shell{height:100vh;overflow:hidden}`).
+// Every other route keeps natural page flow — Encyclopedia, Shipyard, and
+// PostMatch scroll inside `.app-main` when their content overflows.
+const mainClass = (route: string): string =>
+  route === 'tactical-move' || route === 'tactical-attack'
+    ? 'app-main is-fixed-frame'
+    : 'app-main';
+
 // ---- Body reduced-motion mirror ------------------------------------------
 
 const useBodyReducedMotionMirror = (rmValue: boolean) => {
@@ -322,7 +334,7 @@ export function App() {
             </span>
           </Banner>
         ) : null}
-        <main class="app-main" data-testid="app-main">
+        <main class={mainClass(activeRoute)} data-testid="app-main">
           <Outlet />
         </main>
         <ToastHost />
