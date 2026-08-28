@@ -47,6 +47,7 @@ import {
 } from './skirmish/model.js';
 import type { BotTier } from '../../ai/index.js';
 import type { Build } from '../../domain/index.js';
+import { mintUniqueName } from '../../persist/index.js';
 
 /** Mint a 48-bit preview seed (§4.11). UI-only randomness — the determinism
  *  ban-list scopes to `sim`/`ai`, not `ui`. Falls back to 0 with no crypto. */
@@ -103,11 +104,38 @@ export function SkirmishSetup() {
     state.value = addToDraft(state.value, build);
   };
 
-  // CP3 replaces this stub with the real save-to-Encyclopedia (fresh identity
-  // via `mintUniqueName` + `repo.put`, toasted).
+  /**
+   * Copy a standard-fleet ship into the Encyclopedia so it can be edited in
+   * the Shipyard. Mirrors `Encyclopedia.tsx::onDuplicate`: mint a fresh
+   * `crypto.randomUUID` id + `Date.now`-based ISO timestamps + a collision-
+   * free name via `mintUniqueName`, then `repo.put` and toast. Both branches
+   * of the `PutResult` are handled — the write can fail on quota / validation
+   * and the player deserves to see why.
+   *
+   * Wall-clock reads live here (D-IOC-SEAM `ui` layer, not `sim`/`ai`), and
+   * the generated `Build`'s pre-spread fields (`storedCost`, `slots`, etc.)
+   * flow through unchanged — the fresh identity is the only overlay.
+   */
   const onSaveStandard = (build: Build): void => {
-    const shipName = build.name.length > 0 ? build.name : 'STANDARD SHIP';
-    services.toast(`Save “${shipName}” is not yet wired.`, 'warn');
+    const freshId = crypto.randomUUID();
+    const nowIso = new Date().toISOString();
+    const baseName = build.name.length > 0 ? build.name : 'STANDARD SHIP';
+    const name = mintUniqueName(
+      baseName,
+      (nk) => repo.findByNameKey(nk).length > 0,
+    );
+    const result = repo.put({
+      ...build,
+      id: freshId,
+      name,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+    if (result.ok) {
+      services.toast(`Saved “${name}” to your Encyclopedia — edit it in the Shipyard.`);
+    } else {
+      services.toast(`Could not save: ${result.reason}`, 'danger');
+    }
   };
 
   const onSetCount = (count: number): void => {
