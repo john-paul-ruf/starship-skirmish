@@ -204,6 +204,67 @@ export const nameByBodyId = (
   return map;
 };
 
+// ---- Ship-focus predicates (S02 — combat-log "focus on my ship") ----------
+
+/**
+ * The BodyIds belonging to `playerFleetId` — the source of "my ships" for the
+ * MINE focus in the combat-log filter (SESSION-02, D-LOG-FOCUS-DISPLAY-ONLY).
+ * Bot bodies are excluded. Empty when the player fleet has no ships (shouldn't
+ * happen in a real match; the set is still a valid empty filter).
+ */
+export const playerBodyIds = (
+  fleets: readonly SimFleet[],
+  playerFleetId: number,
+): ReadonlySet<BodyId> => {
+  const out = new Set<BodyId>();
+  for (const a of assignBodyIds(fleets)) {
+    if (a.fleetId === playerFleetId) out.add(a.bodyId);
+  }
+  return out;
+};
+
+/**
+ * True when the entry's shooter OR target is in `ids`. The ship-focus filter's
+ * one predicate: MINE matches when either end is a player ship, per-ship focus
+ * matches when either end is THAT ship. Pure display filter — the underlying
+ * `flattenCombatLog` sequence is never reordered (FR-28).
+ */
+export const logInvolves = (
+  entry: CombatLogEntry,
+  ids: ReadonlySet<BodyId>,
+): boolean => ids.has(entry.sourceId) || ids.has(entry.targetId);
+
+/** One entry in the ship-picker: a body, its ship name, and whether it's the player's. */
+export interface ShipOption {
+  readonly bodyId: BodyId;
+  readonly name: string;
+  readonly mine: boolean;
+}
+
+/**
+ * Stable, ordered list for the combat-log ship picker: every starting ship
+ * exactly once, PLAYER ships first (in roster order) then opponents (in fleet
+ * then roster order). Names are pulled through `nameByBodyId` so the picker
+ * and the log lines agree on the exact string a ship goes by.
+ */
+export const shipFocusOptions = (
+  fleets: readonly SimFleet[],
+  playerFleetId: number,
+): readonly ShipOption[] => {
+  const names = nameByBodyId(fleets);
+  const mine: ShipOption[] = [];
+  const others: ShipOption[] = [];
+  for (const a of assignBodyIds(fleets)) {
+    const opt: ShipOption = {
+      bodyId: a.bodyId,
+      name: names.get(a.bodyId) ?? a.ship.name,
+      mine: a.fleetId === playerFleetId,
+    };
+    (opt.mine ? mine : others).push(opt);
+  }
+  return [...mine, ...others];
+};
+
 /** Human-readable cause labels for a destroyed ship's fate. */
 export const CAUSE_LABEL: Readonly<Record<DamageSourceKind, string>> = {
   weapon: 'WEAPON FIRE',

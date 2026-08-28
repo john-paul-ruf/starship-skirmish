@@ -9,11 +9,14 @@ import {
   fateLabel,
   flattenCombatLog,
   formatSeed,
+  logInvolves,
   logKindOf,
   nameByBodyId,
   outcomeHeadline,
   outcomeTone,
   perShipFates,
+  playerBodyIds,
+  shipFocusOptions,
 } from '../../../../src/ui/screens/postMatch/model.js';
 import type {
   CombatLogEntry,
@@ -219,6 +222,84 @@ describe('perShipFates — survivors + casualties, every ship once', () => {
 });
 
 // ---- Combat log flatten + kind tagging (FR-28) ----------------------------
+
+// ---- Ship-focus predicates (S02) -----------------------------------------
+
+describe('playerBodyIds — selects only the player fleet', () => {
+  const fleets: readonly SimFleet[] = [
+    { fleetId: 0, ships: [ship('ALPHA'), ship('BRAVO')] },
+    { fleetId: 1, ships: [ship('CHARLIE'), ship('DELTA')] },
+  ];
+
+  it('includes every body of the player fleet, in id order', () => {
+    const ids = playerBodyIds(fleets, 0);
+    expect([...ids].sort((a, b) => a - b)).toEqual([1, 2]);
+  });
+
+  it('excludes bot fleet bodies entirely', () => {
+    const ids = playerBodyIds(fleets, 0);
+    expect(ids.has(3)).toBe(false);
+    expect(ids.has(4)).toBe(false);
+  });
+
+  it('is empty when the player fleet id does not match any fleet', () => {
+    const ids = playerBodyIds(fleets, 99);
+    expect(ids.size).toBe(0);
+  });
+});
+
+describe('logInvolves — shooter OR target in the id set', () => {
+  const mine = new Set<number>([1, 2]);
+
+  it('true when the shooter is in the set', () => {
+    expect(logInvolves(entry({ sourceId: 1, targetId: 9 }), mine)).toBe(true);
+  });
+
+  it('true when the target is in the set', () => {
+    expect(logInvolves(entry({ sourceId: 9, targetId: 2 }), mine)).toBe(true);
+  });
+
+  it('true when both ends are in the set (self-hit / same-fleet friendly)', () => {
+    expect(logInvolves(entry({ sourceId: 1, targetId: 2 }), mine)).toBe(true);
+  });
+
+  it('false when neither end is in the set', () => {
+    expect(logInvolves(entry({ sourceId: 8, targetId: 9 }), mine)).toBe(false);
+  });
+
+  it('false against an empty set', () => {
+    expect(logInvolves(entry({ sourceId: 1, targetId: 2 }), new Set())).toBe(false);
+  });
+});
+
+describe('shipFocusOptions — player ships first, every body once', () => {
+  const fleets: readonly SimFleet[] = [
+    { fleetId: 0, ships: [ship('ALPHA'), ship('BRAVO')] },
+    { fleetId: 1, ships: [ship('CHARLIE'), ship('DELTA')] },
+  ];
+
+  it('orders player ships before opponent ships', () => {
+    const opts = shipFocusOptions(fleets, 0);
+    expect(opts.map((o) => o.name)).toEqual(['ALPHA', 'BRAVO', 'CHARLIE', 'DELTA']);
+    expect(opts.map((o) => o.mine)).toEqual([true, true, false, false]);
+  });
+
+  it('preserves roster order within the player group', () => {
+    const opts = shipFocusOptions(fleets, 0);
+    expect(opts.slice(0, 2).map((o) => o.bodyId)).toEqual([1, 2]);
+  });
+
+  it('flips the mine flag when a different fleet is the player', () => {
+    const opts = shipFocusOptions(fleets, 1);
+    expect(opts.map((o) => o.name)).toEqual(['CHARLIE', 'DELTA', 'ALPHA', 'BRAVO']);
+    expect(opts.every((o, i) => o.mine === (i < 2))).toBe(true);
+  });
+
+  it('carries each body id exactly once', () => {
+    const opts = shipFocusOptions(fleets, 0);
+    expect(opts.map((o) => o.bodyId).sort((a, b) => a - b)).toEqual([1, 2, 3, 4]);
+  });
+});
 
 describe('logKindOf — one salient kind per entry', () => {
   it('tags weapon hit/miss as SHOT', () => {
