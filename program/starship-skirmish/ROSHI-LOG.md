@@ -1125,3 +1125,254 @@ justifies it. Vow 3.)*
    new fragment extends both to the full-field baseline case).
 3. `FORGE.md`, `MU.md`, `ENSO.md`, `JIKIJITSU.md` — byte-identical,
    not touched.
+
+---
+
+## 2026-08-28 — Cycle 7 — `github-pages-pre-push-guard`
+
+**Envelope in:** Final Report at
+`program/starship-skirmish/prompts/github-pages-pre-push-guard/FINAL-REPORT.md`;
+1/1 sessions `done` (S01) in a single one-member wave; 3 Mu checkpoint
+commits (S01 3/3); 1 Jikijitsu arch commit (`0c7acff`,
+`arch/M01-toolchain.md` — the M01 hook + `verify:pages` script-surface
+delta). Post-merge unit tests / catalog-lock / determinism / fixtures /
+harness-purity / build all green as their own gates per Final Report
+§Verification evidence. The aggregate `npm run verify:pages` does NOT
+currently pass — it correctly rejects on two pre-existing conditions
+outside SESSION-01's lease: (1) the same encyclopedia `TS6142` baseline
+this log has tracked since cycle 1 (now cycle **7** of independent
+observation), and (2) a `harnessMatchDeterminism.spec.ts` browser
+disagreement with the recorded Node golden across all three engines.
+Zero lease violations, zero checkpoint shortfalls, zero wave-plan
+corrections.
+
+### Reconciled this run
+
+- **`arch/M01-toolchain.md`** — Session-tag disambiguation. The M01
+  arch file now carries TWO `<!-- SESSION-01 -->` bare tags: the
+  original toolchain-foundation fragment at line 6, and the
+  `github-pages-pre-push-guard` delta Jikijitsu appended this cycle
+  at line 79. Bare tags collide on grep and read as one duplicated
+  entry rather than two coherent per-feature deltas. Reformatted per
+  the convention cycle-2 established for the same failure mode on
+  `arch/M14-ui.md`:
+  * Line 6 → `<!-- SESSION-01 · initial M01 toolchain fragment -->`
+    (attribution deliberately hedged — the bulk-add `be603f7 docs`
+    commit collapsed pre-cycle history so the exact feature name is
+    not independently verifiable from git; the fragment body is
+    self-descriptive as the initial toolchain foundation set).
+  * Line 79 → `<!-- SESSION-01 · github-pages-pre-push-guard · M01
+    hook + verify:pages surface -->`. Verifiable via
+    `git log -1 -- program/starship-skirmish/arch/M01-toolchain.md`
+    (`0c7acff`) and the fragment body's explicit
+    `SESSION-01 delta (github-pages-pre-push-guard)` heading.
+  Prose bodies below each tag unchanged.
+- **`FORGE-CONFIG.md` Module Registry — M01 row** — Registry drift
+  update. The Owns column previously read `Vite/TS/ESLint config, PWA,
+  entry HTML, CI` and the Key Files column omitted `./.githooks/`.
+  This cycle materialised a new tracked directory `./.githooks/`
+  under M01 stewardship (holds `install.mjs` + `pre-push` — see the
+  M01 SESSION-01 · github-pages-pre-push-guard fragment for the
+  activation model). Updated the row to add `.githooks/` under Path,
+  extended Owns to `Vite/TS/ESLint config, PWA, entry HTML, CI,
+  tracked Git hooks + Pages-readiness command surface`, and appended
+  `.githooks/` to Key Files. Grounded in `git ls-files -- .githooks/`
+  (2 files present at mode 100755 / 100644), Final Report §Files
+  Created or Modified, and the M01 arch fragment.
+
+### Not reconciled — deliberately
+
+- **`arch/M01-toolchain.md` "Public surface note vs prior arch entry"
+  paragraph** — the SESSION-01 · github-pages-pre-push-guard fragment
+  itself already contains an in-fragment reconciliation ("the earlier
+  M01 arch note said the up-front script list would not grow. This
+  feature intentionally extends it — a shared named command is what
+  prevents CI and the hook from drifting apart."). That IS the
+  reconciliation form Roshi normally does; no extra forward pointer
+  added on the original fragment body. Same cycle-3 / cycle-4 /
+  cycle-5 discipline: never retroactively edit a prior fragment body
+  when it was true at its landing.
+- **`arch/M01-toolchain.md` CI stub section** — reads "`.github/
+  workflows/ci.yml` runs on Node 22: `typecheck → lint → test:unit →
+  build`. Remaining architecture §11 jobs (…) are TODO comments in
+  the workflow, each citing its §11 step." That description was true
+  at the initial toolchain-foundation landing but is stale as-of this
+  cycle: the same workflow now runs `verify:pages:node` (aggregating
+  typecheck + lint + test:unit + test:catalog-lock + test:determinism
+  + test:fixtures + test:harness-purity + build) plus a new
+  `cross-engine-determinism` job on `verify:pages:browsers`, and
+  those §11 sub-jobs are no longer TODO comments. **However**, the
+  new github-pages-pre-push-guard fragment lower in the same file
+  carries a full "CI workflow — parity with hook" subsection that
+  states the current shape correctly. A reader who lands on the
+  older text via grep will read the newer subsection two screens
+  down. The stale text was accurate at its landing; retroactively
+  editing it rewrites history worse than the drift it fixes (same
+  discipline this log has applied on M14 since cycle 3). If a future
+  reader is observed compose these deltas wrong, add an explicit
+  forward-pointing "**Superseded**" note; do not rewrite the
+  original.
+- **`arch/M11-trace.md` `AttackBeatRecord.launchedMissileIds` gap** —
+  memorialised cycle 1; still an open note for a future M11 lease.
+  This cycle did no sim/trace work; nothing to touch.
+- **`arch/M13-render.md` "Key Files (planned)" hedge** — cycle 1
+  flagged drift; cycles 2–6 held. Cycle 7 did no render work; the
+  `(planned)` hedge on the column header still reads honestly. Not
+  promoting from a plan-time snapshot to an as-built list on the
+  strength of no active reader mis-step. Eighth-consecutive cycle
+  patient observation.
+- **`arch/M14-ui.md` per-session block structure** — kept intact for
+  the eighth consecutive cycle. This cycle added nothing to M14; no
+  new fragment, no new supersession pointer. File unchanged.
+- **`FORGE-CONFIG.md` Conventions / Custom Rules** — no additions
+  this cycle. Nothing this cycle is convention-shaped that also
+  clears the 3-cycle recurrence bar (Vow 4). Verification Commands
+  table intentionally NOT touched — Roshi does not own it (Vow 3).
+  The new `verify:pages:node` / `verify:pages:browsers` /
+  `verify:pages` scripts live in `package.json` and are documented
+  in the M01 arch fragment; folding them into FORGE-CONFIG's
+  Verification Commands table would be a Mu-facing correctness
+  change owned by the next M01 feature or the owner, not by Roshi.
+
+### Registry updated
+
+**Yes.** M01 row expanded to include the new tracked `./.githooks/`
+directory + the Pages-readiness command surface. See "Reconciled
+this run" above.
+
+### Conventions added to `FORGE-CONFIG.md`
+
+**None** this cycle (Vow 4: repetition across ≥3 cycles is the
+threshold, AND the recurrence must be convention-shaped).
+
+### Proposed for the framework — with cycle count
+
+*(These go here, NOT into `FORGE.md`/`MU.md`/`ENSO.md`/`JIKIJITSU.md`.
+Roshi recommends; a human folds them in by hand once the count
+justifies it. Vow 3.)*
+
+- **[cycles: 7/3+ — URGENCY JUMP: NOW STRUCTURALLY BLOCKS PUSHES]
+  Owner hygiene — encyclopedia typecheck baseline.** Cycles 3–6 all
+  crossed the promote threshold; a one-line M01 fix was recommended
+  and NOT scheduled. Cycle 7 changes the urgency: with the new
+  `github-pages-pre-push-guard` hook active, `tsc --noEmit -p
+  tsconfig.node.json` fails inside `verify:pages:node`, which means
+  **every ordinary `git push` on this clone is now rejected** by the
+  hook until either (a) the encyclopedia baseline is fixed, or (b)
+  the developer uses `git push --no-verify` to bypass. What was six
+  cycles of "triage tax" is now a hard workflow gate. Final Report
+  §Residual gap #1 names it explicitly ("The Node typecheck reaches
+  a JSX configuration mismatch involving `./tsconfig.node.json`,
+  `./tests/unit/ui/encyclopedia/export.test.ts`, and `./src/ui/
+  screens/encyclopedia/BackupBanner.tsx`."). The cure remains one
+  line under M01: add `"jsx": "preserve"` (and likely
+  `"jsxImportSource": "preact"`) to `tsconfig.node.json`, or narrow
+  its `include` (currently `["vite.config.ts", "tools/**/*.ts",
+  "tests/**/*.ts"]`) to exclude `.tsx`-importing test files. **Not a
+  framework change — an owner scheduling ask escalated by the
+  cycle-7 hook landing.** This is the first cycle where the same
+  defect went from "background noise" to "cannot push." Recommend
+  the owner take the one commit immediately; every commit that
+  follows without this fix requires either `--no-verify` or a green
+  aggregate that includes fixing this first.
+- **[cycles: 1/3+ · NEW SIGNAL, direct consequence of cycle-7
+  hook landing] `harnessMatchDeterminism.spec.ts` browser-vs-Node
+  golden drift.** Final Report §Residual gap #2 names a second
+  pre-existing failure the new hook now surfaces:
+  `tests/e2e/harnessMatchDeterminism.spec.ts` disagrees with the
+  recorded Node golden in Chromium, Firefox, and WebKit. This is
+  the cross-engine "identical on every machine" §7.5 row-4 gate
+  the finite-thrust-movement SESSION-06 fragment
+  (`arch/M17-harness.md`) locked, and the harness-golden fixture at
+  `tests/determinism/harness/manifest.json`. Two possible root
+  causes per Final Report follow-up: browser-side sim drift from
+  the recorded Node golden, OR stale recorded fixtures that need
+  regeneration under `--movement-model 1`. Both cures are
+  out-of-lease for `github-pages-pre-push-guard` and belong to a
+  new M17/M19 lease. First observation this cycle; watching cycle
+  8+ for whether it clears (owner fixes) or accumulates.
+- **[cycles: 2/3+ · NEW SIGNAL] Jikijitsu bare-`SESSION-NN` tag
+  pattern.** Cycle 2 flagged this on `arch/M14-ui.md` (Jikijitsu
+  appended two `<!-- SESSION-02 -->` / `<!-- SESSION-03 -->` markers
+  colliding with pre-existing same-numbered tags earlier in the
+  file). Cycle 7 sees it recur on `arch/M01-toolchain.md`: the
+  github-pages-pre-push-guard SESSION-01 fragment appended as
+  `<!-- SESSION-01 -->` collided with the pre-existing initial-
+  toolchain SESSION-01 tag at line 6. Both cycles required Roshi to
+  disambiguate. Between cycles 3 and 6, Jikijitsu used the fuller
+  `<!-- SESSION-XX · <feature> · <description> -->` form that
+  cycle-2 established as convention (verifiable across
+  `arch/M14-ui.md` fragments from `856fdbd` onward). Cycle 7's
+  reversion is likely a single-session prompt where the fuller form
+  slipped rather than a deliberate change. Increment to **2/3+** —
+  same failure mode observed on two files across five cycles apart.
+  If cycle 8 sees another bare-tag append on a THIRD file, this
+  crosses to a Jikijitsu-facing convention: **JIKIJITSU.md SHOULD
+  tag appended arch fragments with `<!-- SESSION-XX · <feature> ·
+  M<NN> <description> -->` rather than a bare `<!-- SESSION-XX -->`
+  so future readers grepping for a session tag don't hit
+  collisions on files that have accreted across many features.**
+- **[cycles: 3/3+ · HELD, RECEDED] Verification-gate reachability —
+  Playwright `webServer` provisioning.** Cycle 6 receded this at
+  3/3+. Cycle 7 had no e2e-heavy work in the lease (the hook itself
+  is a shell-script gate); no observation to increment or reset.
+  Held at receded.
+- **[cycles: 2/3+ · HELD] Enso-brush transport reliability — new
+  observation.** Cycle 7 had no Enso delegation (single-Mu lease,
+  three checkpoints; no long Zen await). Pattern could not recur.
+  Held.
+- **[cycles: 2/3+ · HELD] Forge granularity — route M14-heavy
+  screen rebuilds with browser gates to Enso from spawn.** Cycle 7's
+  lease was a toolchain/CI/hook feature, not an M14 rebuild.
+  Pattern could not recur. Held.
+- **[cycles: 1/3+ · HELD] Forge / Mu handoff — exit contract
+  explicitly requires numeric evidence when the Final Report must
+  reproduce it.** Cycle 7's Final Report is prose-heavy but reports
+  every numeric that mattered (mode `100755`, `git ls-files --stage`,
+  `sh -n`, `test -x`, individual gate green counts including "104
+  files / 1,578 tests" for unit, "17/17 tests" for the new contract
+  suite). No missing numeric evidence this cycle. Held.
+- **[cycles: 1/3+ · HELD] Forge granularity — "stuck / can't
+  proceed" playtest notes may hide latent bugs.** Cycle 7 was a
+  toolchain feature, not a playtest-feedback decomposition; pattern
+  could not recur. Held.
+- **[cycles: 1/3+ · HELD] Sim-record extensions before their render
+  consumer.** Cycle 7 did no sim/trace work. Held.
+
+### Verification (Roshi's output is prose)
+
+1. Every claim traces to git or the attached record. The two
+   `<!-- SESSION-01 -->` bare tags in `arch/M01-toolchain.md` at
+   lines 6 and 79 are verifiable in the file (the file's SESSION
+   convention is established by both fragments' own top-line
+   comments). The `0c7acff` M01 arch commit is verifiable via
+   `git log --oneline -- program/starship-skirmish/arch/
+   M01-toolchain.md`. The tracked `./.githooks/` directory
+   (2 files, `install.mjs` at 100644 and `pre-push` at 100755) is
+   verifiable via `git ls-files -- .githooks/`. The current
+   `core.hooksPath` for this clone is `./.githooks` (verified via
+   `git config --local --get core.hooksPath`). The
+   `verify:pages*` script trio is verifiable in `package.json`. The
+   `harnessMatchDeterminism.spec.ts` drift and encyclopedia
+   `TS6142` claims are verbatim from Final Report §Residual gap.
+   The Jikijitsu tag-collision cycle-2-vs-cycle-7 recurrence is
+   verifiable by comparing this cycle's edits to cycle 2's edits
+   (both files show the same disambiguation pattern applied by
+   Roshi, and the intervening cycles 3–6 show Jikijitsu using the
+   fuller convention).
+2. Re-read after writing: the two disambiguated session tags in
+   `arch/M01-toolchain.md` do not contradict each other or the
+   prose bodies below them (bodies unchanged; tags now distinguish
+   the initial toolchain fragment from the github-pages-pre-push-
+   guard delta). The M01 Module Registry row in `FORGE-CONFIG.md`
+   now describes the as-built surface faithfully (Path, Owns, and
+   Key Files all include `.githooks/`); no downstream section in
+   FORGE-CONFIG references M01 differently. The ROSHI-LOG cycle 7
+   entry increments or holds each prior proposal explicitly and
+   cites which. The new cycle-7 proposal for Jikijitsu bare-tag
+   pattern correctly attributes cycle-2 as the first observation
+   (not cycle 1).
+3. `FORGE.md`, `MU.md`, `ENSO.md`, `JIKIJITSU.md` — byte-identical,
+   not touched. `FORGE-CONFIG.md` Verification Commands, Git,
+   Session Defaults, Custom Rules sections — untouched (only the
+   M01 Module Registry row edited, per Vow-3 ownership scope).

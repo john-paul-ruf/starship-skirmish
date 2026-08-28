@@ -3,7 +3,7 @@
 > Architecture-as-built detail for module M01. Session-marked; appended by Jikijitsu from each
 > worker's arch fragment. Note: `program/` is gitignored, so this file is disk-only (not in git history).
 
-<!-- SESSION-01 -->
+<!-- SESSION-01 · initial M01 toolchain fragment -->
 ## Module Registry entry (now live)
 
 - **M01 Toolchain & Build** — root config + `public/` + `.github/workflows/`. Owns Vite/TS/ESLint
@@ -76,7 +76,7 @@ its §11 step.
 Three byte-identical stray copies of `src/io/migrate/migrations.ts` at repo root removed:
 `migrations.ts`, `migrate/migrations.ts`, `io/migrate/migrations.ts`. Canonical file untouched.
 
-<!-- SESSION-01 -->
+<!-- SESSION-01 · github-pages-pre-push-guard · M01 hook + verify:pages surface -->
 ## SESSION-01 delta (github-pages-pre-push-guard)
 
 ### M01 Toolchain & Build — new public surface

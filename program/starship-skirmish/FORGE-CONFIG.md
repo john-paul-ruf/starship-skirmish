@@ -69,7 +69,7 @@ as each module is built.
 
 | ID | Module | Path | Owns | Imports From | Key Files (planned) |
 |----|--------|------|------|--------------|---------------------|
-| **M01** | Toolchain & Build | root config + `public/` | Vite/TS/ESLint config, PWA, entry HTML, CI | — | `package.json`, `tsconfig.json`, `tsconfig.node.json`, `vite.config.ts`, `eslint.config.js`, `index.html`, `public/.nojekyll`, `.github/workflows/` |
+| **M01** | Toolchain & Build | root config + `public/` + `.githooks/` | Vite/TS/ESLint config, PWA, entry HTML, CI, tracked Git hooks + Pages-readiness command surface | — | `package.json`, `tsconfig.json`, `tsconfig.node.json`, `vite.config.ts`, `eslint.config.js`, `index.html`, `public/.nojekyll`, `.github/workflows/`, `.githooks/` |
 | **M02** | Catalog Content (data) | `catalog/` | Additive-only content + ordinal locks (FR-1) | — | `classes.json`, `chassis/*.json`, `components/*.json`, `tuning.json`, `lock/catalog-vN.json` **(authored, v1)** |
 | **M03** | Catalog Loader | `src/catalog/` | Loading, indexing, integrity asserts | M02 | `loadCatalog.ts`, `index.ts`, `assertLock.ts` |
 | **M04** | Sim: Math Core ⚑ | `src/sim/mathx/` | vec3, deterministic trig, counter-RNG | — (leaf) | `vec3.ts`, `trig.ts`, `rng.ts`, `index.ts` |
