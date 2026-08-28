@@ -163,6 +163,10 @@ export function Viewport(props: ViewportProps) {
   const playerRef = useRef<TracePlayer | null>(null);
   /** One wire range shell per live weapon envelope, keyed by preview key. */
   const rangeShellsRef = useRef<Map<string, RangeShell>>(new Map());
+  /** Observes the `.viewport` container so a FULL FIELD grid collapse/restore
+   *  (or any other container resize) reaches the renderer/camera/projection —
+   *  the same lifecycle `tacticalMove/Viewport.tsx` already runs. */
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
   /** 'pending' until the dynamic import settles; 'ready' | 'failed' after. */
   const status = useSignal<'pending' | 'ready' | 'failed'>('pending');
   /** Projected overlay geometry, driven by the RAF loop. */
@@ -204,8 +208,29 @@ export function Viewport(props: ViewportProps) {
         const render = await import('../../../render/index.js');
         if (cancelled) return;
         const view = render.createTacticalView(canvas, state.arena.radius);
-        view.setState(state);
         viewRef.current = view;
+
+        // Bind the view to the actual `.viewport` container (D-TA-CONTAINER-
+        // IS-SIZE-TRUTH) — an immediate positive-size resize, then a
+        // `ResizeObserver` for every later change (grid collapse, restore).
+        // Runs BEFORE `setState`/the first label pass and BEFORE the overlay
+        // RAF starts, so the renderer, camera projection, and cached
+        // `worldToScreen` dimensions are correct from the first frame.
+        const container = canvas.parentElement;
+        const resizeToContainer = (): void => {
+          if (container === null) return;
+          const width = container.clientWidth;
+          const height = container.clientHeight;
+          if (width > 0 && height > 0) view.resize(width, height);
+        };
+        resizeToContainer();
+        if (container !== null && typeof ResizeObserver !== 'undefined') {
+          const observer = new ResizeObserver(resizeToContainer);
+          observer.observe(container);
+          resizeObserverRef.current = observer;
+        }
+
+        view.setState(state);
         playerRef.current = render.attachTracePlayer(view);
         // Range-shell factory + scene root (best-effort — a stubbed render
         // module without them just skips the 3D rings; the overlay labels stay).
@@ -344,6 +369,8 @@ export function Viewport(props: ViewportProps) {
       if (ringRaf !== 0 && typeof cancelAnimationFrame === 'function') {
         cancelAnimationFrame(ringRaf);
       }
+      resizeObserverRef.current?.disconnect();
+      resizeObserverRef.current = null;
       const shells = rangeShellsRef.current;
       const view = viewRef.current;
       for (const shell of shells.values()) {

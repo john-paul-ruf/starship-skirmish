@@ -62,6 +62,7 @@ const FIXTURE = `
   globalThis.__resetCalls = 0;
   globalThis.__focusSource = null;
   globalThis.__rangeShellCalls = [];
+  globalThis.__resizeCalls = [];
 
   const wpn = (r, d, s, a, name) => ({ range:r, damage:d, shotsPerTurn:s, accuracy:a, display:{id:'w-'+name, name} });
   const rack = (name, ammo) => ({ ammo, damage:40, aoeRadius:60, boostVelocity:140, trackingTurnRate:1, bodyMass:5, bodyRadius:2, display:{id:'m-'+name, name} });
@@ -129,7 +130,8 @@ const FIXTURE = `
 // its reconciliation calls, and a trace player that records playAttack.
 const STUB_RENDER = `
   export const createTacticalView = () => ({
-    setState() {}, dispose() {}, resize() {},
+    setState() {}, dispose() {},
+    resize(w, h) { globalThis.__resizeCalls.push([w, h]); },
     pick() { return null; },
     worldToScreen(pos) { return { x: 640 + pos[0], y: 360 + pos[2] }; },
     focusBody(id) { globalThis.__focusBodyCalls.push(id); },
@@ -423,9 +425,38 @@ test.describe('tactical attack — interactions', () => {
     const fire = page.getByTestId('ta-col-fire');
     const commit = page.getByTestId('commit-fire-btn');
     const fullscreenBtn = page.getByTestId('cam-fullscreen');
+    const viewport = page.getByTestId('attack-viewport');
+
+    const resizeCallCount = (): Promise<number> =>
+      page.evaluate(() => (globalThis as unknown as { __resizeCalls: number[][] }).__resizeCalls.length);
+    const lastResizeCall = (): Promise<readonly [number, number] | null> =>
+      page.evaluate(() => {
+        const calls = (globalThis as unknown as { __resizeCalls: number[][] }).__resizeCalls;
+        const last = calls[calls.length - 1];
+        return last === undefined ? null : [last[0]!, last[1]!];
+      });
+    // Every resize call must reach the ACTUAL live container size — never a
+    // hard-coded rail width, and never 0×0.
+    const expectResizeMatchesViewport = async (): Promise<readonly [number, number]> => {
+      const box = await viewport.boundingBox();
+      expect(box).not.toBeNull();
+      const call = await lastResizeCall();
+      expect(call).not.toBeNull();
+      const [w, h] = call!;
+      expect(w).toBeGreaterThan(0);
+      expect(h).toBeGreaterThan(0);
+      expect(Math.abs(w - box!.width)).toBeLessThanOrEqual(2);
+      expect(Math.abs(h - box!.height)).toBeLessThanOrEqual(2);
+      return [w, h];
+    };
+
+    // Mount performs an immediate positive-size resize before the first frame.
+    await expect.poll(resizeCallCount).toBeGreaterThan(0);
+    const [initW, initH] = await expectResizeMatchesViewport();
 
     await expect(roster).toBeVisible();
     await expect(fullscreenBtn).toHaveText(/FULL FIELD/);
+    const countBeforeExpand = await resizeCallCount();
     await fullscreenBtn.click();
     await expect(shell).toHaveClass(/is-immersive/);
     await expect(fullscreenBtn).toHaveText(/RESTORE/);
@@ -434,6 +465,15 @@ test.describe('tactical attack — interactions', () => {
     await expect(commit).toBeHidden();
     await expect(page.getByTestId('camera-hud')).toBeVisible();
 
+    // Grid collapse delivers a further resize to the SAME tactical-view
+    // instance, matching the now-expanded viewport — wider (rails gone) and
+    // taller (the center-only combat log is gone too).
+    await expect.poll(resizeCallCount).toBeGreaterThan(countBeforeExpand);
+    const [immW, immH] = await expectResizeMatchesViewport();
+    expect(immW).toBeGreaterThan(initW);
+    expect(immH).toBeGreaterThan(initH);
+
+    const countBeforeRestore = await resizeCallCount();
     // Press Escape on the focused control (bubbles to the window keydown handler)
     // — `page.keyboard.press` depends on page focus, which is flaky headless.
     await fullscreenBtn.press('Escape');
@@ -441,6 +481,10 @@ test.describe('tactical attack — interactions', () => {
     await expect(roster).toBeVisible();
     await expect(fire).toBeVisible();
     await expect(commit).toBeVisible();
+
+    // Restore delivers a final resize back to the restored center viewport.
+    await expect.poll(resizeCallCount).toBeGreaterThan(countBeforeRestore);
+    await expectResizeMatchesViewport();
 
     expect(errors, errors.join('\n')).toEqual([]);
   });
