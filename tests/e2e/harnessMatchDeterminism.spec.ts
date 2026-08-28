@@ -101,9 +101,9 @@ const buildHarnessBundle = async (): Promise<HarnessBundle> => {
 
     /**
      * Replay one fixture: reconstruct the MatchScenario from the recorded
-     * JSON (seed + budget + fleetTiers — D-MATCH-SCENARIO), regenerate
-     * fleets, drive the runTurn loop, return the per-turn digest list +
-     * outcome for the harness to compare against the Node golden.
+     * JSON (seed + budget + fleetTiers + movementModel), regenerate fleets,
+     * drive the runTurn loop, return the per-turn digest list + outcome for
+     * the harness to compare against the Node golden.
      */
     const runFixture = async (fixture) => {
       const scenario = {
@@ -112,6 +112,7 @@ const buildHarnessBundle = async (): Promise<HarnessBundle> => {
         seed: fixture.seed,
         budget: fixture.budget,
         fleetTiers: fixture.fleetTiers,
+        movementModel: fixture.movementModel,
       };
       const result = await runMatchScenario(scenario, catalog);
       return {
