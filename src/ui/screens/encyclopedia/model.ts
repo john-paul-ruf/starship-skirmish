@@ -11,6 +11,7 @@
 // UI composition stays in the sibling `.tsx` files.
 
 import type { ChassisClass, SlotType } from '../../../catalog/index.js';
+import { URL_TOKEN_BUDGET } from '../../../io/index.js';
 import { SLOT_LETTER, SLOT_ORDER } from '../../components/index.js';
 import type {
   IndexEntry,
@@ -336,6 +337,27 @@ export const exportFilename = (
   const day = isoTimestamp.length >= 10 ? isoTimestamp.slice(0, 10) : 'unknown';
   return `starship-skirmish-library-${scope}-${day}.json`;
 };
+
+// ---- Share URL helpers ---------------------------------------------------
+
+/**
+ * The copy-paste deep link for a share token. Mirrors the router's
+ * `serializeRoute` for the `share` route (`#/share?t=` + `encodeURIComponent`)
+ * so pasting this URL back into the app resolves to the Import preview.
+ * `origin` is caller-supplied (defaults to `''`) — the model stays pure and
+ * node-testable, and the screen passes `window.location.origin` at call time.
+ */
+export const shareUrlFor = (token: string, origin = ''): string =>
+  `${origin}#/share?t=${encodeURIComponent(token)}`;
+
+/**
+ * A token too long to travel safely inside a URL (design cap
+ * `URL_TOKEN_BUDGET` — the softer UI warning threshold from `io/limits.ts`).
+ * The plain token still works up to `TOKEN_MAX`; the modal offers it as the
+ * fallback when this predicate returns `true`.
+ */
+export const shareTokenTooLong = (token: string): boolean =>
+  token.length > URL_TOKEN_BUDGET;
 
 // ---- Class human names ---------------------------------------------------
 

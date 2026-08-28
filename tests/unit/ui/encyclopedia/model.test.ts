@@ -21,6 +21,7 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { URL_TOKEN_BUDGET } from '../../../../src/io/index.js';
 import type {
   IndexEntry,
   ListQuery,
@@ -39,6 +40,8 @@ import {
   layoutSummary,
   pruneSelection,
   refitReceiptText,
+  shareTokenTooLong,
+  shareUrlFor,
   summariseSelectedCost,
   toggleSelection,
   viewFromPrefs,
@@ -326,6 +329,40 @@ describe('isViewFiltered — recognises every filter axis', () => {
     expect(isViewFiltered({ ...DEFAULT_VIEW, tags: ['alpha'] })).toBe(true);
     expect(isViewFiltered({ ...DEFAULT_VIEW, classId: 'cruiser' })).toBe(true);
     expect(isViewFiltered({ ...DEFAULT_VIEW, needsRefitOnly: true })).toBe(true);
+  });
+});
+
+// ---- Share URL helpers ----------------------------------------------------
+
+describe('shareUrlFor / shareTokenTooLong — S05 outbound share helpers', () => {
+  it('shareUrlFor composes `#/share?t=<token>` (matches serializeRoute)', () => {
+    expect(shareUrlFor('Sabc')).toBe('#/share?t=Sabc');
+  });
+
+  it('shareUrlFor prepends the caller-supplied origin verbatim', () => {
+    expect(shareUrlFor('Sabc', 'https://example.com')).toBe(
+      'https://example.com#/share?t=Sabc',
+    );
+  });
+
+  it('shareUrlFor percent-encodes a token needing it (router round-trip safe)', () => {
+    // The base64url alphabet never emits '+' or '=', but exercise the encoder
+    // guard against any exotic character surviving into a URL: what
+    // parseHash consumes is decodeURIComponent's inverse of this.
+    const token = 'A/B+C=';
+    expect(shareUrlFor(token)).toBe(`#/share?t=${encodeURIComponent(token)}`);
+    // Fresh percent-decode reproduces the token — proves the router
+    // `#/share?t=<encoded>` shape round-trips its payload.
+    const encoded = shareUrlFor(token).split('?t=')[1] ?? '';
+    expect(decodeURIComponent(encoded)).toBe(token);
+  });
+
+  it('shareTokenTooLong flips exactly at the URL_TOKEN_BUDGET boundary', () => {
+    const atCap = 'x'.repeat(URL_TOKEN_BUDGET);
+    const overCap = 'x'.repeat(URL_TOKEN_BUDGET + 1);
+    expect(shareTokenTooLong(atCap)).toBe(false);
+    expect(shareTokenTooLong(overCap)).toBe(true);
+    expect(shareTokenTooLong('')).toBe(false);
   });
 });
 
