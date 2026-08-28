@@ -9,9 +9,24 @@
 //
 // Stateless: parent (`Shipyard.tsx`) owns the previous-stats snapshot and
 // hands it in.
+//
+// Playtest-feedback-01 · S06: every row now carries an `InfoTip` sourced
+// from the components-library `GLOSSARY`. Wiring rule — `tipKey` is a
+// `GlossaryKey`, so a stat with no matching glossary entry fails to
+// typecheck (the glossary can't drift silently from the DerivedStats
+// surface). Tip id derives from the row testid to keep AT associations
+// unique on the page.
 
 import type { DerivedStats } from '../../../domain/index.js';
-import { Delta, Panel, PanelHeader, StatRow } from '../../components/index.js';
+import {
+  Delta,
+  GLOSSARY,
+  InfoTip,
+  Panel,
+  PanelHeader,
+  StatRow,
+  type GlossaryKey,
+} from '../../components/index.js';
 
 import type { StatsDelta } from './model.js';
 
@@ -29,6 +44,7 @@ function StatWithDelta(props: {
   unit?: string;
   displayUnit?: string;
   testid: string;
+  tipKey?: GlossaryKey;
 }) {
   const {
     label,
@@ -38,12 +54,18 @@ function StatWithDelta(props: {
     unit = '',
     displayUnit,
     testid,
+    tipKey,
   } = props;
   const shown = to.toFixed(precision);
   const trailing = displayUnit ?? '';
   return (
     <div class="stat">
-      <span class="stat-k">{label}</span>
+      <span class="stat-k">
+        {label}
+        {tipKey !== undefined ? (
+          <InfoTip id={`tip-${testid}`} label={GLOSSARY[tipKey]} />
+        ) : null}
+      </span>
       <span
         style="display:flex;align-items:baseline;gap:8px"
         data-testid={testid}
@@ -78,12 +100,14 @@ export function StatsPanel(props: StatsPanelProps) {
               from={delta.maxHull.from}
               to={delta.maxHull.to}
               testid="shipyard-stat-maxHull"
+              tipKey="maxHull"
             />
             <StatWithDelta
               label="SHIELD CAP"
               from={delta.shieldCapacity.from}
               to={delta.shieldCapacity.to}
               testid="shipyard-stat-shieldCapacity"
+              tipKey="shieldCapacity"
             />
             <StatWithDelta
               label="SHIELD REGEN"
@@ -91,6 +115,7 @@ export function StatsPanel(props: StatsPanelProps) {
               to={delta.shieldRegenPerTurn.to}
               displayUnit="/turn"
               testid="shipyard-stat-shieldRegen"
+              tipKey="shieldRegenPerTurn"
             />
             <StatWithDelta
               label="DELTA-V"
@@ -99,12 +124,14 @@ export function StatsPanel(props: StatsPanelProps) {
               precision={2}
               displayUnit="/turn"
               testid="shipyard-stat-deltaV"
+              tipKey="deltaVPerTurn"
             />
             <StatWithDelta
               label="MASS"
               from={delta.totalMass.from}
               to={delta.totalMass.to}
               testid="shipyard-stat-mass"
+              tipKey="totalMass"
             />
             <StatWithDelta
               label="EFFECTIVE ACCEL"
@@ -112,12 +139,14 @@ export function StatsPanel(props: StatsPanelProps) {
               to={delta.effectiveAcceleration.to}
               precision={2}
               testid="shipyard-stat-accel"
+              tipKey="effectiveAcceleration"
             />
             <StatWithDelta
               label="MISSILE AMMO"
               from={delta.totalMissileAmmo.from}
               to={delta.totalMissileAmmo.to}
               testid="shipyard-stat-missileAmmo"
+              tipKey="totalMissileAmmo"
             />
             <StatWithDelta
               label="EVASION"
@@ -125,12 +154,14 @@ export function StatsPanel(props: StatsPanelProps) {
               to={delta.baseEvasion.to}
               precision={2}
               testid="shipyard-stat-evasion"
+              tipKey="baseEvasion"
             />
             <StatWithDelta
               label="HULL REPAIR / T"
               from={delta.perTurnHullRepair.from}
               to={delta.perTurnHullRepair.to}
               testid="shipyard-stat-hullRepair"
+              tipKey="perTurnHullRepair"
             />
             {stats.weapons.length > 0 ? (
               <PerWeaponTable weapons={stats.weapons} />
@@ -157,10 +188,20 @@ function PerWeaponTable(props: {
   return (
     <div style="margin-top:8px" data-testid="shipyard-per-weapon">
       <div style="display:flex;align-items:baseline;gap:8px">
-        <span class="t-h2" style="font-size:11px">PER-WEAPON</span>
+        <span class="t-h2" style="font-size:11px">
+          PER-WEAPON
+          <InfoTip
+            id="tip-shipyard-per-weapon-legend"
+            label={GLOSSARY.weaponSpec}
+          />
+        </span>
         <span class="grow" />
         <span class="mono-xs">
           EXPECTED DPT{' '}
+          <InfoTip
+            id="tip-shipyard-per-weapon-expectedDpt"
+            label={GLOSSARY.expectedDpt}
+          />{' '}
           <span class="c-hi" style="font-weight:700">
             {expectedDPT.toFixed(1)}
           </span>
