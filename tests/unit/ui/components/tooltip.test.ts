@@ -9,6 +9,14 @@
 //   4. `aria-label` on the trigger names the concept ("What is this? …")
 //   5. barrel re-exports InfoTip + GLOSSARY + GlossaryKey
 //   6. GLOSSARY covers every DerivedStats field the Shipyard renders
+//
+// Playtest-feedback-04 · S03 (D-INFOTIP-TOPLAYER): the tooltip-clipped-by-
+// scroll-ancestor bug was fixed ENTIRELY in components.css §19 (`.tip-pop`
+// moved to `position: fixed` + CSS Anchor Positioning). The vnode shape is
+// unchanged — no `popover`, `popovertarget`, or `anchor-name` attribute
+// was added. The "CSS-only, no invocation attribute" contract below locks
+// that decision so a future refactor cannot silently drift the primitive
+// onto the Popover API (which would break the CSS-only `:hover` reveal).
 
 import { describe, expect, it } from 'vitest';
 
@@ -105,6 +113,46 @@ describe('InfoTip — stateless CSS-revealed tip (S06 CP1)', () => {
   it('extra class merges after the base class (caller specificity wins ties)', () => {
     const root = asVNode(InfoTip({ ...props, class: 'stat-tip' }));
     expect(root.props['class']).toBe('tip stat-tip');
+  });
+});
+
+// ---- CSS-only, no invocation attribute (S03 D-INFOTIP-TOPLAYER) ----------
+
+describe('InfoTip — CSS-only reveal, no popover invocation (S03 CP2)', () => {
+  const props: InfoTipProps = {
+    id: 'tip-shipyard-stat-maxHull',
+    label: 'Hull points. Ship is destroyed at 0.',
+  };
+
+  it('trigger has no invocation attribute (no popovertarget / interesttarget)', () => {
+    // The clip-escape fix moved `.tip-pop` to `position: fixed` in CSS §19;
+    // it did NOT switch the primitive to the Popover API (which has no
+    // declarative CSS-only hover trigger and would break the `:hover` /
+    // `:focus-within` reveal the M14 hooks-free contract depends on).
+    const root = asVNode(InfoTip(props));
+    const trigger = asVNode(childrenOf(root)[0]);
+    expect(trigger.props['popovertarget']).toBeUndefined();
+    expect(trigger.props['popovertargetaction']).toBeUndefined();
+    expect(trigger.props['interesttarget']).toBeUndefined();
+  });
+
+  it('popup has no `popover` attribute (would be display:none until invoked)', () => {
+    // A `popover` attribute puts the element in the closed / display:none
+    // state until `showPopover()` fires — no CSS hover invokes it. Keeping
+    // the popup un-attributed leaves the reveal purely CSS-driven.
+    const root = asVNode(InfoTip(props));
+    const popup = asVNode(childrenOf(root)[1]);
+    expect(popup.props['popover']).toBeUndefined();
+  });
+
+  it('neither trigger nor popup carry inline anchor-positioning styles', () => {
+    // Anchor-name / position-anchor / anchor-scope live entirely in
+    // components.css §19 (via `.tip`, `.tip-dot`, `.tip-pop`). Inline
+    // styles per instance would defeat the shared-primitive win.
+    const root = asVNode(InfoTip(props));
+    const [trigger, popup] = childrenOf(root).map(asVNode);
+    expect(trigger?.props['style']).toBeUndefined();
+    expect(popup?.props['style']).toBeUndefined();
   });
 });
 

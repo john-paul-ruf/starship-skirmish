@@ -968,11 +968,34 @@ body.rm .sweeper {
    the popup identically to a mouse hover — no JS state (the M14 component
    library forbids hooks; see primitives.ts). Motion honours the same
    opt-out contract as §14: a soft opacity fade only, and `pointer-events:
-   none` on the popup keeps the trigger the only interactive surface. */
+   none` on the popup keeps the trigger the only interactive surface.
+
+   Playtest-feedback-04 · S03 (D-INFOTIP-TOPLAYER): `.tip-pop` is
+   `position: fixed` so it escapes every scroll/overflow ancestor (the
+   Shipyard's `.col-scroll` was clipping the previous absolute popup at
+   the column edge, effectively hiding it). CSS Anchor Positioning pins
+   the popup 6px above the ⓘ trigger, left-aligned to it. Per-instance
+   uniqueness comes free from `anchor-scope: --tip-anchor` on `.tip`:
+   every InfoTip is a self-contained scope, so the same `anchor-name`
+   ident is safe to reuse for every trigger on the page.
+
+   Fallback (browsers without CSS Anchor Positioning — Firefox as of
+   2025-08 has it behind a flag): the `anchor(...)` values in `bottom`
+   and `left` fail to resolve → both offsets fall to `auto` →
+   `position: fixed` with all offsets `auto` places the popup at its
+   fixed-layer static position, which for a DOM child of the inline
+   `.tip` wrapper lands the popup adjacent to the trigger. Legible,
+   never hidden — the constraint. z-order (40) stays below `.scrim`
+   (100) / `.modal` (101) so tips never draw over open modals. */
 .tip {
   position: relative;
   display: inline-flex;
   align-items: center;
+  /* Scope the anchor name so per-page duplicate `anchor-name` idents on
+     every trigger resolve locally (spec: `anchor-scope` limits matches to
+     descendant elements). Without this, every `.tip-pop` would race to
+     the first `.tip-dot` in tree order. */
+  anchor-scope: --tip-anchor;
 }
 .tip-dot {
   border: 0;
@@ -983,6 +1006,9 @@ body.rm .sweeper {
   line-height: 1;
   padding: 0 var(--s1);
   font-family: var(--font-mono);
+  /* Anchor target for `.tip-pop`. Scoped by `.tip` above so each popup
+     finds its own trigger. Property is inert in non-supporting engines. */
+  anchor-name: --tip-anchor;
 }
 .tip-dot:hover,
 .tip-dot:focus-visible {
@@ -994,9 +1020,21 @@ body.rm .sweeper {
   border-radius: var(--r-sm);
 }
 .tip-pop {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 0;
+  /* `position: fixed` escapes any ancestor `overflow` clip (the Shipyard
+     columns clip absolutely-positioned descendants; that clip is why the
+     tip was invisible). Containing block becomes the initial containing
+     block / viewport. There is no transformed / filtered / will-change
+     ancestor between `.tip` and the viewport in any current consumer
+     (Shipyard columns/panels stack; the Tactical `.hud` chain sits in a
+     different subtree from the tips this primitive is planned for). */
+  position: fixed;
+  position-anchor: --tip-anchor;
+  /* Above the ⓘ, 6px gap. `bottom: anchor(top)` sets the popup's bottom
+     edge to the anchor's top; +6px lifts it that much higher. `left`
+     aligns to the anchor's left edge (matches the previous `left: 0` in
+     the absolute layout). */
+  bottom: calc(anchor(--tip-anchor top) + 6px);
+  left: anchor(--tip-anchor left);
   z-index: 40;
   min-width: 180px;
   max-width: 280px;
