@@ -18,12 +18,9 @@ name: CI
 #                                 the same set the workflow runs).
 #
 # This workflow invokes those halves so the local hook and CI cannot drift.
-#
-# Later features append the remaining architecture §11 jobs:
-#
-#   TODO(deployment): add the Pages job — actions/upload-pages-artifact +
-#     actions/deploy-pages on `main` (§11 step 6). Adding hard remote
-#     enforcement of this workflow is a separate GitHub repository-rule change.
+# Pull requests stop after verification. A push to `main` additionally uploads
+# the verified `dist/` output and deploys it to the protected `github-pages`
+# environment (§11 step 6).
 
 on:
   push:
@@ -31,10 +28,16 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   build:
     name: verify:pages:node (typecheck / lint / test / build)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
     steps:
       - uses: actions/checkout@v4
 
@@ -49,6 +52,17 @@ jobs:
 
       - name: Verify Pages readiness (Node half)
         run: npm run verify:pages:node
+
+      - name: Configure GitHub Pages
+        if: github.event_name == 'push'
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages artifact
+        if: github.event_name == 'push'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: ./dist
+          include-hidden-files: true
 
   cross-engine-determinism:
     # Architecture §7.5 row 4: Chromium + Firefox + WebKit must produce
@@ -76,3 +90,22 @@ jobs:
 
       - name: Verify Pages readiness (browser half)
         run: npm run verify:pages:browsers
+
+  deploy-pages:
+    name: Publish GitHub Pages
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build, cross-engine-determinism]
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
