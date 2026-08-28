@@ -14,7 +14,9 @@ import type {
   SlotType,
 } from '../../../catalog/index.js';
 import type { Build } from '../../../domain/index.js';
-import { SLOT_ORDER, SlotTag } from '../../components/index.js';
+import { InfoTip, SLOT_ORDER, SlotTag } from '../../components/index.js';
+
+import { infoFor } from './catalogInfo.js';
 
 interface SlotBenchProps {
   readonly catalog: Catalog;
@@ -129,6 +131,31 @@ function OneBay(props: {
           ·
         </span>
       )}
+      {/*
+        Filled bays carry the same InfoTip the ComponentPicker rows do — a
+        fitted item explains itself in place, so a player scanning the
+        bench does not have to swap tabs to the catalog to recall what a
+        cryptic id means. Empty bays get no tip: the row's own copy
+        ("EMPTY BAY — LEGAL & CHEAPER") is its own explanation.
+        stopPropagation keeps a click on the tip glyph from bubbling to
+        the bay's onSelect (which would otherwise toggle the selection).
+      */}
+      {filled && bay.component !== undefined ? (
+        <span
+          onClick={(ev) => {
+            ev.stopPropagation();
+          }}
+          onKeyDown={(ev) => {
+            ev.stopPropagation();
+          }}
+          style="flex:none"
+        >
+          <InfoTip
+            id={`tip-bay-${bay.label}`}
+            label={infoFor(bay.component.id) ?? bay.component.name}
+          />
+        </span>
+      ) : null}
     </div>
   );
 }

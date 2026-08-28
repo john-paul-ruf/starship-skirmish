@@ -63,8 +63,20 @@ test.describe('shipyard — Flow 1 (design §5)', () => {
     // The first weapon in the list is picked. `componentsForSlot` returns
     // weapons ordered by ordinal (catalog v1 lock), so this id is stable
     // across catalog v1.
-    const weaponRows = page.locator('[data-testid^="shipyard-component-wpn-"]');
+    const weaponRows = page.locator('[data-testid="shipyard-component-wpn-pulse-array"]');
     await expect(weaponRows.first()).toBeVisible();
+
+    // Playtest-feedback-03 · S03: the row carries an accessible info
+    // affordance AND a differentiator tag so items read apart without
+    // relying on the shared SlotTag glyph. Best-effort — a green here
+    // proves both playtest asks landed on the picker.
+    const firstRowTipPop = page.locator('#tip-wpn-pulse-array');
+    await expect(firstRowTipPop).toHaveAttribute('role', 'tooltip');
+    await expect(firstRowTipPop).not.toHaveText('');
+    await expect(
+      page.getByTestId('shipyard-component-wpn-pulse-array-tag'),
+    ).toBeVisible();
+
     await weaponRows.first().click();
 
     // The point total moved (chassis + first weapon).

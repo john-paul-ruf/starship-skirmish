@@ -19,7 +19,9 @@ import type {
   WeaponDef,
 } from '../../../catalog/index.js';
 import type { Build } from '../../../domain/index.js';
-import { SlotTag } from '../../components/index.js';
+import { InfoTip, SlotTag } from '../../components/index.js';
+
+import { diffTagFor, infoFor } from './catalogInfo.js';
 
 interface ComponentPickerProps {
   readonly catalog: Catalog;
@@ -100,15 +102,36 @@ export function ComponentPicker(props: ComponentPickerProps) {
       {components.map((c) => {
         const isFitted = fittedIds.has(c.id);
         const isBayFit = bayFittedId === c.id;
+        const disabled = targetBay === null;
+        const tag = diffTagFor(c.id);
+        // The row is a `<div role="button">` (not a real <button>) so the
+        // InfoTip's own <button> can nest inside as valid HTML — the tip
+        // is a focusable child; nested <button> elements are illegal. The
+        // SlotBench bay uses the same pattern (its clear-bay button sits
+        // inside a `role="button"` div). Keyboard: Enter / Space fires
+        // onPick, and the disabled state maps to aria-disabled + no click
+        // handlers + tabIndex=-1 so the row drops out of tab order until
+        // a bay is selected.
         return (
-          <button
+          <div
             key={c.id}
-            type="button"
             class={isBayFit ? 'row is-selected' : 'row'}
+            role="button"
             aria-current={isBayFit ? 'true' : undefined}
+            aria-disabled={disabled ? 'true' : undefined}
+            tabIndex={disabled ? -1 : 0}
             data-testid={`shipyard-component-${c.id}`}
-            disabled={targetBay === null}
-            onClick={() => onPick(c)}
+            onClick={disabled ? undefined : () => onPick(c)}
+            onKeyDown={
+              disabled
+                ? undefined
+                : (ev) => {
+                    if (ev.key === 'Enter' || ev.key === ' ') {
+                      ev.preventDefault();
+                      onPick(c);
+                    }
+                  }
+            }
             style="width:100%;text-align:left"
           >
             <SlotTag type={slotType} />
@@ -123,6 +146,15 @@ export function ComponentPicker(props: ComponentPickerProps) {
                     ▸ FITTED
                   </span>
                 ) : null}
+                {tag !== undefined ? (
+                  <span
+                    class="chip"
+                    style="height:15px;padding:0 6px;font-size:9px;margin-left:6px"
+                    data-testid={`shipyard-component-${c.id}-tag`}
+                  >
+                    {tag}
+                  </span>
+                ) : null}
               </span>
               <span class="mono-xs" style="display:block">
                 {statsLine(c)} · {c.id}
@@ -135,7 +167,28 @@ export function ComponentPicker(props: ComponentPickerProps) {
               {c.pointCost}
               <span class="mono-xs c-dim">pt</span>
             </span>
-          </button>
+            {/*
+              Wrapping the InfoTip in a stopPropagation span keeps a click
+              on the tip glyph from bubbling up to the row's onClick (which
+              would otherwise fire onPick). The tip's own reveal is
+              CSS-only (`:hover` / `:focus-within`), so the tip stays fully
+              functional under the stopPropagation guard.
+            */}
+            <span
+              onClick={(ev) => {
+                ev.stopPropagation();
+              }}
+              onKeyDown={(ev) => {
+                ev.stopPropagation();
+              }}
+              style="flex:none"
+            >
+              <InfoTip
+                id={`tip-${c.id}`}
+                label={infoFor(c.id) ?? c.name}
+              />
+            </span>
+          </div>
         );
       })}
     </div>

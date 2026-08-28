@@ -8,7 +8,9 @@
 // The parent (`Shipyard.tsx`) owns the working-Build signal.
 
 import type { ChassisClass, ChassisDef } from '../../../catalog/index.js';
+import { InfoTip } from '../../components/index.js';
 
+import { infoFor } from './catalogInfo.js';
 import type { ChassisGroup } from './model.js';
 
 // Decorative class-letter tag (mock uses the `.tag-slot` visual language for
@@ -75,14 +77,25 @@ export function ChassisPicker(props: ChassisPickerProps) {
           {group.chassis.map((chassis) => {
             const isSelected = chassis.id === selectedId;
             const glyph = CLASS_GLYPH[group.classId];
+            // As in ComponentPicker: the row is a `<div role="button">` so
+            // the InfoTip's own <button> can nest inside as valid HTML
+            // (nested <button> is illegal). Keyboard: Enter / Space fires
+            // onPick, matching the previous button semantics.
             return (
-              <button
+              <div
                 key={chassis.id}
-                type="button"
                 class={isSelected ? 'row is-selected' : 'row'}
+                role="button"
                 aria-current={isSelected ? 'true' : undefined}
+                tabIndex={0}
                 data-testid={`shipyard-chassis-${chassis.id}`}
                 onClick={() => onPick(chassis)}
+                onKeyDown={(ev) => {
+                  if (ev.key === 'Enter' || ev.key === ' ') {
+                    ev.preventDefault();
+                    onPick(chassis);
+                  }
+                }}
                 style="width:100%;text-align:left"
               >
                 <span
@@ -105,7 +118,25 @@ export function ChassisPicker(props: ChassisPickerProps) {
                   {chassis.pointCost}
                   <span class="mono-xs c-dim">pt</span>
                 </span>
-              </button>
+                {/*
+                  See ComponentPicker's InfoTip block: stopPropagation
+                  keeps a tip-glyph click from bubbling up to onPick.
+                */}
+                <span
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                  }}
+                  onKeyDown={(ev) => {
+                    ev.stopPropagation();
+                  }}
+                  style="flex:none"
+                >
+                  <InfoTip
+                    id={`tip-${chassis.id}`}
+                    label={infoFor(chassis.id) ?? chassis.name}
+                  />
+                </span>
+              </div>
             );
           })}
         </div>
