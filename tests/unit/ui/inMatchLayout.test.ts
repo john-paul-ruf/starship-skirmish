@@ -10,6 +10,9 @@
 // Assertions land per checkpoint:
 //   CP1 — shell frame + App.tsx route toggle
 //   CP2 — tactical screen column scroll rules
+//   playtest-feedback-03 SESSION-02 CP3 — Move screen exposes the persistent
+//     combat-log strip within the fixed frame (log slot is `flex: none`, panel
+//     owns its own bounded scroll, so viewport/plotter never leave 100vh).
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -163,6 +166,46 @@ describe('CP2 tactical screens — side panels scroll, middle stays put', () => 
       expect(tacticalAttack).toMatch(
         /\.ta-roster-scroll[^`]*overflow-y:\s*auto/,
       );
+    },
+  );
+
+  // ---- playtest-feedback-03 SESSION-02 CP3 --------------------------------
+  // Owner playtest FB2 — "where is my combat log — should be visible at all
+  // times." The Move screen now mounts the shared CombatLogPanel; these
+  // assertions lock the placement so a future edit that pushes it outside the
+  // fixed frame (or drops it entirely) fails the unit build.
+
+  it(
+    'TacticalMove: mounts the shared CombatLogPanel from tacticalAttack (cross-screen read)',
+    () => {
+      // Import wiring — no extraction, no barrel churn (SESSION-01 owns
+      // the physical files; SESSION-02 reads them).
+      expect(tacticalMove).toMatch(
+        /import \{ CombatLogPanel \} from '\.\/tacticalAttack\/CombatLogPanel\.js'/,
+      );
+      expect(tacticalMove).toMatch(
+        /import \{ liveLogRows \} from '\.\/tacticalAttack\/model\.js'/,
+      );
+      expect(tacticalMove).toMatch(
+        /import \{ nameByBodyId \} from '\.\/postMatch\/model\.js'/,
+      );
+      // The strip is mounted in the JSX tree.
+      expect(tacticalMove).toContain('<CombatLogPanel');
+    },
+  );
+
+  it(
+    'TacticalMove: log slot is flex:none so the fixed-frame viewport/plotter never lose their space',
+    () => {
+      // The scoped rule that pins the strip's row: `flex: none` — grow/shrink
+      // both disabled, so the strip is a passive sibling in the flex column
+      // and cannot steal from `.tm-plan-body` (scrolling) or the CommitBar.
+      expect(tacticalMove).toMatch(/\.tm-log-slot[^`]*flex:\s*none/);
+      // The strip lives inside `.tm-plan`, which is a flex-column child of
+      // `.tm-layout` — itself flex-inside-`.tm-shell` (the 100vh frame set by
+      // playtest-feedback-02 CP1). No structural rewire; only additive rules.
+      expect(tacticalMove).toMatch(/class="tm-plan panel"/);
+      expect(tacticalMove).toMatch(/class="tm-log-slot"/);
     },
   );
 });
