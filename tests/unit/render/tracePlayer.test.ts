@@ -762,3 +762,160 @@ describe('missile tracers in playMovement (CP2)', () => {
     expect(fake.positions.get(1)).toEqual({ x: 30, y: 0, z: 0 });
   });
 });
+
+// ---- CP3: intercept read in the movement beat --------------------------------
+
+describe('intercept FX in playMovement (CP3)', () => {
+  // Extended fake — ships have a real position map so the intercept lookup finds
+  // the defender's world-space coordinates. Missile bodies still travel through
+  // keyframes exactly like CP2's tracer test.
+  interface MoveFakeView extends FakeView {
+    setShipPosition(id: number, at: { x: number; y: number; z: number }): void;
+  }
+  const makeMoveFake = (): MoveFakeView => {
+    const shipXY = new Map<number, { x: number; y: number; z: number }>();
+    const positions = new Map<number, { x: number; y: number; z: number }>();
+    const opacities = new Map<number, number>();
+    const hazardSyncs: number[] = [];
+    const state = { renderCount: 0 };
+    const view = {
+      scene: {
+        context: { scene: { add: vi.fn(), remove: vi.fn() } },
+        ships: {
+          setPosition: (id: number, x: number, y: number, z: number) => {
+            positions.set(id, { x, y, z });
+            shipXY.set(id, { x, y, z });
+          },
+          setOpacity: (id: number, alpha: number) => {
+            opacities.set(id, alpha);
+          },
+          positionOf: (id: number) => shipXY.get(id) ?? null,
+        },
+        hazards: {
+          sync: (inputs: readonly unknown[]) => {
+            hazardSyncs.push(inputs.length);
+          },
+        },
+        render: () => {
+          state.renderCount += 1;
+        },
+      },
+    } as unknown as TacticalView;
+    return {
+      view,
+      positions,
+      opacities,
+      hazardSyncs,
+      get renderCount() {
+        return state.renderCount;
+      },
+      setShipPosition: (id, at) => {
+        shipXY.set(id, at);
+      },
+    };
+  };
+
+  const interceptEntry = (defenderId: number, missileId: number): CombatLogEntry => ({
+    turn: 1,
+    beat: 'movement',
+    source: 'weapon',
+    sourceId: defenderId,
+    targetId: missileId,
+    result: 'intercept',
+    chance: 0.6,
+    roll: 0,
+    damage: 0,
+    shieldBefore: 0,
+    shieldAfter: 0,
+    hullBefore: 0,
+    hullAfter: 0,
+  });
+
+  const recordWithIntercept = (): MovementBeatRecord => ({
+    subStepCount: 2,
+    keyframes: [
+      [ship(1, 0), missile(9, 50, 40)],
+      [ship(1, 10), missile(9, 100, 40)],
+      [ship(1, 20), missile(9, 150, 40)],
+    ],
+    contacts: [],
+    log: [interceptEntry(1, 9)],
+    destroyed: [],
+    removedHazardIds: [],
+  });
+
+  it('a record with an intercept entry still resolves cleanly (defender pos known)', () => {
+    const sched = new FakeScheduler();
+    const fake = makeMoveFake();
+    fake.setShipPosition(1, { x: 0, y: 0, z: 0 });
+    const onDone = vi.fn();
+    attachTracePlayer(fake.view).playMovement(recordWithIntercept(), {
+      durationMs: 100,
+      clock: sched.clock,
+      raf: sched.raf,
+      cancelRaf: sched.cancel,
+      onDone,
+    });
+    sched.runToEnd(20);
+    expect(onDone).toHaveBeenCalledTimes(1);
+    // Missile still routes through hazards; ship path unchanged by intercept FX.
+    expect(fake.hazardSyncs.length).toBeGreaterThan(0);
+    expect(fake.positions.get(1)).toEqual({ x: 20, y: 0, z: 0 });
+  });
+
+  it('an intercept whose defender has no known position is silently skipped', () => {
+    // makeInterceptFx returns null when defender lookup fails — regression guard.
+    const sched = new FakeScheduler();
+    const fake = makeMoveFake();
+    // Do NOT set ship position for id 1 → positionOf(1) returns null.
+    const onDone = vi.fn();
+    attachTracePlayer(fake.view).playMovement(recordWithIntercept(), {
+      durationMs: 100,
+      clock: sched.clock,
+      raf: sched.raf,
+      cancelRaf: sched.cancel,
+      onDone,
+    });
+    sched.runToEnd(20);
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+
+  it('skip() with an intercept lands the same final state as a full play (FR-19)', () => {
+    const runFull = () => {
+      const sched = new FakeScheduler();
+      const fake = makeMoveFake();
+      fake.setShipPosition(1, { x: 0, y: 0, z: 0 });
+      const onDone = vi.fn();
+      attachTracePlayer(fake.view).playMovement(recordWithIntercept(), {
+        durationMs: 100,
+        clock: sched.clock,
+        raf: sched.raf,
+        cancelRaf: sched.cancel,
+        onDone,
+      });
+      sched.runToEnd(20);
+      return { onDone, sched, fake };
+    };
+    const runSkip = () => {
+      const sched = new FakeScheduler();
+      const fake = makeMoveFake();
+      fake.setShipPosition(1, { x: 0, y: 0, z: 0 });
+      const onDone = vi.fn();
+      attachTracePlayer(fake.view)
+        .playMovement(recordWithIntercept(), {
+          durationMs: 100,
+          clock: sched.clock,
+          raf: sched.raf,
+          cancelRaf: sched.cancel,
+          onDone,
+        })
+        .skip();
+      return { onDone, sched, fake };
+    };
+    const full = runFull();
+    const skip = runSkip();
+    expect(full.onDone).toHaveBeenCalledTimes(1);
+    expect(skip.onDone).toHaveBeenCalledTimes(1);
+    expect(full.fake.positions.get(1)).toEqual(skip.fake.positions.get(1));
+  });
+});

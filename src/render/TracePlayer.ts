@@ -277,9 +277,49 @@ export const attachTracePlayer = (view: TacticalView): TracePlayer => {
       tracerGroup.clear();
     };
 
+    // CP3 — Intercept read. Movement-beat log entries with `result === 'intercept'`
+    // record a successful PD kill: sourceId is the defending ship, targetId is the
+    // (now-removed) missile body. Draw a short cyan tracer defender→intercept-point
+    // and a cyan spark at the intercept point so "my missile got shot down" is legible.
+    // Intercept point = the missile's LAST-known keyframe position (missiles vanish
+    // at the end of the beat; the last keyframe carrying the id is our best proxy).
+    const intercepts: InterceptFx[] = [];
+    const interceptGroup = new Group();
+    for (const entry of record.log) {
+      if (entry.result !== 'intercept') continue;
+      const defender = view.scene.ships.positionOf(entry.sourceId);
+      if (defender === null) continue;
+      let missilePos: Vec3 | null = null;
+      for (let i = keyframes.length - 1; i >= 0; i -= 1) {
+        const frame = keyframes[i]!;
+        for (const b of frame) {
+          if (b.id === entry.targetId && b.kind === 'missile') {
+            missilePos = b.position;
+            break;
+          }
+        }
+        if (missilePos !== null) break;
+      }
+      if (missilePos === null) continue;
+      const fx = makeInterceptFx(
+        { x: defender.x, y: defender.y, z: defender.z },
+        missilePos,
+      );
+      intercepts.push(fx);
+      interceptGroup.add(fx.object);
+    }
+    if (interceptGroup.children.length > 0) scene.add(interceptGroup);
+
+    const disposeIntercepts = (): void => {
+      scene.remove(interceptGroup);
+      for (const fx of intercepts) fx.dispose();
+      interceptGroup.clear();
+    };
+
     const cleanupAll = (): void => {
       disposeFlashes();
       disposeTracers();
+      disposeIntercepts();
     };
 
     // S01: record one trail point per NEW keyframe transition so a skip and a full
@@ -328,6 +368,9 @@ export const attachTracePlayer = (view: TacticalView): TracePlayer => {
           if (tracer === undefined) continue;
           tracer.updateAt(b.position, b.velocity, b.alpha);
         }
+        // Intercept FX pulse in a short window centered around mid-beat — approximates
+        // the moment the PD burst catches the missile. Transient; fades to 0 by end.
+        for (const fx of intercepts) fx.renderAt(tNorm);
         view.scene.render();
       },
       cleanup: cleanupAll,
@@ -638,6 +681,93 @@ const makeMissileTracer = (): MissileTracerFx => {
       headMat.dispose();
       tailGeom.dispose();
       tailMat.dispose();
+    },
+  };
+};
+
+// ---- Intercept FX (movement beat CP3) ----------------------------------------
+
+/** PD intercept cyan — the same hue the beam palette uses for `result: 'intercept'`. */
+const INTERCEPT_COLOR = 0x6bd7ff;
+/** Peak time within the movement beat when the intercept flashes — mid-beat. */
+const INTERCEPT_PEAK = 0.5;
+/** Half-width (in tNorm) of the intercept pulse window. */
+const INTERCEPT_HALF_WINDOW = 0.15;
+const INTERCEPT_TRACER_LINEWIDTH = 1.4;
+/** Additional-scale for the intercept spark (world units). Legibility choice. */
+const INTERCEPT_SPARK_SCALE = 8;
+
+/** A per-intercept FX bundle: a defender→missile tracer + a spark at the intercept point. */
+interface InterceptFx extends FxHandle {
+  renderAt(tNorm: number): void;
+}
+
+/**
+ * Triangular pulse peaking at `INTERCEPT_PEAK`, width `2 · INTERCEPT_HALF_WINDOW`.
+ * Returns 0 outside the window, 1 at the peak. Used for both tracer and spark alpha.
+ */
+const interceptPulse = (tNorm: number): number => {
+  const dist = Math.abs(tNorm - INTERCEPT_PEAK);
+  if (dist >= INTERCEPT_HALF_WINDOW) return 0;
+  return 1 - dist / INTERCEPT_HALF_WINDOW;
+};
+
+const makeInterceptFx = (defender: Vec3, missile: Vec3): InterceptFx => {
+  const group = new Group();
+
+  const tracerGeom = new LineGeometry();
+  tracerGeom.setPositions([
+    defender.x,
+    defender.y,
+    defender.z,
+    missile.x,
+    missile.y,
+    missile.z,
+  ]);
+  const tracerMat = new LineMaterial({
+    color: INTERCEPT_COLOR,
+    linewidth: INTERCEPT_TRACER_LINEWIDTH,
+    transparent: true,
+    opacity: 0,
+    depthTest: true,
+  });
+  const tracer = new Line2(tracerGeom, tracerMat);
+  tracer.visible = false;
+  group.add(tracer);
+
+  const sparkMat = new SpriteMaterial({
+    color: new Color(INTERCEPT_COLOR),
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: AdditiveBlending,
+  });
+  const spark = new Sprite(sparkMat);
+  spark.position.set(missile.x, missile.y, missile.z);
+  spark.scale.setScalar(INTERCEPT_SPARK_SCALE);
+  spark.visible = false;
+  group.add(spark);
+
+  return {
+    object: group,
+    renderAt: (tNorm) => {
+      const pulse = interceptPulse(tNorm);
+      if (pulse <= 0.001) {
+        tracer.visible = false;
+        spark.visible = false;
+        tracerMat.opacity = 0;
+        sparkMat.opacity = 0;
+        return;
+      }
+      tracerMat.opacity = pulse * 0.75;
+      sparkMat.opacity = pulse;
+      tracer.visible = true;
+      spark.visible = true;
+    },
+    dispose: () => {
+      tracerGeom.dispose();
+      tracerMat.dispose();
+      sparkMat.dispose();
     },
   };
 };
