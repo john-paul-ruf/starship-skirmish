@@ -17,12 +17,13 @@ import type {
   HitChanceBreakdown,
 } from '../../../sim/index.js';
 import { distance } from '../../../sim/mathx/index.js';
-import { Select } from '../../components/index.js';
+import { Meter, Select } from '../../components/index.js';
 import type { SelectOption } from '../../components/index.js';
 
 import {
   enemyShips,
   friendlyShips,
+  hitChanceBarFill,
   hitChanceTone,
   liveFireSlots,
   positionOf,
@@ -93,18 +94,22 @@ interface ShipGroupProps extends WeaponBenchProps {
 function ShipGroup(props: ShipGroupProps) {
   const { shooter } = props;
   const slots = liveFireSlots(shooter);
+  const assigned = countAssigned(props.assignments, shooter.bodyId);
   return (
-    <section class="panel-in" style="padding:var(--s3)">
-      <div style="display:flex;align-items:center;gap:var(--s2)">
-        <span class="grow truncate" style="font-weight:700;color:var(--ink-hi);letter-spacing:.04em">
-          {shooter.name}
+    <section class="ta-ship-group panel-in" data-testid="ship-group" data-ship-id={String(shooter.bodyId)}>
+      <header class="ta-ship-hd">
+        <span class="ta-ship-name grow truncate">{shooter.name}</span>
+        <span class="mono-xs c-dim ta-ship-class">
+          {shooter.chassisClass.toUpperCase()}
         </span>
-        <span class="mono-xs">{`${shooter.chassisClass.toUpperCase()} · ${String(slots.length)} FIRE SLOTS`}</span>
-      </div>
+        <span class={`chip${assigned === slots.length && slots.length > 0 ? ' chip-cyan' : ''}`}>
+          {`${String(assigned)} / ${String(slots.length)}`}
+        </span>
+      </header>
       {slots.length === 0 ? (
-        <div class="mono-xs c-dim" style="margin-top:6px">ALL WEAPONS DESTROYED — HOLDING.</div>
+        <div class="mono-xs c-dim ta-ship-empty">ALL WEAPONS DESTROYED — HOLDING.</div>
       ) : (
-        <div class="stack" style="margin-top:8px">
+        <div class="ta-ship-cards">
           {slots.map((slot) => (
             <FireRow key={slotKey(slot)} slot={slot} {...props} />
           ))}
@@ -113,6 +118,19 @@ function ShipGroup(props: ShipGroupProps) {
     </section>
   );
 }
+
+/** Count the assignments staged against one shooter's live slots — feeds the
+ *  per-ship `N / M` chip in the ShipGroup header (mock screenshot 7 shows the
+ *  same badge pattern). Pure DOM presentation of the existing assignments
+ *  map; never a gate on commit. */
+const countAssigned = (
+  assignments: ReadonlyMap<string, Assignment>,
+  shooterId: BodyId,
+): number => {
+  let n = 0;
+  for (const a of assignments.values()) if (a.shooterId === shooterId) n += 1;
+  return n;
+};
 
 interface FireRowProps extends ShipGroupProps {
   readonly slot: FireSlot;
@@ -190,30 +208,54 @@ function FireRow(props: FireRowProps) {
   // any nested control — no per-control wiring.
   const onSlotFocusIn = (): void => onSelectSlot?.(slot);
 
+  // playtest-feedback-05 SESSION-04 CP3 — the card modifier state:
+  //   * `is-msl` — missile rack (red left border)
+  //   * `is-set` — an assigned weapon target (cyan left border)
+  //   * `is-oor` — assigned but out-of-range (dashed border, same red hint)
+  // Default (weapon, no target) keeps the neutral `.ta-card` border.
+  const cardMod = isMissile
+    ? ' is-msl'
+    : outOfRange
+      ? ' is-oor'
+      : assignment !== undefined
+        ? ' is-set'
+        : '';
+
+  // Absolute-range readout the mock's card carries below the picker:
+  // `RANGE {targetDistance} / {weapon.range}`. Both numbers are already in
+  // hand (the picker suffix uses the same distance). We only compute it when
+  // there IS a target — otherwise the mock reads the weapon's range verbatim
+  // in the SLOT line below.
+  const targetPos = targetView !== undefined ? positionOf(view, targetView.bodyId) : undefined;
+  const currentDistance =
+    shooterPos !== undefined && targetPos !== undefined
+      ? Math.round(distance(shooterPos, targetPos))
+      : null;
+
   return (
     <div
+      class={`ta-card${cardMod}`}
       data-testid="weapon-row"
       data-slot={slotKey(slot)}
       onFocusIn={onSlotFocusIn}
-      style={`border:1px solid var(--line);border-left:2px solid ${isMissile ? 'var(--red)' : 'var(--line-hot)'};border-radius:var(--r);padding:var(--s2) var(--s3)`}
     >
-      <div style="display:flex;align-items:center;gap:var(--s2)">
+      <div class="ta-card-hd">
         <span class={`tag-slot ${isMissile ? 'tag-missile' : 'tag-weapon'}`}>{label}</span>
-        <span class="grow truncate" style="font-weight:700;color:var(--ink-hi);letter-spacing:.06em">
+        <span class="ta-card-name grow truncate">
           {isMissile ? 'MISSILE RACK' : 'WEAPON'}
         </span>
         {isMissile ? (
           <span class="mono-xs">{`AMMO ${String(shooter.missileAmmo[slot.index] ?? 0)}`}</span>
         ) : (
-          <span class={`chip${outOfRange ? ' chip-red' : ''}`}>
+          <span class={`chip${outOfRange ? ' chip-red' : assignment ? ' chip-green' : ''}`}>
             {outOfRange ? 'OUT OF RANGE' : assignment ? 'ASSIGNED' : 'HOLD'}
           </span>
         )}
       </div>
 
       {!isMissile && weapon !== undefined ? (
-        <div class="mono-xs c-dim" style="margin:3px 0 6px">
-          {`RANGE ${String(weapon.range)} · DMG ${String(weapon.damage)} ×${String(weapon.shotsPerTurn)} SHOTS · ACC ${weapon.accuracy.toFixed(2)}`}
+        <div class="mono-xs c-dim ta-card-slot">
+          {`SLOT ${label} · RANGE ${String(weapon.range)} · DMG ${String(weapon.damage)} ×${String(weapon.shotsPerTurn)} SHOTS · ACC ${weapon.accuracy.toFixed(2)}`}
         </div>
       ) : null}
 
@@ -226,14 +268,21 @@ function FireRow(props: FireRowProps) {
 
       {!isMissile && targetView !== undefined ? (
         outOfRange ? (
-          <OutOfRange />
+          <OutOfRange
+            targetDistance={currentDistance}
+            weaponRange={weapon?.range}
+          />
         ) : (
-          <HitChance breakdown={hitChanceFor(shooter.bodyId, targetView.bodyId, slot.index)} />
+          <HitChance
+            breakdown={hitChanceFor(shooter.bodyId, targetView.bodyId, slot.index)}
+            targetDistance={currentDistance}
+            weaponRange={weapon?.range}
+          />
         )
       ) : null}
 
       {isMissile ? (
-        <div class="mono-xs c-dim" style="margin-top:5px">
+        <div class="mono-xs c-dim ta-card-hint">
           NO TO-HIT ROLL — DETONATES ON CONTACT · AoE BLAST
         </div>
       ) : null}
@@ -253,24 +302,36 @@ function FireRow(props: FireRowProps) {
  * would refuse the shot (`weaponOutOfRange`). Text-first + `c-red` — never
  * colour alone (§1.1); the block spells out WHY (SHOT WILL NOT FIRE) so the
  * player can distinguish this from a hard-but-legal in-range 5% shot.
+ * playtest-feedback-05 SESSION-04 CP3 — surfaces the mock's absolute range
+ * readout too (`RANGE 412 / 260 · OUT`), so the player sees the numeric gap.
  */
-function OutOfRange() {
+interface OutOfRangeProps {
+  readonly targetDistance: number | null;
+  readonly weaponRange: number | undefined;
+}
+
+function OutOfRange(props: OutOfRangeProps) {
+  const { targetDistance, weaponRange } = props;
   return (
     <div
       data-testid="weapon-out-of-range"
       role="status"
-      style="margin-top:6px"
+      class="ta-hit"
     >
-      <div style="display:flex;align-items:baseline;justify-content:space-between">
+      <div class="ta-hit-hd">
         <span class="t-label">HIT CHANCE</span>
         <span
-          class="t-num c-red"
-          style="font-size:14px;font-weight:700;letter-spacing:.08em"
+          class="t-num c-red ta-hit-num-oor"
         >
           OUT OF RANGE
         </span>
       </div>
-      <div class="mono-xs c-red" style="margin-top:5px">
+      {targetDistance !== null && weaponRange !== undefined ? (
+        <div class="mono-xs c-red ta-hit-range">
+          {`RANGE ${String(targetDistance)} / ${String(weaponRange)} · OUT`}
+        </div>
+      ) : null}
+      <div class="mono-xs c-red ta-hit-hint">
         SHOT WILL NOT FIRE · MOVE CLOSER OR RE-TARGET.
       </div>
     </div>
@@ -279,30 +340,52 @@ function OutOfRange() {
 
 interface HitChanceProps {
   readonly breakdown: HitChanceBreakdown;
+  /** Distance shooter → chosen target (world units), for the mock's absolute
+   *  range readout. `null` when either position is missing. */
+  readonly targetDistance: number | null;
+  /** Weapon's engagement radius (world units) — pairs with `targetDistance`
+   *  to render `RANGE {d} / {r}`. */
+  readonly weaponRange: number | undefined;
 }
 
 /**
  * The hit-chance readout. Every number is a field of the supplied breakdown —
  * this component multiplies nothing. Text-first (never colour-only): the final
  * % is spelled out, and each factor names its sign.
+ * playtest-feedback-05 SESSION-04 CP3 — the mock's `.acard` treatment adds an
+ * absolute range readout (`RANGE 118 / 260`) between the % and the factor
+ * lines, and a `.meter` bar whose width is `breakdown.final` normalised
+ * against 1.0. Presentation transforms of published values — the `%` and the
+ * `range factor` still come straight off the breakdown; no formula lives here
+ * (arch §13.3).
  */
 function HitChance(props: HitChanceProps) {
-  const b = props.breakdown;
+  const { breakdown: b, targetDistance, weaponRange } = props;
   return (
-    <div style="margin-top:6px">
-      <div style="display:flex;align-items:baseline;justify-content:space-between">
+    <div class="ta-hit">
+      <div class="ta-hit-hd">
         <span class="t-label">HIT CHANCE</span>
         <span
-          class={`t-num ${hitChanceTone(b.final)}`}
+          class={`t-num ${hitChanceTone(b.final)} ta-hit-num`}
           data-testid="hitchance-final"
-          style="font-size:20px;font-weight:700"
         >
           {pct(b.final)}
         </span>
       </div>
-      <div class="mono-xs" style="margin-top:5px;line-height:1.7">
+      <Meter
+        value={b.final}
+        max={1}
+        fill={hitChanceBarFill(b.final)}
+        class="ta-hit-meter"
+        aria-label={`Hit chance ${pct(b.final)}`}
+      />
+      <div class="mono-xs ta-hit-factors">
+        {targetDistance !== null && weaponRange !== undefined ? (
+          <div>{`RANGE ${String(targetDistance)} / ${String(weaponRange)} · ${signed(b.rangeFactor - 1)}`}</div>
+        ) : (
+          <div>{`RANGE · ${signed(b.rangeFactor - 1)}`}</div>
+        )}
         <div>{`BASE ACC ${b.base.toFixed(2)}`}</div>
-        <div>{`RANGE · ${signed(b.rangeFactor - 1)}`}</div>
         <div>{`TGT VELOCITY · ${signed(b.velocityFactor - 1)}`}</div>
         <div>{`TGT EVASION · ${signed(b.evasionFactor - 1)}`}</div>
       </div>

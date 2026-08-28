@@ -534,6 +534,49 @@ const TA_STYLES = `
   .ta-resolve-note { flex: none; }
   .ta-no-fire-note { flex: none; }
 
+  /* playtest-feedback-05 SESSION-04 CP3 — ship-by-ship bench parity with the
+     endorsed mock (mocks/tactical-attack.html screenshot 7). Every rule is
+     scoped inside TA_STYLES so no shared stylesheet edit touches other
+     screens; class names namespace-prefix with \`ta-\` to avoid collisions.
+     The mock's \`.acard\` treatment lives here as \`.ta-card\` with a colour-
+     coded left border driven by state modifiers (\`is-set\` cyan for assigned,
+     \`is-msl\` red for missile racks, \`is-oor\` dashed red for out-of-range).
+     Hit chance renders both the % text (\`.ta-hit-num\`) and a Meter bar
+     (\`.ta-hit-meter\`) — the two agree because \`hitChanceBarFill\` mirrors
+     \`hitChanceTone\` thresholds exactly. No to-hit math lives in the CSS. */
+  .ta-ship-group { padding: var(--s3); display: flex; flex-direction: column;
+                   gap: var(--s2); }
+  .ta-ship-hd { display: flex; align-items: center; gap: var(--s2); }
+  .ta-ship-name { font-weight: 700; color: var(--ink-hi); letter-spacing: .06em;
+                  font-size: 13px; }
+  .ta-ship-class { letter-spacing: .14em; }
+  .ta-ship-empty { margin-top: 6px; }
+  .ta-ship-cards { display: flex; flex-direction: column; gap: var(--s2);
+                   margin-top: var(--s2); }
+
+  .ta-card { border: 1px solid var(--line);
+             border-left: 2px solid var(--line-hot);
+             border-radius: var(--r);
+             padding: var(--s2) var(--s3);
+             background: var(--panel); }
+  .ta-card.is-msl { border-left-color: var(--red); }
+  .ta-card.is-set { border-left-color: var(--cyan); }
+  .ta-card.is-oor { border-left-color: var(--red); border-style: dashed; }
+  .ta-card-hd { display: flex; align-items: center; gap: var(--s2); }
+  .ta-card-name { font-weight: 700; color: var(--ink-hi); letter-spacing: .06em; }
+  .ta-card-slot { margin: 3px 0 6px; letter-spacing: .06em; }
+  .ta-card-hint { margin-top: 5px; }
+
+  .ta-hit { margin-top: 8px; }
+  .ta-hit-hd { display: flex; align-items: baseline;
+               justify-content: space-between; }
+  .ta-hit-num { font-size: 20px; font-weight: 700; line-height: 1; }
+  .ta-hit-num-oor { font-size: 14px; font-weight: 700; letter-spacing: .08em; }
+  .ta-hit-meter { margin-top: 5px; }
+  .ta-hit-factors { margin-top: 6px; line-height: 1.7; }
+  .ta-hit-range { margin-top: 5px; }
+  .ta-hit-hint { margin-top: 5px; }
+
   /* playtest-feedback-05 SESSION-04 CP2 (FB3 · D-IMMERSIVE-GRID-COLLAPSE) —
      "full-field" immersive mode. The scoped block collapses the two-column
      grid to a single track and hides every plan-time affordance except the

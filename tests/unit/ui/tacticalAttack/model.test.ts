@@ -17,6 +17,7 @@ import {
   fireSlotTotal,
   friendlyShips,
   GENERATOR_HINT,
+  hitChanceBarFill,
   hitChanceTone,
   liveFireSlots,
   rangePreviewFor,
@@ -653,6 +654,31 @@ describe('hitChanceTone', () => {
     expect(hitChanceTone(0)).toBe('c-red');
     expect(hitChanceTone(0.1)).toBe('c-red');
     expect(hitChanceTone(0.3999)).toBe('c-red');
+  });
+});
+
+describe('hitChanceBarFill (playtest-feedback-05 SESSION-04 CP3)', () => {
+  it('thresholds mirror hitChanceTone exactly (66 / 40 boundaries)', () => {
+    // The bar fill and the text tint must agree at every threshold so the
+    // meter and the number never contradict on a 66% / 40% edge.
+    expect(hitChanceBarFill(0.66)).toBe('ok');
+    expect(hitChanceBarFill(0.4)).toBe('dv');
+    expect(hitChanceBarFill(0.3999)).toBe('hot');
+  });
+
+  it('maps ≥ 0.66 → ok (green meter fill)', () => {
+    expect(hitChanceBarFill(0.8)).toBe('ok');
+    expect(hitChanceBarFill(1)).toBe('ok');
+  });
+
+  it('maps 0.4 ≤ x < 0.66 → dv (amber meter fill)', () => {
+    expect(hitChanceBarFill(0.5)).toBe('dv');
+    expect(hitChanceBarFill(0.6599)).toBe('dv');
+  });
+
+  it('maps < 0.4 → hot (red meter fill)', () => {
+    expect(hitChanceBarFill(0)).toBe('hot');
+    expect(hitChanceBarFill(0.1)).toBe('hot');
   });
 });
 

@@ -407,6 +407,18 @@ export const hitChanceTone = (final: number): 'c-green' | 'c-amber' | 'c-red' =>
   final >= 0.66 ? 'c-green' : final >= 0.4 ? 'c-amber' : 'c-red';
 
 /**
+ * Map a `HitChanceBreakdown.final` (0..1) to the `Meter` component's fill
+ * token (playtest-feedback-05 SESSION-04 CP3). Thresholds mirror
+ * `hitChanceTone` exactly so the readout tint and the bar fill agree on
+ * every threshold — a 66% shot reads green in BOTH channels. The bar itself
+ * is `<Meter value={b.final} max={1} fill={hitChanceBarFill(b.final)}/>`
+ * — a presentation transform of `breakdown.final`, NEVER a recomputed to-hit
+ * number (arch §13.3 stays `hitChanceFor`-only).
+ */
+export const hitChanceBarFill = (final: number): 'ok' | 'dv' | 'hot' =>
+  final >= 0.66 ? 'ok' : final >= 0.4 ? 'dv' : 'hot';
+
+/**
  * True when a chosen target sits BEYOND the shooter's weapon range — the
  * resolver refuses such a shot outright (`sim/rules/attack.ts` — `if (range >
  * weapon.range) continue;`), so the bench must announce it as OUT OF RANGE
