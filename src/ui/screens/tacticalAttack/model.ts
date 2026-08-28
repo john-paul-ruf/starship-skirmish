@@ -367,6 +367,36 @@ export const rangePreviewFor = (
 };
 
 /**
+ * Default engagement shell for a selected ship: its longest-range LIVE weapon
+ * (world units), centered on its post-movement position. Null for a missing,
+ * dead, or unselected ship, or a ship with no live weapon (missile-only or all
+ * weapons destroyed — a missile rack has no line-of-sight range envelope,
+ * mirroring `rangePreviewFor`). Computes NO to-hit number — hit chance stays
+ * single-sourced through `hitChanceFor` (arch §13.3). This is the ship-level
+ * default the screen shows before any weapon slot is focused; a focused slot's
+ * `rangePreviewFor` takes precedence (playtest-feedback-03 SESSION-01).
+ */
+export const shipRangePreview = (
+  view: BlindMatchView,
+  shipId: BodyId | null,
+): RangePreview | null => {
+  if (shipId === null) return null;
+  const ship = shipViewOf(view, shipId);
+  if (ship === undefined || ship.hull <= 0) return null;
+  const center = positionOf(view, shipId);
+  if (center === undefined) return null;
+  let maxRange: number | undefined;
+  ship.weaponAlive.forEach((alive, i) => {
+    if (!alive) return;
+    const range = ship.ship.weapons[i]?.range;
+    if (range !== undefined && (maxRange === undefined || range > maxRange)) {
+      maxRange = range;
+    }
+  });
+  return maxRange === undefined ? null : { center, radius: maxRange };
+};
+
+/**
  * Map a `HitChanceBreakdown.final` (0..1) to a semantic color-token class name.
  * The thresholds match `WeaponBench` verbatim so the bench readout and the
  * viewport overlay always agree. Maps only — never recomputes a to-hit number.

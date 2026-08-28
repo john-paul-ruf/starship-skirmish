@@ -21,6 +21,7 @@ import {
   liveFireSlots,
   rangePreviewFor,
   shieldReadout,
+  shipRangePreview,
   slotKey,
   toAttackPlans,
   type Assignment,
@@ -516,6 +517,59 @@ describe('rangePreviewFor', () => {
     expect(
       rangePreviewFor(viewNoBody, { shooterId: 1, kind: 'weapon', index: 0 }),
     ).toBeNull();
+  });
+});
+
+describe('shipRangePreview', () => {
+  const weapon = (over: Partial<SimWeapon> = {}): SimWeapon => ({
+    range: 240,
+    damage: 12,
+    shotsPerTurn: 1,
+    accuracy: 0.6,
+    ...over,
+  });
+  const shooter = shipView({
+    bodyId: 1,
+    fleetId: 0,
+    hull: 100,
+    ship: simShip({ weapons: [weapon({ range: 120 }), weapon({ range: 260 }), weapon({ range: 90 })] }),
+    weaponAlive: [true, false, true],
+  });
+  const view = viewOf(
+    [shooter, shipView({ bodyId: 9, fleetId: 0, hull: 0, ship: simShip({ weapons: [weapon()] }), weaponAlive: [true] })],
+    [body(1, at(-10, 0, 5)), body(9, at(50))],
+  );
+
+  it("returns the ship's post-movement position and its longest-range LIVE weapon", () => {
+    // W1 (range 120) and W3 (range 90) are live; W2 (range 260, the largest
+    // overall) is dead and must be excluded — max among LIVE weapons is 120.
+    const preview = shipRangePreview(view, 1);
+    expect(preview).not.toBeNull();
+    expect(preview?.center).toEqual({ x: -10, y: 0, z: 5 });
+    expect(preview?.radius).toBe(120);
+  });
+
+  it('returns null for a null selection', () => {
+    expect(shipRangePreview(view, null)).toBeNull();
+  });
+
+  it('returns null for an unknown/missing ship id', () => {
+    expect(shipRangePreview(view, 999)).toBeNull();
+  });
+
+  it('returns null for a dead ship (hull <= 0)', () => {
+    expect(shipRangePreview(view, 9)).toBeNull();
+  });
+
+  it('returns null for a ship with no live weapon', () => {
+    const noWeapons = shipView({ bodyId: 5, fleetId: 0, hull: 50, weaponAlive: [false, false] });
+    const v = viewOf([noWeapons], [body(5, at(1))]);
+    expect(shipRangePreview(v, 5)).toBeNull();
+  });
+
+  it('returns null when the ship view exists but its body has no position', () => {
+    const viewNoBody = viewOf([shooter], []);
+    expect(shipRangePreview(viewNoBody, 1)).toBeNull();
   });
 });
 

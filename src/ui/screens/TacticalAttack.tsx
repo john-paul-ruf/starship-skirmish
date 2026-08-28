@@ -44,6 +44,7 @@ import {
   liveLogRows,
   positionOf as positionOfInView,
   rangePreviewFor,
+  shipRangePreview,
   shipViewOf,
   slotKey,
   toAttackPlans,
@@ -245,7 +246,14 @@ export function TacticalAttack() {
   // currently interacting with (WeaponBench emits focus events to update it).
   // The shell hides on any degenerate input (shooter destroyed, missile slot,
   // etc.) via `rangePreviewFor`'s null path — the bench text stays authoritative.
-  const rangePreview = rangePreviewFor(view, selectedSlot.value);
+  // playtest-feedback-03 SESSION-01 — before any slot is focused, default to
+  // the selected ship's longest-range live weapon (`shipRangePreview`) so the
+  // range shell appears the moment a ship is selected, no slot focus required
+  // (D-ATK-ORIENTATION). A focused slot always overrides the ship-level default.
+  const rangePreview =
+    selectedSlot.value !== null
+      ? rangePreviewFor(view, selectedSlot.value)
+      : shipRangePreview(view, selectedId.value);
 
   const groups = groupByFleet(view.ships, selfFleetId);
   const roleMap = fireContext(staged, view);
@@ -318,6 +326,13 @@ export function TacticalAttack() {
             />
           </div>
           <ShipInspector ship={selected} velocity={selectedVelocity} />
+          <div class="mono-xs c-dim ta-range-readout" data-testid="ship-range-readout">
+            {rangePreview !== null
+              ? `ENGAGEMENT RANGE ${String(Math.round(rangePreview.radius))}u`
+              : selected !== null
+                ? 'NO LIVE WEAPON RANGE'
+                : 'SELECT A SHIP TO SEE ITS RANGE'}
+          </div>
           <div class="mono-xs c-dim ta-col-l-ft">
             {`FLEET: ${fleetLabel(selfFleetId)} · ALL FLEETS VISIBLE`}
           </div>
