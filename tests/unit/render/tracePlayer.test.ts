@@ -1239,3 +1239,91 @@ describe('blast FX in playMovement (CP3)', () => {
     expect(fake.sceneAdds.length).toBe(0);
   });
 });
+
+// ---- CP4: reduced motion + dispose invariance --------------------------------
+
+describe('blast lifecycle in playMovement (CP4)', () => {
+  // CP4 confirms two invariants the primitive already promises in isolation
+  // (`explosionFx.test.ts`) hold in the real TracePlayer flow:
+  //   1. `renderAt(1)` (reached by `skip()` or full-play → `createPlayback.finish`)
+  //      leaves every blast child invisible — the reduced-motion caller lands here
+  //      via `finish()`, so no frozen half-expanded shockwave on the final frame.
+  //   2. `dispose()` mid-blast cancels cleanly — no throw, no `onDone`.
+
+  const detonatingDeath: DestructionEvent = {
+    bodyId: 42,
+    chassisClass: 'frigate',
+    position: { x: 0, y: 0, z: 0 },
+    velocity: { x: 0, y: 0, z: 0 },
+    cause: 'aoe',
+    detonates: true,
+  };
+
+  const recordWithBlast = (): MovementBeatRecord => ({
+    subStepCount: 1,
+    keyframes: [[ship(1, 0)], [ship(1, 10)]],
+    contacts: [],
+    log: [],
+    destroyed: [detonatingDeath],
+    removedHazardIds: [],
+  });
+
+  it('CP4 — skip() leaves every blast child invisible on the final frame', () => {
+    const sched = new FakeScheduler();
+    const fake = makeFakeView();
+    attachTracePlayer(fake.view)
+      .playMovement(recordWithBlast(), {
+        durationMs: 100,
+        clock: sched.clock,
+        raf: sched.raf,
+        cancelRaf: sched.cancel,
+      })
+      .skip();
+
+    // The death-blast group is the single scene add (no contacts, no missiles).
+    expect(fake.sceneAdds.length).toBe(1);
+    const blastGroup = fake.sceneAdds[0]!.children[0]!;
+    // Blast Group holds core Sprite + shockwave Line2 — both should be hidden at t=1.
+    expect(blastGroup.children.length).toBe(2);
+    for (const child of blastGroup.children) {
+      expect(child.visible).toBe(false);
+    }
+  });
+
+  it('CP4 — full play leaves every blast child invisible on the final frame', () => {
+    const sched = new FakeScheduler();
+    const fake = makeFakeView();
+    attachTracePlayer(fake.view).playMovement(recordWithBlast(), {
+      durationMs: 100,
+      clock: sched.clock,
+      raf: sched.raf,
+      cancelRaf: sched.cancel,
+    });
+    sched.runToEnd(20);
+
+    expect(fake.sceneAdds.length).toBe(1);
+    const blastGroup = fake.sceneAdds[0]!.children[0]!;
+    for (const child of blastGroup.children) {
+      expect(child.visible).toBe(false);
+    }
+  });
+
+  it('CP4 — dispose() mid-blast cancels cleanly (no throw, no onDone)', () => {
+    const sched = new FakeScheduler();
+    const fake = makeFakeView();
+    const onDone = vi.fn();
+    const playback = attachTracePlayer(fake.view).playMovement(recordWithBlast(), {
+      durationMs: 100,
+      clock: sched.clock,
+      raf: sched.raf,
+      cancelRaf: sched.cancel,
+      onDone,
+    });
+    // One frame in, mid-beat — blast has been through at least one renderAt.
+    sched.tick(30);
+    expect(() => playback.dispose()).not.toThrow();
+    sched.runToEnd(20);
+    expect(onDone).not.toHaveBeenCalled();
+    expect(sched.hasPending()).toBe(false);
+  });
+});
