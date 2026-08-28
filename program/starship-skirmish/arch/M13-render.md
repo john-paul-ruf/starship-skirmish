@@ -329,3 +329,25 @@ on the final frame — FR-19 outcome invariance preserved.
 **Not touched:** `src/render/index.ts` barrel, `sim/**`, `sim/trace/**`,
 `sim/rules/**`.
 
+<!-- tactical-attack-mock-parity SESSION-02 -->
+## SESSION-02 — public API delta (M13 render)
+
+### `RangeShell.mesh` widened from `Mesh` to `Object3D`
+
+- **Before:** `readonly mesh: Mesh` — a single filled `SphereGeometry`/`MeshBasicMaterial`.
+- **After:** `readonly mesh: Object3D` — a `Group` containing three orthogonal great-circle `LineLoop`s (XY, XZ, YZ planes) sharing one `LineBasicMaterial`.
+- **Rationale:** the mock (`mocks/tactical-attack.html:381-389`) draws thin concentric range rings, not filled bubbles. Multiple stacked shells were washing over ship glyphs and fire-solution pills. The wire envelope preserves the omnidirectional read while never occluding bodies or labels.
+- **Compatibility:** the property name `mesh` is retained; concrete value is now a `Group`. Both existing consumers (`src/ui/screens/tacticalAttack/Viewport.tsx`, the tacticalAttack e2e spec stub) only pass `mesh` to `scene.add(...)` / `scene.remove(...)`, which accept `Object3D` — no consumer edit required.
+- **Semantic contract preserved:** `setRadius` scales the root uniformly; `setCenter` moves the root; `setVisible` toggles the root; `setQuality('reduced')` lowers segment density + opacity but never leaves the line-primitive path; `dispose()` releases every geometry + the shared material exactly once and is idempotent. `setRadius` now clamps non-finite / negative inputs to 0 (no invalid matrices).
+
+### `labels.ts` — semantic label surface added
+
+New exports from `src/render/labels.ts`:
+
+- **Types:** `TacticalLabelKind` (`'ship' | 'debris' | 'missile-tracking' | 'missile-spent'`), `LabelPresentation`.
+- **Values:** `LABEL_PRIORITY`, `MAX_HAZARD_LABELS`, `fleetGlyphOf`, `presentationFor`, `capHazardLabels`, plus pure text builders `shipLabelText`, `debrisLabelText`, `trackingMissileLabelText`, `spentMissileLabelText`.
+- **`LabelDatum` shape change (breaking):** added required `kind: TacticalLabelKind` and `priority: number` fields; added optional `fleet?: FleetColor` for ship kinds. Sole in-repo producer (`src/render/TacticalView.ts`) is updated in the same commit set. Not re-exported through `render/index.ts`, so no downstream module needs an edit.
+- **`ScreenLabel` shape change:** added required `kind: TacticalLabelKind` and `priority: number` — carried through projection so `capHazardLabels` and priority-aware `declutterLabels` can read them without a second lookup.
+- **Rationale:** the pre-SESSION-02 labels had no shipped visual treatment (a `.tactical-label` class with no CSS behind it), no glyph or fleet coding, and no hazard-body cap — a 300-body arena would spawn an unreadable DOM cloud. The semantic surface pushes the visual treatment into `presentationFor` (design tokens mirrored from `mocks/console.css`), enforces the "ships never capped, hazards capped nearest-first" invariant, and lets declutter honor priority so a ship label always wins collisions against a debris label.
+
+No new module ID and no dependency-flow change — this is an M13-internal contract change plus a widening on the already-published `RangeShell` handle.
