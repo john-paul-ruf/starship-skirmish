@@ -8,10 +8,14 @@ import {
   LABEL_PRIORITY,
   MAX_HAZARD_LABELS,
   capHazardLabels,
+  debrisLabelText,
   declutterLabels,
   fleetGlyphOf,
   presentationFor,
   projectToScreen,
+  shipLabelText,
+  spentMissileLabelText,
+  trackingMissileLabelText,
   type ScreenLabel,
   type TacticalLabelKind,
 } from '../../../src/render/labels.js';
@@ -268,5 +272,48 @@ describe('capHazardLabels', () => {
     const nonShipKept = kept.filter((l) => l.kind !== 'ship');
     expect(shipKept.length).toBe(1);
     expect(nonShipKept.length).toBe(MAX_HAZARD_LABELS);
+  });
+});
+
+// ---- text builders ---------------------------------------------------------
+
+describe('shipLabelText', () => {
+  it('prefixes the build name with the fleet glyph', () => {
+    expect(shipLabelText('WIDOWMAKER', 0, false)).toBe('▲ WIDOWMAKER');
+    expect(shipLabelText('IRON VERDICT', 1, false)).toBe('● IRON VERDICT');
+    expect(shipLabelText('DULL EDGE', 2, false)).toBe('■ DULL EDGE');
+  });
+
+  it('appends `· SHLD 0` when the shield generator has bottomed', () => {
+    expect(shipLabelText('SPUR', 1, true)).toBe('● SPUR · SHLD 0');
+  });
+
+  it('never appends the shield cue when the ship has shields left', () => {
+    expect(shipLabelText('SPUR', 1, false)).not.toMatch(/SHLD/);
+  });
+});
+
+describe('debrisLabelText', () => {
+  it('formats as `✳ DEBRIS D-{id}`', () => {
+    expect(debrisLabelText(4)).toBe('✳ DEBRIS D-4');
+    expect(debrisLabelText(9)).toBe('✳ DEBRIS D-9');
+  });
+});
+
+describe('trackingMissileLabelText', () => {
+  it('formats as `➤ MISSILE {id} · T{n} ↦ {target}`', () => {
+    expect(trackingMissileLabelText(12, 2, 'WIDOWMAKER')).toBe(
+      '➤ MISSILE 12 · T2 ↦ WIDOWMAKER',
+    );
+  });
+
+  it('accepts a `BODY {id}` fallback for a target the caller could not name', () => {
+    expect(trackingMissileLabelText(7, 1, 'BODY 42')).toBe('➤ MISSILE 7 · T1 ↦ BODY 42');
+  });
+});
+
+describe('spentMissileLabelText', () => {
+  it('formats as `◇ MISSILE {id} · SPENT · ARMED`', () => {
+    expect(spentMissileLabelText(15)).toBe('◇ MISSILE 15 · SPENT · ARMED');
   });
 });

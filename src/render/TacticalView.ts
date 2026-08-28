@@ -19,7 +19,10 @@ import { createHazardInstances, bodyKindToGlyph, type HazardInput, type HazardKi
 import {
   LABEL_PRIORITY,
   createLabelOverlay,
-  fleetGlyphOf,
+  debrisLabelText,
+  shipLabelText,
+  spentMissileLabelText,
+  trackingMissileLabelText,
   type LabelDatum,
 } from './labels.js';
 import { createPickBuffer, type PickInput } from './pick.js';
@@ -103,14 +106,13 @@ export const createTacticalView = (
         const chassisClass: ChassisClass = combat?.ship.chassisClass ?? 'fighter';
         const fleet = fleetColorOf(state.fleetOf.get(id) ?? 0);
         shipInputs.push({ id, chassisClass, fleet, position: [x, y, z], radius: body.radius });
-        // Text mirrors mocks/tactical-attack.html `.mk-lbl` — glyph + build name; CP2
-        // expands hazard/missile emission, this checkpoint just satisfies the new
-        // required `kind`/`priority` fields so the tree typechecks.
         const name = combat?.ship.name ?? '';
+        const shieldsDown =
+          combat !== undefined && combat.ship.shieldCapacity > 0 && combat.shields <= 0;
         nextLabels.push({
           id,
           kind: 'ship',
-          text: `${fleetGlyphOf(fleet)} ${name}`,
+          text: shipLabelText(name, fleet, shieldsDown),
           world: [x, y, z],
           fleet,
           priority: LABEL_PRIORITY.ship,
@@ -122,6 +124,45 @@ export const createTacticalView = (
           position: [x, y, z],
           radius: body.radius,
         });
+        if (body.kind === 'debris') {
+          nextLabels.push({
+            id,
+            kind: 'debris',
+            text: debrisLabelText(id),
+            world: [x, y, z],
+            priority: LABEL_PRIORITY.debris,
+          });
+        } else if (body.kind === 'missile') {
+          // A live guidance record means the missile is still tracking (T{n} beats
+          // remaining). Absence means the guidance was cleared — either fuel-out
+          // (`spentRemainsArmed=true` keeps it lethal on contact) or already
+          // detonated but not yet swept. Either way the missile reads as `SPENT · ARMED`
+          // per the mock.
+          const guidance = state.guidances.get(id);
+          if (guidance === undefined) {
+            nextLabels.push({
+              id,
+              kind: 'missile-spent',
+              text: spentMissileLabelText(id),
+              world: [x, y, z],
+              priority: LABEL_PRIORITY['missile-spent'],
+            });
+          } else {
+            const targetName =
+              state.ships.get(guidance.targetId)?.ship.name ?? `BODY ${guidance.targetId}`;
+            nextLabels.push({
+              id,
+              kind: 'missile-tracking',
+              text: trackingMissileLabelText(
+                id,
+                guidance.trackingBeatsLeft,
+                targetName,
+              ),
+              world: [x, y, z],
+              priority: LABEL_PRIORITY['missile-tracking'],
+            });
+          }
+        }
       }
     }
 

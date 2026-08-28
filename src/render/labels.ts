@@ -148,6 +148,41 @@ export const presentationFor = (
   }
 };
 
+// ---- Pure text builders ----------------------------------------------------
+// The exact wording of each label kind lives here (not in TacticalView) so unit
+// tests can pin the formats without instantiating WebGL. Mirrors the mock's
+// `.mk-lbl` strings in mocks/tactical-attack.html.
+
+/**
+ * Build the text of a ship label: fleet glyph + build name, with the trailing
+ * `· SHLD 0` shield-down cue appended only when the ship actually has a shield
+ * generator that has dropped to zero (silent for shieldless ships so the cue
+ * never becomes noise).
+ */
+export const shipLabelText = (
+  name: string,
+  fleet: FleetColor,
+  shieldsDown: boolean,
+): string => {
+  const glyph = fleetGlyphOf(fleet);
+  const base = `${glyph} ${name}`;
+  return shieldsDown ? `${base} · SHLD 0` : base;
+};
+
+/** `✳ DEBRIS D-{bodyId}` — mirrors mocks/tactical-attack.html:466-470. */
+export const debrisLabelText = (id: BodyId): string => `✳ DEBRIS D-${id}`;
+
+/** `➤ MISSILE {id} · T{n} ↦ {target}` — mirrors mocks/tactical-attack.html:472-475. */
+export const trackingMissileLabelText = (
+  id: BodyId,
+  trackingBeatsLeft: number,
+  targetName: string,
+): string => `➤ MISSILE ${id} · T${trackingBeatsLeft} ↦ ${targetName}`;
+
+/** `◇ MISSILE {id} · SPENT · ARMED` — mirrors mocks/tactical-attack.html:476-477. */
+export const spentMissileLabelText = (id: BodyId): string =>
+  `◇ MISSILE ${id} · SPENT · ARMED`;
+
 /** A world-anchored label to place this frame. */
 export interface LabelDatum {
   readonly id: BodyId;
