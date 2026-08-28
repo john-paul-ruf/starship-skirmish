@@ -23,6 +23,7 @@ import type { SelectOption } from '../../components/index.js';
 import {
   enemyShips,
   friendlyShips,
+  hitChanceTone,
   liveFireSlots,
   positionOf,
   slotKey,
@@ -36,8 +37,6 @@ const pct = (v: number): string => `${String(Math.round(v * 100))}%`;
 /** Signed factor readout, e.g. `+0.08` / `−0.05`. Uses a real minus glyph. */
 const signed = (v: number): string =>
   v < 0 ? `−${(-v).toFixed(2)}` : `+${v.toFixed(2)}`;
-const toneClass = (final: number): string =>
-  final >= 0.66 ? 'c-green' : final >= 0.4 ? 'c-amber' : 'c-red';
 
 export interface WeaponBenchProps {
   readonly view: BlindMatchView;
@@ -206,7 +205,7 @@ function HitChance(props: HitChanceProps) {
       <div style="display:flex;align-items:baseline;justify-content:space-between">
         <span class="t-label">HIT CHANCE</span>
         <span
-          class={`t-num ${toneClass(b.final)}`}
+          class={`t-num ${hitChanceTone(b.final)}`}
           data-testid="hitchance-final"
           style="font-size:20px;font-weight:700"
         >

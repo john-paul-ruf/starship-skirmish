@@ -17,17 +17,21 @@ import {
   fireSlotTotal,
   friendlyShips,
   GENERATOR_HINT,
+  hitChanceTone,
   liveFireSlots,
+  rangePreviewFor,
   shieldReadout,
   slotKey,
   toAttackPlans,
   type Assignment,
+  type FireSlot,
 } from '../../../../src/ui/screens/tacticalAttack/model.js';
 import type {
   BlindMatchView,
   BlindShipView,
   Body,
   SimShip,
+  SimWeapon,
   Vec3,
 } from '../../../../src/sim/index.js';
 
@@ -452,6 +456,86 @@ describe('aoeRingProjection', () => {
     expect(
       aoeOverlapsFriendly({ shooterId: 1, targetId: 3, missileIndex: 0 }, view),
     ).not.toBeNull();
+  });
+});
+
+// ---- Range preview + hit-chance tone (S07) --------------------------------
+
+describe('rangePreviewFor', () => {
+  const weapon = (over: Partial<SimWeapon> = {}): SimWeapon => ({
+    range: 240,
+    damage: 12,
+    shotsPerTurn: 1,
+    accuracy: 0.6,
+    ...over,
+  });
+  const shooter = shipView({
+    bodyId: 1,
+    fleetId: 0,
+    ship: simShip({ weapons: [weapon({ range: 240 }), weapon({ range: 120 })] }),
+    weaponAlive: [true, true],
+    missileAlive: [true],
+    missileAmmo: [2],
+  });
+  const view = viewOf(
+    [shooter, shipView({ bodyId: 3, fleetId: 1 })],
+    [body(1, at(-40, 0, 12)), body(3, at(200))],
+  );
+
+  it('returns the shooter position and the selected weapon range', () => {
+    const slot: FireSlot = { shooterId: 1, kind: 'weapon', index: 0 };
+    const preview = rangePreviewFor(view, slot);
+    expect(preview).not.toBeNull();
+    expect(preview?.center).toEqual({ x: -40, y: 0, z: 12 });
+    expect(preview?.radius).toBe(240);
+  });
+
+  it('uses the weapon at the slot index, not W1', () => {
+    const preview = rangePreviewFor(view, { shooterId: 1, kind: 'weapon', index: 1 });
+    expect(preview?.radius).toBe(120);
+  });
+
+  it('returns null for a null selection', () => {
+    expect(rangePreviewFor(view, null)).toBeNull();
+  });
+
+  it('returns null for a missile slot (no line-of-sight range)', () => {
+    expect(rangePreviewFor(view, { shooterId: 1, kind: 'missile', index: 0 })).toBeNull();
+  });
+
+  it('returns null when the shooter is not in the view (destroyed / stale selection)', () => {
+    expect(rangePreviewFor(view, { shooterId: 99, kind: 'weapon', index: 0 })).toBeNull();
+  });
+
+  it('returns null when the weapon index is out of range', () => {
+    expect(rangePreviewFor(view, { shooterId: 1, kind: 'weapon', index: 9 })).toBeNull();
+  });
+
+  it('returns null when the shooter view exists but its body has no position', () => {
+    const viewNoBody = viewOf([shooter], []); // ships present, bodies empty
+    expect(
+      rangePreviewFor(viewNoBody, { shooterId: 1, kind: 'weapon', index: 0 }),
+    ).toBeNull();
+  });
+});
+
+describe('hitChanceTone', () => {
+  it('maps ≥ 0.66 → c-green (high-confidence hit)', () => {
+    expect(hitChanceTone(0.66)).toBe('c-green');
+    expect(hitChanceTone(0.8)).toBe('c-green');
+    expect(hitChanceTone(1)).toBe('c-green');
+  });
+
+  it('maps 0.4 ≤ x < 0.66 → c-amber (marginal)', () => {
+    expect(hitChanceTone(0.4)).toBe('c-amber');
+    expect(hitChanceTone(0.5)).toBe('c-amber');
+    expect(hitChanceTone(0.6599)).toBe('c-amber');
+  });
+
+  it('maps < 0.4 → c-red (long shot)', () => {
+    expect(hitChanceTone(0)).toBe('c-red');
+    expect(hitChanceTone(0.1)).toBe('c-red');
+    expect(hitChanceTone(0.3999)).toBe('c-red');
   });
 });
 

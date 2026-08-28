@@ -332,6 +332,48 @@ export const aoeRingProjection = (
   return { cx: c.x, cy: c.y, r };
 };
 
+// ---- Range preview + hit-chance tone (S07) --------------------------------
+
+/** Shooter world position + a weapon's engagement radius — the `RangeShell` feed. */
+export interface RangePreview {
+  readonly center: Vec3;
+  readonly radius: number;
+}
+
+/**
+ * Geometry the tactical viewport hands to the `RangeShell` while a weapon slot
+ * is selected: the shooter's post-movement position and the weapon's
+ * `SimWeapon.range` (world units). Missile racks return `null` — a missile has
+ * no line-of-sight range envelope; its AoE ring is a separate overlay (§4.6).
+ * A dead shooter / missing shooter view / unknown slot index returns `null` so
+ * the shell hides on any degenerate input rather than drawing a stale envelope.
+ * Computes NO to-hit number — hit chance stays single-sourced through
+ * `hitChanceFor` (arch §13.3).
+ */
+export const rangePreviewFor = (
+  view: BlindMatchView,
+  slot: FireSlot | null,
+): RangePreview | null => {
+  if (slot === null || slot.kind !== 'weapon') return null;
+  const shooter = shipViewOf(view, slot.shooterId);
+  if (shooter === undefined) return null;
+  const center = positionOf(view, slot.shooterId);
+  if (center === undefined) return null;
+  const weapon = shooter.ship.weapons[slot.index];
+  if (weapon === undefined) return null;
+  return { center, radius: weapon.range };
+};
+
+/**
+ * Map a `HitChanceBreakdown.final` (0..1) to a semantic color-token class name.
+ * The thresholds match `WeaponBench` verbatim so the bench readout and the
+ * viewport overlay always agree. Maps only — never recomputes a to-hit number.
+ * Tokens: `.c-green` / `.c-amber` / `.c-red` (mocks/console.css `--green` /
+ * `--amber` / `--red` — reserved semantic hues, `specs/design.md §1.1`).
+ */
+export const hitChanceTone = (final: number): 'c-green' | 'c-amber' | 'c-red' =>
+  final >= 0.66 ? 'c-green' : final >= 0.4 ? 'c-amber' : 'c-red';
+
 // ---- Plan emission --------------------------------------------------------
 
 /**
