@@ -622,7 +622,110 @@ test.describe('tactical attack — real-render visual vocabulary', () => {
 });
 
 // ===========================================================================
-// E. Reviewed real-render screenshot baseline
+// E. Full-field resize regression (real render) — the owner's reported defect
+// ===========================================================================
+//
+// SESSION-01 (tactical-attack-full-field-resize). Reproduces the owner's
+// 2048×996 report mechanically: the real renderer's backing store and CSS box
+// must track the live `.viewport` container through expand AND restore — not
+// just the DOM visibility CSS already proved above. A stretched kill-boundary
+// sphere is exactly a canvas-aspect / CSS-box-aspect mismatch; this test
+// catches that class of defect where the CSS-only FULL FIELD test cannot.
+
+/** Live canvas geometry: CSS box (from `getBoundingClientRect`, always CSS
+ *  pixels) and backing-store size (`canvas.width/height`, DPR-scaled). */
+const readCanvas = (
+  page: import('@playwright/test').Page,
+): Promise<{ cssWidth: number; cssHeight: number; backingWidth: number; backingHeight: number }> =>
+  page.locator('[data-testid="attack-viewport"] canvas').evaluate((el: HTMLCanvasElement) => {
+    const rect = el.getBoundingClientRect();
+    return { cssWidth: rect.width, cssHeight: rect.height, backingWidth: el.width, backingHeight: el.height };
+  });
+
+test.describe('tactical attack — full-field resize regression (real render)', () => {
+  for (const [w, h] of [[2048, 996], [1920, 1080], [1280, 720]] as const) {
+    test(`renderer backing store + projection track the live viewport through expand/restore at ${w}×${h}`, async ({ page }) => {
+      await page.setViewportSize({ width: w, height: h });
+      const errors = await mount(page, 'real');
+      await stageAll(page);
+      await page.locator('[data-testid="roster-ship"][data-ship-id="1"]').click();
+      await page.waitForTimeout(400); // initial renderer/label pass settles
+
+      const dpr = Math.min(await page.evaluate(() => window.devicePixelRatio), 2);
+
+      // Canvas fills its `.viewport` container exactly (CSS 100%×100%); the
+      // backing store tracks that CSS size scaled by the capped DPR — never
+      // the stale pre-collapse dimensions (the defect this session fixes).
+      // A small tolerance absorbs sub-pixel layout/DPR rounding (Playwright's
+      // box-model read vs. the canvas's own `getBoundingClientRect`).
+      const assertAligned = async (label: string): Promise<{ width: number; height: number }> => {
+        const c = await readCanvas(page);
+        const viewportBox = await box(page, 'attack-viewport');
+        expect(Math.abs(c.cssWidth - viewportBox.width), `${label} css width`).toBeLessThanOrEqual(2);
+        expect(Math.abs(c.cssHeight - viewportBox.height), `${label} css height`).toBeLessThanOrEqual(2);
+        const expectedBackingW = Math.round(viewportBox.width * dpr);
+        const expectedBackingH = Math.round(viewportBox.height * dpr);
+        expect(Math.abs(c.backingWidth - expectedBackingW), `${label} backing width`).toBeLessThanOrEqual(3);
+        expect(Math.abs(c.backingHeight - expectedBackingH), `${label} backing height`).toBeLessThanOrEqual(3);
+        const cssAspect = viewportBox.width / viewportBox.height;
+        const backingAspect = c.backingWidth / c.backingHeight;
+        expect(Math.abs(cssAspect - backingAspect), `${label} aspect`).toBeLessThan(0.02);
+        return { width: viewportBox.width, height: viewportBox.height };
+      };
+
+      const center = await assertAligned('center');
+
+      // Toggle FULL FIELD; wait for the `ResizeObserver` delivery itself
+      // (never a fixed sleep as the sole readiness signal) before asserting.
+      await page.getByTestId('cam-fullscreen').click();
+      await expect(page.getByTestId('screen-tactical-attack')).toHaveClass(/is-immersive/);
+      await expect
+        .poll(async () => (await readCanvas(page)).backingWidth)
+        .not.toBe(Math.round(center.width * dpr));
+      await page.waitForTimeout(300); // ~15Hz label pass + overlay projection settle
+
+      const expanded = await assertAligned('immersive');
+      // Genuinely expanded — never the retained former center-column size.
+      expect(expanded.width).toBeGreaterThan(center.width);
+
+      // Plan overlays remain visible and reprojected inside the expanded
+      // viewport bounds — a stale projection would leave them at the old,
+      // narrower center-column coordinates.
+      const expandedViewportBox = await box(page, 'attack-viewport');
+      for (const testid of ['range-label', 'solution-pill']) {
+        const first = page.getByTestId(testid).first();
+        await expect(first).toBeVisible();
+        const b = await first.boundingBox();
+        expect(b, testid).not.toBeNull();
+        expect(b!.x).toBeGreaterThanOrEqual(expandedViewportBox.x - 5);
+        expect(b!.x + b!.width).toBeLessThanOrEqual(expandedViewportBox.x + expandedViewportBox.width + 5);
+      }
+      await expect(page.getByTestId('selected-callout')).toBeVisible();
+      await expect(page.getByTestId('beat-hud')).toBeVisible();
+      await expect(page.getByTestId('field-legend')).toBeVisible();
+      await expect(page.getByTestId('boundary-top')).toBeVisible();
+      await expect(page.getByTestId('camera-hud')).toBeVisible();
+
+      // Exit immersive — backing store + projection contract back to the
+      // restored center viewport.
+      await page.getByTestId('cam-fullscreen').press('Escape');
+      await expect(page.getByTestId('screen-tactical-attack')).not.toHaveClass(/is-immersive/);
+      await expect
+        .poll(async () => (await readCanvas(page)).backingWidth)
+        .not.toBe(Math.round(expanded.width * dpr));
+      await page.waitForTimeout(300);
+
+      const restored = await assertAligned('restored');
+      expect(Math.abs(restored.width - center.width)).toBeLessThanOrEqual(2);
+      expect(Math.abs(restored.height - center.height)).toBeLessThanOrEqual(2);
+
+      expect(errors, `real-render errors:\n${errors.join('\n')}`).toEqual([]);
+    });
+  }
+});
+
+// ===========================================================================
+// F. Reviewed real-render screenshot baselines
 // ===========================================================================
 
 test.describe('tactical attack — mock-parity screenshot baseline', () => {
@@ -641,6 +744,31 @@ test.describe('tactical attack — mock-parity screenshot baseline', () => {
     // rasterisation noise without a permissive whole-screen diff. The snapshot is
     // platform-scoped (`-chromium-darwin`); other platforms author their own.
     await expect(page).toHaveScreenshot('attack-plan-1920.png', {
+      maxDiffPixelRatio: 0.02,
+      threshold: 0.2,
+      animations: 'disabled',
+    });
+
+    expect(errors, errors.join('\n')).toEqual([]);
+  });
+
+  test('real-render FULL FIELD matches the reviewed proportional baseline @1920×1080', async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    const errors = await mount(page, 'real');
+    await stageAll(page);
+    await page.locator('[data-testid="roster-ship"][data-ship-id="1"]').click();
+    await page.waitForTimeout(400);
+
+    await page.getByTestId('cam-fullscreen').click();
+    await expect(page.getByTestId('screen-tactical-attack')).toHaveClass(/is-immersive/);
+    await page.waitForTimeout(1200); // camera settle + label/overlay projection stable
+
+    // Unmasked (D-TA-UNMASKED-FULL-FIELD-GATE) — the real canvas and every DOM
+    // overlay (range labels, solution lines, boundary/legend/HUD text, camera
+    // HUD) are compared. Passing hidden-column CSS geometry alone (the prior
+    // stub-only test) is insufficient — this proves the expanded canvas reads
+    // proportionally, not as the reported stretched ellipse.
+    await expect(page).toHaveScreenshot('attack-plan-full-field-1920.png', {
       maxDiffPixelRatio: 0.02,
       threshold: 0.2,
       animations: 'disabled',
