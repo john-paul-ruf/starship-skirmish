@@ -6,10 +6,17 @@
 // never rebuilt between beats (Gate 1 §1). This module wraps that into the
 // `TacticalCamera` contract; `TacticalView` owns its lifetime.
 //
-// The spherical framing math is split into pure free functions (`orbitToPosition`,
-// `fleetViewPosition`, `clampDistance`) so the reset framing + distance clamps are
-// unit-tested without a WebGL context (render is outside the sim determinism ban, so
-// `Math.sin`/`cos` are fine here).
+// playtest-feedback-02 SESSION-03 adds keyboard translation Gate 1 FINDINGS §1 left
+// to the shipping build: WASD / arrows truck+strafe along the camera-relative ground
+// plane, Q/E pedestal on world-Y. Held keys are summed once per frame in `update()`
+// and applied to BOTH `controls.target` and `camera.position` (so OrbitControls'
+// pivot moves with the eye), then `controls.update()` runs — orbit / pan / zoom
+// stay fully functional and compose with the keyboard delta.
+//
+// The framing + step math is split into pure free functions (`orbitToPosition`,
+// `fleetViewPosition`, `clampDistance`, `panAxesFor`, `moveStep`) so the mapping
+// and speed formula are unit-tested without a WebGL context (render is outside the
+// sim determinism ban, so `Math.sin`/`cos` are fine here).
 
 import { PerspectiveCamera, Vector3 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -23,6 +30,52 @@ export const FLEET_VIEW = { elevationDeg: 35, azimuthDeg: 30, distanceFactor: 2.
 
 /** Gate 1 §7.1 clamp ratios — the only limits on zoom (FR-14: no artificial wall). */
 export const DISTANCE_CLAMP = { minFactor: 0.1, maxFactor: 12 } as const;
+
+/**
+ * Per-frame keyboard pan step in world units — Gate 1 FINDINGS §1 left this to the
+ * shipping build. Scales with arena radius (so movement feels the same on any map)
+ * plus current orbit distance (fast when zoomed out, slow when zoomed in). Pure.
+ */
+export const moveStep = (arenaRadius: number, distance: number): number =>
+  arenaRadius * 0.012 + distance * 0.010;
+
+/**
+ * Unit translation axes in the camera-relative frame for one movement key
+ * (already lowercased by the DOM listener). Returns `null` for keys that do not
+ * move the camera — so the caller can walk a "held keys" set without a keymap
+ * table. Pure.
+ *
+ *   W / ↑  → forward  (ground-projected)
+ *   S / ↓  → back
+ *   A / ←  → left     (camera-relative)
+ *   D / →  → right
+ *   Q      → up       (world-Y pedestal)
+ *   E      → down
+ */
+export const panAxesFor = (
+  key: string,
+): { readonly forward: number; readonly right: number; readonly up: number } | null => {
+  switch (key) {
+    case 'w':
+    case 'arrowup':
+      return { forward: 1, right: 0, up: 0 };
+    case 's':
+    case 'arrowdown':
+      return { forward: -1, right: 0, up: 0 };
+    case 'a':
+    case 'arrowleft':
+      return { forward: 0, right: -1, up: 0 };
+    case 'd':
+    case 'arrowright':
+      return { forward: 0, right: 1, up: 0 };
+    case 'q':
+      return { forward: 0, right: 0, up: 1 };
+    case 'e':
+      return { forward: 0, right: 0, up: -1 };
+    default:
+      return null;
+  }
+};
 
 /** Orbit angles + distance → world position, orbiting the origin. Pure. */
 export const orbitToPosition = (
@@ -100,19 +153,47 @@ export const createTacticalCamera = (
     focusSource = source;
   };
 
+  // Held movement keys — accumulated by keydown, cleared by keyup, walked in `update()`
+  // once per frame. A `Set` (not an array) so a keydown auto-repeat does not stack the
+  // same key twice on top of itself.
+  const held = new Set<string>();
+
   const onKeyDown = (event: KeyboardEvent): void => {
     const key = event.key.toLowerCase();
     if (key === 'r') {
       resetToFleetView();
-    } else if (key === 'f' && focusSource !== null) {
+      return;
+    }
+    if (key === 'f' && focusSource !== null) {
       const at = focusSource();
       if (at !== null) focus(at);
+      return;
     }
+    if (panAxesFor(key) !== null) {
+      held.add(key);
+      // Arrow keys scroll the page by default; WASD/QE are page-safe today but may
+      // pick up other bindings — prevent-default the whole movement set for symmetry.
+      event.preventDefault();
+    }
+  };
+
+  const onKeyUp = (event: KeyboardEvent): void => {
+    const key = event.key.toLowerCase();
+    if (held.delete(key)) event.preventDefault();
+  };
+
+  // A blurred canvas will never receive the matching keyup — a held key would then
+  // pan forever until the user re-focused and released it. Clearing on blur is the
+  // cheap fix that keeps the invariant "held ⊆ actually-pressed" honest.
+  const onBlur = (): void => {
+    held.clear();
   };
 
   const hasDom = typeof document !== 'undefined' && typeof canvas.addEventListener === 'function';
   if (hasDom) {
     canvas.addEventListener('keydown', onKeyDown);
+    canvas.addEventListener('keyup', onKeyUp);
+    canvas.addEventListener('blur', onBlur);
     // Make the canvas focusable so it can receive key events without extra wiring.
     if (canvas.tabIndex < 0) canvas.tabIndex = 0;
   }
@@ -122,12 +203,58 @@ export const createTacticalCamera = (
     camera.updateProjectionMatrix();
   };
 
+  // Scratch vectors reused each frame — sidesteps the per-frame `new Vector3()` churn
+  // an RAF-driven `update()` would otherwise generate.
+  const forwardVec = new Vector3();
+  const rightVec = new Vector3();
+  const worldUp = new Vector3(0, 1, 0);
+  const delta = new Vector3();
+
   const update = (): void => {
+    if (held.size > 0) {
+      let sumForward = 0;
+      let sumRight = 0;
+      let sumUp = 0;
+      for (const key of held) {
+        const axes = panAxesFor(key);
+        if (axes !== null) {
+          sumForward += axes.forward;
+          sumRight += axes.right;
+          sumUp += axes.up;
+        }
+      }
+      if (sumForward !== 0 || sumRight !== 0 || sumUp !== 0) {
+        // Ground-projected forward: zero the camera look direction's Y so W trucks
+        // across the plane the player is looking at (a nose-down camera should still
+        // move "forward" horizontally, not dive into the arena). Fall back to a fixed
+        // axis when looking straight up/down so the delta stays defined.
+        camera.getWorldDirection(forwardVec);
+        forwardVec.y = 0;
+        if (forwardVec.lengthSq() < 1e-8) forwardVec.set(0, 0, -1);
+        else forwardVec.normalize();
+        rightVec.crossVectors(forwardVec, worldUp).normalize();
+
+        const distance = camera.position.distanceTo(controls.target);
+        const step = moveStep(arenaRadius, distance);
+        delta
+          .set(0, 0, 0)
+          .addScaledVector(forwardVec, sumForward * step)
+          .addScaledVector(rightVec, sumRight * step)
+          .addScaledVector(worldUp, sumUp * step);
+        controls.target.add(delta);
+        camera.position.add(delta);
+      }
+    }
     controls.update();
   };
 
   const dispose = (): void => {
-    if (hasDom) canvas.removeEventListener('keydown', onKeyDown);
+    if (hasDom) {
+      canvas.removeEventListener('keydown', onKeyDown);
+      canvas.removeEventListener('keyup', onKeyUp);
+      canvas.removeEventListener('blur', onBlur);
+    }
+    held.clear();
     focusSource = null;
     controls.dispose();
   };

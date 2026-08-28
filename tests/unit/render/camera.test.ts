@@ -11,7 +11,9 @@ import {
   fleetViewPosition,
   focusBodyFor,
   focusSourceFor,
+  moveStep,
   orbitToPosition,
+  panAxesFor,
   projectToViewport,
 } from '../../../src/render/camera.js';
 
@@ -130,6 +132,85 @@ describe('focusSourceFor loosened to Vec3-like (S01)', () => {
     expect(source()).toBeNull();
     selected = 99; // unknown id
     expect(source()).toBeNull();
+  });
+});
+
+describe('panAxesFor (SESSION-03 keyboard translation)', () => {
+  // The `onKeyDown` handler lowercases the key before calling `panAxesFor` — the
+  // pure map keys itself lowercase to match that contract.
+
+  it('W and ArrowUp both truck forward along the ground-projected look direction', () => {
+    expect(panAxesFor('w')).toEqual({ forward: 1, right: 0, up: 0 });
+    expect(panAxesFor('arrowup')).toEqual({ forward: 1, right: 0, up: 0 });
+  });
+
+  it('S and ArrowDown both truck back', () => {
+    expect(panAxesFor('s')).toEqual({ forward: -1, right: 0, up: 0 });
+    expect(panAxesFor('arrowdown')).toEqual({ forward: -1, right: 0, up: 0 });
+  });
+
+  it('A and ArrowLeft strafe left in the camera-relative frame', () => {
+    expect(panAxesFor('a')).toEqual({ forward: 0, right: -1, up: 0 });
+    expect(panAxesFor('arrowleft')).toEqual({ forward: 0, right: -1, up: 0 });
+  });
+
+  it('D and ArrowRight strafe right', () => {
+    expect(panAxesFor('d')).toEqual({ forward: 0, right: 1, up: 0 });
+    expect(panAxesFor('arrowright')).toEqual({ forward: 0, right: 1, up: 0 });
+  });
+
+  it('Q pedestals up the world-Y axis; E pedestals down', () => {
+    expect(panAxesFor('q')).toEqual({ forward: 0, right: 0, up: 1 });
+    expect(panAxesFor('e')).toEqual({ forward: 0, right: 0, up: -1 });
+  });
+
+  it('non-movement keys return null (r/f live on separate branches, letters are ignored)', () => {
+    expect(panAxesFor('r')).toBeNull();
+    expect(panAxesFor('f')).toBeNull();
+    expect(panAxesFor('z')).toBeNull();
+    expect(panAxesFor(' ')).toBeNull();
+    expect(panAxesFor('shift')).toBeNull();
+    expect(panAxesFor('')).toBeNull();
+  });
+
+  it('opposite keys cancel to a zero delta when their axes are summed', () => {
+    const sum = (a: string, b: string) => {
+      const axA = panAxesFor(a)!;
+      const axB = panAxesFor(b)!;
+      return {
+        forward: axA.forward + axB.forward,
+        right: axA.right + axB.right,
+        up: axA.up + axB.up,
+      };
+    };
+    expect(sum('w', 's')).toEqual({ forward: 0, right: 0, up: 0 });
+    expect(sum('a', 'd')).toEqual({ forward: 0, right: 0, up: 0 });
+    expect(sum('q', 'e')).toEqual({ forward: 0, right: 0, up: 0 });
+    expect(sum('arrowup', 'arrowdown')).toEqual({ forward: 0, right: 0, up: 0 });
+    expect(sum('arrowleft', 'arrowright')).toEqual({ forward: 0, right: 0, up: 0 });
+  });
+});
+
+describe('moveStep (SESSION-03 per-frame pan speed)', () => {
+  it('scales linearly with arena radius', () => {
+    const distance = 500;
+    const at1000 = moveStep(1000, distance);
+    const at2000 = moveStep(2000, distance);
+    // Δ per doubled radius is exactly one arena factor's worth: 1000 * 0.012.
+    expect(at2000 - at1000).toBeCloseTo(1000 * 0.012, 10);
+  });
+
+  it('scales linearly with orbit distance (fast when zoomed out, slow when zoomed in)', () => {
+    const arenaRadius = 1000;
+    const near = moveStep(arenaRadius, 100);
+    const far = moveStep(arenaRadius, 1100);
+    // Δ per 1000 units of distance is exactly the distance factor: 1000 * 0.010.
+    expect(far - near).toBeCloseTo(1000 * 0.010, 10);
+  });
+
+  it('is positive for any positive arena/distance so held keys always pan', () => {
+    expect(moveStep(1, 1)).toBeGreaterThan(0);
+    expect(moveStep(1000, 100)).toBeGreaterThan(0);
   });
 });
 
