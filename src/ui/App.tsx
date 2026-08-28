@@ -49,7 +49,7 @@ const DESKTOP_MIN_WIDTH_PX = 1024;
 const NAV_ROUTES: readonly TopbarRoute[] = [
   { id: 'encyclopedia', label: 'ENCYCLOPEDIA' },
   { id: 'shipyard', label: 'SHIPYARD' },
-  { id: 'share', label: 'SHARE' },
+  { id: 'share', label: 'IMPORT' },
   { id: 'skirmish', label: 'SKIRMISH' },
 ];
 

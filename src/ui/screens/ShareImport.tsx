@@ -46,8 +46,8 @@ import {
 type TabId = 'token' | 'json';
 
 const TABS: readonly TabsOption<TabId>[] = [
-  { id: 'token', label: 'SHARE TOKEN' },
-  { id: 'json', label: 'JSON FLEET IMPORT' },
+  { id: 'token', label: 'IMPORT TOKEN' },
+  { id: 'json', label: 'IMPORT FLEET' },
 ];
 
 // ---- Identity minters (UI boundary — §6) ---------------------------------
@@ -167,7 +167,7 @@ export function ShareImport() {
   return (
     <div class="panel ticks" data-testid="screen-share">
       <div class="panel-hd">
-        <span class="t-h2">SHARE / IMPORT</span>
+        <span class="t-h2">IMPORT</span>
         <div class="grow"></div>
         <button
           type="button"
@@ -185,14 +185,14 @@ export function ShareImport() {
           tabs={TABS}
           activeId={tab}
           onChange={setTab}
-          aria-label="Share / Import mode"
+          aria-label="Import mode"
         />
 
         {tab === 'token' ? (
           <div class="stack-lg" data-testid="share-tab-token">
             <div class="panel-in" style="padding:var(--s3)">
               <label class="t-label" for="share-token-input">
-                PASTE A SHARE TOKEN OR OPEN A #/share?t=… LINK
+                PASTE AN IMPORT TOKEN OR OPEN A #/share?t=… LINK
               </label>
               <div style="margin-top:var(--s2)">
                 <input
