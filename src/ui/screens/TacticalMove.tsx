@@ -328,8 +328,22 @@ export function TacticalMove() {
           />
         </main>
 
-        {/* ---- RIGHT: inspector + marks-interval + arc plotter + commit dock ---- */}
+        {/* ---- RIGHT: commit dock (pinned top) + inspector + marks-interval + arc plotter ---- */}
         <aside class="tm-plan panel" aria-label="Movement plan">
+          {/* playtest-feedback-05 SESSION-03 CP2 (FB2, D-COMMIT-PER-SCREEN-REF):
+              the owner's note — "if you pin commit movement, it should be at
+              the top of the panel" — so CommitBar is the FIRST child of
+              `.tm-plan`, `flex: none`, capping the panel from above. The
+              single scroll region (CP1) sits beneath it. */}
+          {isPlan ? (
+            <CommitBar
+              gate={gate}
+              hostile={exitIds.size > 0}
+              doomedNames={doomedNames}
+              onCommit={onCommit}
+            />
+          ) : null}
+
           {/* playtest-feedback-05 SESSION-03 CP1 (FB1, D-TM-ONE-SCROLL): every
               plan-time element between the pinned viewport and the pinned
               CommitBar lives in ONE scroll container — mirrors the Attack
@@ -386,15 +400,6 @@ export function TacticalMove() {
                 folded into the single right-panel scroll (SESSION-03 CP1). */}
             <CombatLogPanel rows={logRows} nameOf={nameOf} turnLabel={logTurnLabel} />
           </div>
-
-          {isPlan ? (
-            <CommitBar
-              gate={gate}
-              hostile={exitIds.size > 0}
-              doomedNames={doomedNames}
-              onCommit={onCommit}
-            />
-          ) : null}
         </aside>
       </div>
     </section>
@@ -498,7 +503,10 @@ const TM_STYLES = `
                      background: rgba(24,3,11,.6); display: flex; flex-direction: column; gap: 3px; }
   .tm-exit-headline { font-size: 12px; font-weight: 700; letter-spacing: .06em; color: #FFD7E1; }
 
-  .tm-commit-dock { border-top: 1px solid var(--line-hot); background: var(--panel);
+  /* playtest-feedback-05 SESSION-03 CP2 (D-COMMIT-PER-SCREEN-REF): the dock
+     is now pinned at the TOP of the panel — the hot border caps it from
+     below instead of above. */
+  .tm-commit-dock { border-bottom: 1px solid var(--line-hot); background: var(--panel);
                     padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
   .tm-gate { text-align: center; letter-spacing: .12em; }
   .tm-blind-contract { display: flex; flex-direction: column; gap: 3px; text-align: center;

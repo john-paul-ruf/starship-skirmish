@@ -17,8 +17,12 @@ import { describe, expect, it } from 'vitest';
 const SCREEN_PATH = fileURLToPath(
   new URL('../../../../src/ui/screens/TacticalMove.tsx', import.meta.url),
 );
+const COMMIT_BAR_PATH = fileURLToPath(
+  new URL('../../../../src/ui/screens/tacticalMove/CommitBar.tsx', import.meta.url),
+);
 
 const screen = readFileSync(SCREEN_PATH, 'utf8');
+const commitBar = readFileSync(COMMIT_BAR_PATH, 'utf8');
 
 /** The scoped `TM_STYLES` template-literal body (everything between the
  *  backticks), so assertions read the actual shipped CSS, not JSX markup.
@@ -75,5 +79,40 @@ describe('CP1 one scroll region — the right panel shows a single scrollbar', (
       /\[data-testid="fleet-roster"\]\s*\{[^;]*[\s\S]*?overflow-y:\s*auto/,
     );
     expect(tmStyles).toMatch(/\.tm-stage\s*\{[^}]*overflow:\s*hidden/);
+  });
+});
+
+// ---- CP2 — commit pinned at the top ----------------------------------------
+
+describe('CP2 commit pinned at the top of the panel', () => {
+  it('mounts CommitBar before .tm-plan-scroll inside .tm-plan', () => {
+    const planOpen = screen.indexOf('<aside class="tm-plan panel"');
+    expect(planOpen).toBeGreaterThan(-1);
+    const commitIdx = screen.indexOf('<CommitBar', planOpen);
+    const scrollIdx = screen.indexOf('<div class="tm-plan-scroll">', planOpen);
+    expect(commitIdx).toBeGreaterThan(planOpen);
+    expect(scrollIdx).toBeGreaterThan(planOpen);
+    expect(commitIdx).toBeLessThan(scrollIdx);
+  });
+
+  it('renders CommitBar exactly once (no leftover bottom-dock render)', () => {
+    const first = screen.indexOf('<CommitBar');
+    expect(first).toBeGreaterThan(-1);
+    expect(screen.indexOf('<CommitBar', first + 1)).toBe(-1);
+  });
+
+  it('restyles the dock as a top dock (border-bottom, not border-top)', () => {
+    expect(tmStyles).toMatch(
+      /\.tm-commit-dock\s*\{[^}]*border-bottom:\s*1px solid var\(--line-hot\)/,
+    );
+    expect(tmStyles).not.toMatch(
+      /\.tm-commit-dock\s*\{[^}]*border-top:\s*1px solid var\(--line-hot\)/,
+    );
+  });
+
+  it('never touches CommitBar behaviour — gate logic, exit alertdialog, blind-commit copy', () => {
+    expect(commitBar).toContain('role="alertdialog"');
+    expect(commitBar).toContain('OPPONENT PLANS ARE NOT OBSERVABLE UNTIL RESOLUTION.');
+    expect(commitBar).toContain('canCommit');
   });
 });
