@@ -375,3 +375,60 @@ sibling `../postMatch/model.js` — `flattenCombatLog` / `LogRow` /
 module-boundary lint change. Motivation: `postMatch/model.ts` is the
 canonical `ResolutionTrace → LogRow[]` derivation and there is no
 architectural gain to duplicating it under `tacticalAttack/`.
+
+<!-- SESSION-03 -->
+### M14 (ui) — Shipyard per-item info copy · D-CATALOG-COPY-UI-SIDE
+
+New screen-local module `src/ui/screens/shipyard/catalogInfo.ts` — the
+Shipyard's "why should I pick this?" copy for every catalog item, keyed
+by catalog id. UI-local: NOT re-exported from `src/ui/components/index.ts`
+and NOT read by any screen outside the Shipyard. Extends the same
+precedent `src/ui/components/glossary.ts` set for derived-stat definitions
+(SESSION-06 playtest-feedback-01) — reference copy iterates while the
+catalog schema (FR-1 additive-only, hash-locked) does not, so item text
+lives in the UI, not in `catalog/**`.
+
+Public surface:
+
+```ts
+export const CATALOG_INFO: Record<string, string>;
+export const DIFF_TAG: Record<string, string>;
+export const infoFor:   (id: string) => string | undefined;
+export const diffTagFor:(id: string) => string | undefined;
+```
+
+- `CATALOG_INFO` — one-sentence blurb per id; covers all 26 v1 components
+  + all 12 v1 chassis. Rendered as an `InfoTip` label (text node only,
+  XSS-safe).
+- `DIFF_TAG` — per-COMPONENT differentiator phrase (e.g. `ALPHA STRIKE`,
+  `HIGH REGEN`, `MAX THRUST`), rendered as a `.chip` next to the row name
+  so items read apart without relying on the shared `SlotTag` glyph
+  (never-color-alone, design §1.1). Chassis rows deliberately have NO
+  tag — the class glyph (F/G/C/D) + hull/mass/evasion + cost is already
+  enough per-row differentiation.
+
+Coverage is drift-safe: `tests/unit/ui/shipyard/catalogInfo.test.ts`
+loads the real catalog and proves (a) every live id has a non-empty
+blurb, (b) no orphan `CATALOG_INFO` keys, (c) every component id has a
+`DIFF_TAG`, (d) no chassis / orphan `DIFF_TAG` keys.
+
+### M14 (ui) — Shipyard picker rows: `<button>` → `<div role="button">`
+
+`ComponentPicker.tsx` and `ChassisPicker.tsx` row elements changed from
+`<button type="button">` to `<div role="button" tabIndex={0}>` so the
+InfoTip's own focusable `<button class="tip-dot">` can nest inside as
+valid HTML (nested `<button>` elements are illegal). Keyboard semantics
+preserved: `Enter` / `Space` fire `onPick`. `ComponentPicker` maps the
+prior `disabled={targetBay === null}` to
+`aria-disabled` + `tabIndex={-1}` + no click / keydown handlers, so a
+picker row drops out of tab order until a bay is selected — mirroring
+the button-disabled behaviour byte-for-byte. This matches the existing
+SlotBench precedent (its clear-bay `<button>` already sits inside a
+`role="button"` div). Tip clicks are wrapped in a `stopPropagation`
+`<span>` so a hit on the `ⓘ` glyph never bubbles up to `onPick`;
+the CSS-driven reveal (`:hover` / `:focus-within`) is untouched.
+
+Dependency direction: unchanged. `catalogInfo.ts` imports nothing from
+outside `src/ui/screens/shipyard/**`; the pickers import `InfoTip` from
+the components barrel READ-ONLY (no barrel edit — SESSION-01 concurrency).
+No `components.css` edit. No `catalog/**` edit (FR-1 additive-only).
