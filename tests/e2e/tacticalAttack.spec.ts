@@ -539,8 +539,9 @@ test.describe('tactical attack screen', () => {
     page,
   }) => {
     // playtest-feedback-04 FB2 (D-ATK-ONE-SCROLL): the fix collapses three
-    // stacked scroll regions (.ta-col-r safety, .ta-bench-scroll, and any
-    // outer chrome overflow) into a single .ta-plan-scroll wrapper. At the
+    // stacked scroll regions (.ta-col-r safety, the old bench-scroll
+    // wrapper, and any outer chrome overflow) into a single .ta-plan-scroll
+    // wrapper (renamed from the pf-04 name in pf-05 SESSION-04 CP4). At the
     // project's own minimum supported viewport (FORGE-CONFIG 1280x720),
     // exactly one primary scroll surface lives in the right column, and the
     // CommitBar is fully visible under it.

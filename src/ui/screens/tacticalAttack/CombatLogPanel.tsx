@@ -12,9 +12,10 @@
 // `dangerouslySetInnerHTML` / `innerHTML` are lint-banned repo-wide (§4.9).
 //
 // D-LOG-SURFACE-ONLY: the panel reads `flattenCombatLog(trace)` through the
-// pure `liveLogRows` selector (tacticalAttack/model). No `sim/trace`
-// change, no new controller field. Blind-commit intact: the trace only
-// carries resolved beats.
+// pure `lastResolvedLogRows` selector (tacticalAttack/model), which surfaces
+// the newest fully-resolved turn (pf-04 FB3 · D-LOG-LAST-RESOLVED). No
+// `sim/trace` change, no new controller field. Blind-commit intact: the
+// trace only carries resolved beats.
 
 import type { LogKind, LogRow } from '../postMatch/model.js';
 import type { BodyId, CombatLogEntry } from '../../../sim/index.js';

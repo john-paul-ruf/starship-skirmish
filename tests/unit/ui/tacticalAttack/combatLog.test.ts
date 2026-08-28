@@ -1,17 +1,26 @@
-// M14 UI — In-match combat log strip selector (playtest-feedback-02 · S04 CP3).
+// M14 UI — In-match combat log strip selector.
 //
-// Locks the pure `liveLogRows` selector: current-turn filter, ordering
-// (newest first, movement then attack within a beat by underlying
-// `flattenCombatLog` guarantee), miss detection via `roll > chance`, and
-// the empty-input safety. Node-only (no JSX): `tacticalAttack/model.ts`
-// is `.ts` and this suite matches — the unit build (tsconfig.node) would
-// reject a JSX-transitive test.
+// Locks `lastResolvedLogRows` (playtest-feedback-04 FB3 · D-LOG-LAST-RESOLVED)
+// — the selector both tactical screens use to fill the CombatLogPanel from
+// the trace's newest fully-resolved turn (newest-first, movement-then-attack
+// within a turn by underlying `flattenCombatLog` guarantee), plus the empty
+// -input safety that drives the `NO COMBAT YET` label.
+//
+// Node-only (no JSX): `tacticalAttack/model.ts` is `.ts` and this suite
+// matches — the unit build (tsconfig.node) would reject a JSX-transitive
+// test.
+//
+// pf-05 SESSION-04 CP4: dropped the `liveLogRows` block (5 tests). The
+// selector itself was pruned from `model.ts` in the same checkpoint — the
+// controller batches a turn's trace at turn-end (see `driveTurn`), so the
+// `currentTurn` filter read empty the entire time the player was at that
+// turn. Nothing in `src/` referenced it after pf-04; `lastResolvedLogRows`
+// is the sole in-match log selector now.
 
 import { describe, expect, it } from 'vitest';
 
 import {
   lastResolvedLogRows,
-  liveLogRows,
 } from '../../../../src/ui/screens/tacticalAttack/model.js';
 import type {
   CombatLogEntry,
@@ -58,94 +67,11 @@ const turn = (
 const trace = (turns: readonly ResolutionTrace['turns'][number][]): ResolutionTrace =>
   ({ seedHi: 0, seedLo: 0, turns, outcome: null }) as unknown as ResolutionTrace;
 
-// ---- liveLogRows ----------------------------------------------------------
-
-describe('liveLogRows — current-turn filter, newest-first', () => {
-  it('returns only entries whose turn matches currentTurn', () => {
-    const t = trace([
-      turn(3, [], [entry({ turn: 3, sourceId: 1, targetId: 2 })]),
-      turn(4, [entry({ turn: 4, beat: 'movement', source: 'collision', sourceId: 1, targetId: 3 })], []),
-    ]);
-
-    const rows = liveLogRows(t, 4);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.entry.turn).toBe(4);
-    expect(rows[0]!.entry.beat).toBe('movement');
-  });
-
-  it('returns newest-first within the current turn (movement then attack reversed)', () => {
-    // Underlying flatten order: movement THEN attack, per FR-28. Newest
-    // first = attack entries first (reversed within the turn).
-    const t = trace([
-      turn(
-        5,
-        [entry({ turn: 5, beat: 'movement', source: 'collision', sourceId: 7, targetId: 8 })],
-        [
-          entry({ turn: 5, sourceId: 1, targetId: 2 }),
-          entry({ turn: 5, sourceId: 3, targetId: 4, result: 'kill' }),
-        ],
-      ),
-    ]);
-
-    const rows = liveLogRows(t, 5);
-    expect(rows).toHaveLength(3);
-    // Newest first: the LAST flattened row of turn 5 appears first.
-    expect(rows[0]!.entry.result).toBe('kill');
-    expect(rows[1]!.entry.beat).toBe('attack');
-    expect(rows[2]!.entry.beat).toBe('movement');
-  });
-
-  it('empty trace or unresolved turn → empty list (drives the NO FIRE RESOLVED YET note)', () => {
-    expect(liveLogRows(trace([]), 1)).toEqual([]);
-    // Turn 4 exists in the trace but the caller asked for turn 5.
-    const t = trace([turn(4, [], [entry({ turn: 4 })])]);
-    expect(liveLogRows(t, 5)).toEqual([]);
-  });
-
-  it('the "why" of a miss lives on the entry itself — roll > chance ⇔ miss', () => {
-    // `liveLogRows` is a filter, not a decoder — but the strip renders
-    // roll and chance verbatim so the player can read the miss. This
-    // test locks that both fields survive the selector unchanged.
-    const t = trace([
-      turn(
-        6,
-        [],
-        [
-          entry({ turn: 6, result: 'miss', chance: 0.3, roll: 0.71 }),
-          entry({ turn: 6, result: 'hit', chance: 0.72, roll: 0.44 }),
-        ],
-      ),
-    ]);
-    const rows = liveLogRows(t, 6);
-    expect(rows).toHaveLength(2);
-    // The predicate FR-25 leans on: on a miss, the seeded roll exceeds
-    // the published chance.
-    for (const row of rows) {
-      if (row.entry.result === 'miss') {
-        expect(row.entry.roll).toBeGreaterThan(row.entry.chance);
-      }
-    }
-  });
-
-  it('preserves LogRow.seq — stable keying for the renderer', () => {
-    const t = trace([
-      turn(7, [], [entry({ turn: 7 }), entry({ turn: 7, sourceId: 9, targetId: 10 })]),
-    ]);
-    const rows = liveLogRows(t, 7);
-    // Both rows carry a seq from the flatten ordering (0-indexed).
-    const seqs = rows.map((r) => r.seq).sort((a, b) => a - b);
-    expect(seqs).toEqual([0, 1]);
-  });
-});
-
 // ---- lastResolvedLogRows (playtest-feedback-04 · FB3 · D-LOG-LAST-RESOLVED) --
 //
-// The correct selector for the in-match combat log: the newest fully-resolved
-// turn's rows + its turn number. The trace batches a turn at turn-end (see
-// controller.driveTurn), so a `currentTurn`-based filter reads empty for the
-// entire duration the player is present at that turn — this selector reads
-// what actually happened. SESSION-02 consumes the same selector on the Move
-// screen; the signature locked here is that session's contract.
+// The in-match combat log's selector: the newest fully-resolved turn's rows +
+// its turn number. SESSION-02 consumes the same selector on the Move screen;
+// the signature locked here is that session's contract.
 
 describe('lastResolvedLogRows — newest resolved turn, empty-safe', () => {
   it('empty trace → { rows: [], turn: null } (drives NO COMBAT YET label)', () => {

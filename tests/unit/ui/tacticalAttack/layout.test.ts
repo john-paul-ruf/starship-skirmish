@@ -16,7 +16,7 @@
 //   • Structurally, `<CommitBar />` mounts inside `<div class="ta-col-r">` as
 //     a sibling of the Viewport and the plan-scroll wrapper, in that order.
 //   • Only ONE `overflow-y: auto` scroll region lives between the pinned
-//     Viewport and the pinned CommitBar (`.ta-bench-scroll` /
+//     Viewport and the pinned CommitBar (`.ta-plan-scroll` /
 //     `data-testid=ta-plan-scroll`). The right column itself hides overflow —
 //     no stacked scrollbars.
 //   • The bench-never-collapses `min-height` floor (pf-03 FB1 guarantee)
@@ -115,14 +115,14 @@ describe('CP1 — the commit bar is a contained, pinned child of .ta-col-r', () 
 // ---- CP1 — single bench scroll -------------------------------------------
 
 describe('CP1 — the plan surface has exactly one primary scroll region', () => {
-  it('.ta-plan-scroll (aka .ta-bench-scroll) is the single overflow-y:auto region', () => {
+  it('.ta-plan-scroll is the single overflow-y:auto region', () => {
     // A single wrapper owns scroll for hint→banner→bench→log (D-ATK-ONE-SCROLL
     // from pf-04). The scoped block sets `overflow-y: auto` on this one
     // selector — regression to stacked scrollbars (the pf-04 owner note) would
     // reintroduce a second `overflow-y: auto`.
-    expect(TA_STYLES).toMatch(/\.ta-bench-scroll\s*\{[^}]*overflow-y:\s*auto/);
+    expect(TA_STYLES).toMatch(/\.ta-plan-scroll\s*\{[^}]*overflow-y:\s*auto/);
     // And the plan-scroll data-testid ships on that same wrapper.
-    expect(screenSrc).toMatch(/class="ta-bench-scroll"\s+data-testid="ta-plan-scroll"/);
+    expect(screenSrc).toMatch(/class="ta-plan-scroll"\s+data-testid="ta-plan-scroll"/);
   });
 
   it('the right column itself hides overflow (delegates scroll to the inner wrapper)', () => {
@@ -142,7 +142,7 @@ describe('CP1 — the plan surface has exactly one primary scroll region', () =>
   it('the bench wrapper preserves a min-height floor (bench-never-collapses, FB1 pf-03)', () => {
     // The min-height is what stopped the bench from being crushed when the
     // combat log filled up. Removing it would re-open the pf-03 regression.
-    expect(TA_STYLES).toMatch(/\.ta-bench-scroll\s*\{[^}]*min-height:\s*\d+/);
+    expect(TA_STYLES).toMatch(/\.ta-plan-scroll\s*\{[^}]*min-height:\s*\d+/);
   });
 });
 
@@ -179,11 +179,11 @@ describe('CP2 — .is-immersive collapses to the tactical stage inside the fixed
     );
   });
 
-  it('hides the plan-scroll wrapper .ta-bench-scroll when immersive', () => {
+  it('hides the plan-scroll wrapper .ta-plan-scroll when immersive', () => {
     // Hiding the plan surface pulls hint/banner/bench/log out of view; the
     // Viewport grows into their space.
     expect(TA_STYLES).toMatch(
-      /\.ta-shell\.is-immersive\s+\.ta-bench-scroll\s*\{[^}]*display:\s*none/,
+      /\.ta-shell\.is-immersive\s+\.ta-plan-scroll\s*\{[^}]*display:\s*none/,
     );
   });
 

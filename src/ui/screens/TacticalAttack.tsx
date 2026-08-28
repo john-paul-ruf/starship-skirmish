@@ -416,16 +416,18 @@ export function TacticalAttack() {
            * playtest-feedback-04 FB2 (D-ATK-ONE-SCROLL): every plan-time
            * element between the pinned viewport and the pinned CommitBar
            * lives in ONE scroll container. Was three independent scroll
-           * regions in the right column (`.ta-col-r` safety, `.ta-bench-scroll`
-           * wrapping only the bench, and the log's internal `max-height:132px`);
-           * now they nest inside a single primary scroll. The `.ta-bench-scroll`
-           * class name is retained (external `inMatchLayout.test.ts` locks it)
-           * even though the wrapper now spans hint→banner→bench→log — the
-           * scroll region IS the plan surface, semantic drift Forge can rename
-           * in a future refactor. The bench-never-collapses guarantee (FB1
-           * regression from pf-03) carries via this wrapper's `min-height`.
+           * regions in the right column (`.ta-col-r` safety, the old
+           * `.ta-bench-scroll` wrapping only the bench, and the log's
+           * internal `max-height:132px`); now they nest inside a single
+           * primary scroll. playtest-feedback-05 SESSION-04 CP4 renamed the
+           * class `.ta-bench-scroll` → `.ta-plan-scroll` to match what it
+           * actually wraps (hint→banner→bench→log). The rename was unblocked
+           * when SESSION-01 lifted the external literal-lock on the old
+           * name out of `inMatchLayout.test.ts`. The bench-never-collapses
+           * guarantee (FB1 regression from pf-03) still carries via this
+           * wrapper's `min-height`.
            */}
-          <div class="ta-bench-scroll" data-testid="ta-plan-scroll">
+          <div class="ta-plan-scroll" data-testid="ta-plan-scroll">
             <div class="mono-xs c-cyan ta-orientation" data-testid="fire-flow-hint">
               SELECT A WEAPON → PICK A TARGET → COMMIT FIRE · OR HOLD ALL AND COMMIT
             </div>
@@ -517,13 +519,14 @@ const TA_STYLES = `
   /* Single primary scroll region for the plan-time surface — orientation
      hint + friendly-fire banner + weapon bench + combat log all live in this
      container. Only ONE scrollbar surfaces here even when the bench is long.
-     Class name \`.ta-bench-scroll\` predates FB2 (it wrapped only the bench);
-     kept as-is because an external layout test locks it — the DOM shape is
-     the load-bearing thing here, not the class name (see the wrapper's own
-     handoff note). */
-  .ta-bench-scroll { display: flex; flex-direction: column; gap: var(--s3);
-                     flex: 1 1 200px; min-height: 110px;
-                     overflow-y: auto; overflow-x: hidden; }
+     playtest-feedback-05 SESSION-04 CP4 renamed this class from the
+     originally semantically-narrow \`.ta-bench-scroll\` to \`.ta-plan-scroll\`
+     (matches what it actually wraps). The rename was unblocked when
+     SESSION-01 dropped the external literal-lock in
+     \`inMatchLayout.test.ts\`. */
+  .ta-plan-scroll { display: flex; flex-direction: column; gap: var(--s3);
+                    flex: 1 1 200px; min-height: 110px;
+                    overflow-y: auto; overflow-x: hidden; }
   .ta-orientation { letter-spacing: .1em; }
   /* The commit action never shrinks or scrolls out of view — it is short,
      load-bearing, and must stay fully rendered at every viewport size. */
@@ -588,7 +591,7 @@ const TA_STYLES = `
      loses track of what phase they are in. */
   .ta-shell.is-immersive .ta-layout { grid-template-columns: 1fr; }
   .ta-shell.is-immersive .ta-col-l { display: none; }
-  .ta-shell.is-immersive .ta-bench-scroll { display: none; }
+  .ta-shell.is-immersive .ta-plan-scroll { display: none; }
   .ta-shell.is-immersive .ta-col-r > .panel-ft { display: none; }
 `;
 

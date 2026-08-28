@@ -453,38 +453,16 @@ export const weaponOutOfRange = (
   return distance(shooterPos, targetPos) > weapon.range;
 };
 
-// ---- Live combat log strip (playtest-feedback-02 · S04 CP3) ---------------
-
-/**
- * Rows the in-match `CombatLogPanel` renders — the current turn's already-
- * resolved fire, newest first. Pure surfacing of the existing
- * `flattenCombatLog` → `LogRow[]` sequence (postMatch/model): the log
- * shape and kind-tagging are already the deterministic record (FR-28), and
- * every "why" a miss carries — `entry.roll > entry.chance` when
- * `entry.result === 'miss'` — is already on `CombatLogEntry`. NO sim/trace
- * change (session-prompt D-LOG-SURFACE-ONLY).
- *
- * Filtered to `currentTurn` so during attack-plan of turn N the strip
- * shows the just-resolved movement-beat contacts of turn N, and during
- * attack-resolve of turn N it fills with the resolving attack entries as
- * they land. Blind-commit intact: the strip only sees the trace, which
- * only accumulates AFTER a beat resolves — never pending plans.
- *
- * "Newest first" — the underlying flattened sequence is never reordered
- * (FR-28); reversal is a display transform on the filtered slice.
- */
-export const liveLogRows = (
-  trace: ResolutionTrace,
-  currentTurn: number,
-): readonly LogRow[] => {
-  const all = flattenCombatLog(trace);
-  const filtered: LogRow[] = [];
-  for (const row of all) {
-    if (row.entry.turn === currentTurn) filtered.push(row);
-  }
-  filtered.reverse();
-  return filtered;
-};
+// ---- In-match combat log strip (playtest-feedback-04 · FB3) ----------------
+//
+// A `currentTurn`-filtered selector shipped in pf-02 (`liveLogRows`) but the
+// controller batches a turn's trace at turn-end (see `driveTurn` — `withTurn`
+// runs AFTER `attack-resolve` while `turn.value` has already bumped), so the
+// current-turn filter reads empty the entire time the player is at that turn.
+// pf-04 SESSION-01 replaced it with `lastResolvedLogRows` below. pf-05
+// SESSION-04 CP4 prunes the now-dead `liveLogRows` and its 5-test suite —
+// no `src/` reference survived, and no cross-screen (SESSION-03) reference
+// ever used it (Move imports `lastResolvedLogRows`).
 
 /**
  * The newest fully-resolved turn's log rows (newest-first) + its turn number
@@ -495,8 +473,8 @@ export const liveLogRows = (
  *   `withTurn` appends a `TurnRecord` to the trace ONCE per turn, at turn-end,
  *   AFTER `attack-resolve`. `turn.value` bumps immediately after. So while the
  *   player is looking at turn N (any phase), the newest turn in `trace.turns`
- *   is N−1 — a `currentTurn` filter (see `liveLogRows` above) is EMPTY the
- *   entire time the player is present at that turn. The correct fix surfaces
+ *   is N−1 — a `currentTurn` filter was EMPTY the entire time the player was
+ *   present at that turn. The correct fix surfaces
  *   the newest resolved turn — the one that actually holds combat rows — so
  *   the panel is never gratuitously empty during planning.
  *
