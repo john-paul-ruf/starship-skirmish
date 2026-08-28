@@ -364,12 +364,31 @@ export function TacticalMove() {
 // so the design-token single-source (mocks/console.css) stays intact.
 
 const TM_STYLES = `
-  .tm-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+  /* Full-height flex shell so the tactical screen fills its bounded
+     .app-main.is-fixed-frame parent (playtest-feedback-02 · S04 CP1). */
+  .tm-shell { display: flex; flex-direction: column; flex: 1 1 auto;
+              height: 100%; min-height: 0; }
 
   .tm-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr) 360px;
                gap: var(--s3); padding: var(--s3); flex: 1 1 auto; min-height: 0; align-items: stretch; }
 
   .tm-roster, .tm-plan { display: flex; flex-direction: column; min-height: 0; }
+  /* Resolve-state roster: the panel wraps a hint line — allow it to scroll
+     if a future beat's message grows (playtest-feedback-02 · S04 CP2). */
+  .tm-roster { overflow-y: auto; overflow-x: hidden; }
+  /* Plan-state roster: the shared <FleetRoster> aside is the grid child.
+     Give it its own scroll so a tall all-fleets roster no longer drags
+     the pinned viewport off screen (playtest-feedback-02 · S04 CP2). */
+  .tm-layout > [data-testid="fleet-roster"] {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+  }
   .tm-side-hd { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3);
                 border-bottom: 1px solid var(--line);
                 background: linear-gradient(180deg, rgba(34,227,255,.05), transparent); }

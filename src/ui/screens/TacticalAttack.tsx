@@ -88,33 +88,46 @@ export function TacticalAttack() {
   // The screen is only meaningful in the two attack phases. Any other phase
   // renders a stable, empty root so the testid never disappears.
   if (phase !== 'attack-plan' && phase !== 'attack-resolve') {
-    return <section class="panel" data-testid="screen-tactical-attack" />;
+    return (
+      <section class="panel ta-shell" data-testid="screen-tactical-attack">
+        <TacticalAttackStyles />
+      </section>
+    );
   }
 
   // attack-resolve: the outcome is already final — the viewport animates the
   // beat and, on done (or immediately under reduced motion), advances.
+  // playtest-feedback-02 · S04 CP2: share the fixed-frame `.ta-shell` +
+  // `.ta-col-r` structure so the viewport pins under the frame; CP4 mounts
+  // the CombatLogPanel inside `.ta-col-r-strip` so the log follows the
+  // shots as they resolve.
   if (phase === 'attack-resolve') {
     return (
-      <div class="stack-lg" data-testid="screen-tactical-attack">
-        <header class="panel-hd">
+      <section class="ta-shell ta-shell-resolve" data-testid="screen-tactical-attack">
+        <TacticalAttackStyles />
+        <header class="ta-header panel-hd">
           <span class="t-h2 grow">ATTACK RESOLVE</span>
           <span class="chip chip-cyan">SNAPSHOT RESOLUTION</span>
         </header>
-        <Viewport
-          state={state}
-          phase={phase}
-          attackBeat={match.attackBeat.value}
-          reducedMotion={app.reducedMotion.value}
-          onResolveDone={() => match.resolveAnimationDone()}
-          aoePreview={null}
-          rangePreview={null}
-          selectedId={null}
-          positionOf={() => null}
-          onPickBody={() => undefined}
-          focusLabel="—"
-        />
-        <div class="mono-xs c-dim">RESOLVING FIRE AGAINST A PRE-DAMAGE SNAPSHOT …</div>
-      </div>
+        <div class="ta-col-r ta-col-r-resolve">
+          <Viewport
+            state={state}
+            phase={phase}
+            attackBeat={match.attackBeat.value}
+            reducedMotion={app.reducedMotion.value}
+            onResolveDone={() => match.resolveAnimationDone()}
+            aoePreview={null}
+            rangePreview={null}
+            selectedId={null}
+            positionOf={() => null}
+            onPickBody={() => undefined}
+            focusLabel="—"
+          />
+          <div class="mono-xs c-dim ta-resolve-note">
+            RESOLVING FIRE AGAINST A PRE-DAMAGE SNAPSHOT …
+          </div>
+        </div>
+      </section>
     );
   }
 
@@ -160,7 +173,8 @@ export function TacticalAttack() {
     // Entering the phase before the view is populated — render just the
     // viewport shell; the plan UI appears on the next tick.
     return (
-      <section class="panel" data-testid="screen-tactical-attack">
+      <section class="ta-shell ta-shell-boot panel" data-testid="screen-tactical-attack">
+        <TacticalAttackStyles />
         <Viewport
           state={state}
           phase={phase}
@@ -251,8 +265,9 @@ export function TacticalAttack() {
   };
 
   return (
-    <div class="stack-lg" data-testid="screen-tactical-attack">
-      <header class="panel-hd">
+    <section class="ta-shell" data-testid="screen-tactical-attack">
+      <TacticalAttackStyles />
+      <header class="ta-header panel-hd">
         <span class="t-h2 grow">ATTACK PLAN</span>
         <span class="chip" title="Decision 7 — no clock exists anywhere in the turn loop">
           NO TIMER
@@ -262,36 +277,28 @@ export function TacticalAttack() {
         </span>
       </header>
 
-      <div class="mono-xs c-dim">
+      <div class="mono-xs c-dim ta-subhead">
         TARGETING FROM POST-MOVEMENT POSITIONS · FULL STATE FOR ALL FLEETS · NO FOG OF WAR.
       </div>
 
-      <div
-        class="ta-layout"
-        style="display:grid;grid-template-columns:minmax(260px,320px) minmax(0,1fr);gap:var(--s3);align-items:start"
-      >
-        <div
-          class="ta-col-l"
-          data-testid="ta-col-l"
-          style="display:flex;flex-direction:column;gap:var(--s3);min-height:0"
-        >
-          <FleetRoster
-            groups={groups}
-            selectedId={selectedId.value}
-            onSelect={onSelect}
-            annotate={annotate}
-            aria-label="Attack roster — every fleet, no fog of war"
-          />
+      <div class="ta-layout">
+        <div class="ta-col-l" data-testid="ta-col-l">
+          <div class="ta-roster-scroll">
+            <FleetRoster
+              groups={groups}
+              selectedId={selectedId.value}
+              onSelect={onSelect}
+              annotate={annotate}
+              aria-label="Attack roster — every fleet, no fog of war"
+            />
+          </div>
           <ShipInspector ship={selected} velocity={selectedVelocity} />
-          <div class="mono-xs c-dim" style="letter-spacing:.14em">
+          <div class="mono-xs c-dim ta-col-l-ft">
             {`FLEET: ${fleetLabel(selfFleetId)} · ALL FLEETS VISIBLE`}
           </div>
         </div>
 
-        <div
-          class="ta-col-r"
-          style="display:flex;flex-direction:column;gap:var(--s3);min-width:0"
-        >
+        <div class="ta-col-r">
           <Viewport
             state={state}
             phase={phase}
@@ -310,27 +317,79 @@ export function TacticalAttack() {
 
           <FriendlyFireBanner warnings={warnings} />
 
-          <WeaponBench
-            view={view}
-            selfFleetId={selfFleetId}
-            assignments={assignments.value}
-            onAssign={onAssign}
-            hitChanceFor={match.hitChanceFor}
-            onSelectSlot={(slot) => {
-              selectedSlot.value = slot;
-            }}
-            renderCalledShot={(slot, assignment, target) => (
-              <CalledShotPicker
-                target={target}
-                selected={assignment.calledShot}
-                onPick={(cs) => onCalledShot(slot, cs)}
-              />
-            )}
-          />
+          <div class="ta-bench-scroll">
+            <WeaponBench
+              view={view}
+              selfFleetId={selfFleetId}
+              assignments={assignments.value}
+              onAssign={onAssign}
+              hitChanceFor={match.hitChanceFor}
+              onSelectSlot={(slot) => {
+                selectedSlot.value = slot;
+              }}
+              renderCalledShot={(slot, assignment, target) => (
+                <CalledShotPicker
+                  target={target}
+                  selected={assignment.calledShot}
+                  onPick={(cs) => onCalledShot(slot, cs)}
+                />
+              )}
+            />
+          </div>
 
           <CommitBar gate={gate} onCommit={onCommit} />
         </div>
       </div>
-    </div>
+    </section>
   );
+}
+
+// ---- Page-scoped styles ---------------------------------------------------
+//
+// playtest-feedback-02 · S04. Page-local composition only — never a token
+// redefinition, never a new palette, never `!important`. Mirrors
+// TacticalMove's single scoped <style> tag so the design-token
+// single-source (styles/tokens.css) stays intact. The fixed frame in
+// components.css (`.app-shell` + `.app-main.is-fixed-frame`) supplies a
+// bounded height; every rule here just fills it and hands scroll off to
+// the two side/bench regions.
+
+const TA_STYLES = `
+  .ta-shell { display: flex; flex-direction: column; flex: 1 1 auto;
+              height: 100%; min-height: 0;
+              gap: var(--s3); padding: var(--s3); }
+  .ta-shell-resolve, .ta-shell-boot { }
+  .ta-header { flex: none; }
+  .ta-subhead { flex: none; }
+
+  .ta-layout { display: grid;
+               grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+               gap: var(--s3);
+               flex: 1 1 auto; min-height: 0; }
+
+  .ta-col-l { display: flex; flex-direction: column; gap: var(--s3);
+              min-width: 0; min-height: 0; overflow: hidden; }
+  .ta-roster-scroll { flex: 1 1 auto; min-height: 0;
+                      overflow-y: auto; overflow-x: hidden;
+                      background: var(--panel); border: 1px solid var(--line);
+                      border-radius: var(--r); }
+  .ta-col-l-ft { flex: none; letter-spacing: .14em; }
+
+  .ta-col-r { display: flex; flex-direction: column; gap: var(--s3);
+              min-width: 0; min-height: 0; overflow: hidden; }
+  /* Viewport pins under the frame: grows to fill available height,
+     shrinks only down to a legible tactical minimum (mock \`.viewport.grow\`). */
+  .ta-col-r > .viewport { flex: 1 1 400px; min-height: 340px; }
+  /* Bench (+ combat log, mounted in CP4) scrolls independently under
+     the pinned viewport (mock \`.col-r .scrolly\`). */
+  .ta-bench-scroll { flex: 1 1 260px; min-height: 0;
+                     overflow-y: auto; overflow-x: hidden; }
+
+  .ta-col-r-resolve { flex: 1 1 auto; min-height: 0; }
+  .ta-col-r-resolve > .viewport { flex: 1 1 auto; min-height: 340px; }
+  .ta-resolve-note { flex: none; }
+`;
+
+function TacticalAttackStyles() {
+  return <style>{TA_STYLES}</style>;
 }
