@@ -18,7 +18,13 @@ import { OutcomeBanner } from './postMatch/OutcomeBanner.js';
 import { FleetsAndFates } from './postMatch/FleetsAndFates.js';
 import { CombatLog } from './postMatch/CombatLog.js';
 import { EndActions } from './postMatch/EndActions.js';
-import { flattenCombatLog, nameByBodyId, perShipFates } from './postMatch/model.js';
+import {
+  flattenCombatLog,
+  nameByBodyId,
+  perShipFates,
+  playerBodyIds,
+  shipFocusOptions,
+} from './postMatch/model.js';
 
 export function PostMatch() {
   const match = useMatch();
@@ -42,6 +48,11 @@ export function PostMatch() {
   const logRows = flattenCombatLog(trace);
   const names = nameByBodyId(match.initialFleets);
   const nameOf = (id: number): string => names.get(id) ?? `BODY ${String(id)}`;
+  // S02 ship-focus wiring: the "MINE" universe is the player fleet's bodies;
+  // the picker enumerates every starting ship, player ships first (D-LOG-FOCUS-
+  // DISPLAY-ONLY — filter only, the underlying sequence is not reordered).
+  const mineIds = playerBodyIds(match.initialFleets, match.playerFleetId);
+  const shipOptions = shipFocusOptions(match.initialFleets, match.playerFleetId);
 
   return (
     <div class="stack-lg" data-testid="screen-post-match">
@@ -51,7 +62,12 @@ export function PostMatch() {
         seedLabel={match.seedLabel}
       />
       <FleetsAndFates fleets={fates} />
-      <CombatLog rows={logRows} nameOf={nameOf} />
+      <CombatLog
+        rows={logRows}
+        nameOf={nameOf}
+        playerBodyIds={mineIds}
+        shipOptions={shipOptions}
+      />
       <EndActions />
     </div>
   );
