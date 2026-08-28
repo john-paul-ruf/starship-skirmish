@@ -41,6 +41,7 @@ import {
   fireContext,
   friendlyShips,
   positionOf as positionOfInView,
+  rangePreviewFor,
   shipViewOf,
   slotKey,
   toAttackPlans,
@@ -79,6 +80,10 @@ export function TacticalAttack() {
   const assignments = useSignal<ReadonlyMap<string, Assignment>>(new Map());
   /** All-fleets selection (roster + inspector + camera focus). */
   const selectedId = useSignal<BodyId | null>(null);
+  /** SESSION-07 — the fire slot the player is currently interacting with;
+   *  drives the tactical viewport range shell. Cleared when the player leaves
+   *  the plan phase or the shooter goes away. */
+  const selectedSlot = useSignal<FireSlot | null>(null);
 
   // The screen is only meaningful in the two attack phases. Any other phase
   // renders a stable, empty root so the testid never disappears.
@@ -102,6 +107,7 @@ export function TacticalAttack() {
           reducedMotion={app.reducedMotion.value}
           onResolveDone={() => match.resolveAnimationDone()}
           aoePreview={null}
+          rangePreview={null}
           selectedId={null}
           positionOf={() => null}
           onPickBody={() => undefined}
@@ -162,6 +168,7 @@ export function TacticalAttack() {
           reducedMotion={app.reducedMotion.value}
           onResolveDone={() => match.resolveAnimationDone()}
           aoePreview={null}
+          rangePreview={null}
           selectedId={null}
           positionOf={() => null}
           onPickBody={() => undefined}
@@ -206,6 +213,12 @@ export function TacticalAttack() {
     };
     break;
   }
+
+  // SESSION-07 — range shell geometry for whichever weapon slot the player is
+  // currently interacting with (WeaponBench emits focus events to update it).
+  // The shell hides on any degenerate input (shooter destroyed, missile slot,
+  // etc.) via `rangePreviewFor`'s null path — the bench text stays authoritative.
+  const rangePreview = rangePreviewFor(view, selectedSlot.value);
 
   const groups = groupByFleet(view.ships, selfFleetId);
   const roleMap = fireContext(staged, view);
@@ -286,6 +299,7 @@ export function TacticalAttack() {
             reducedMotion={app.reducedMotion.value}
             onResolveDone={() => match.resolveAnimationDone()}
             aoePreview={aoePreview}
+            rangePreview={rangePreview}
             selectedId={selectedId.value}
             positionOf={positionForFocus}
             onPickBody={(id) => {
@@ -302,6 +316,9 @@ export function TacticalAttack() {
             assignments={assignments.value}
             onAssign={onAssign}
             hitChanceFor={match.hitChanceFor}
+            onSelectSlot={(slot) => {
+              selectedSlot.value = slot;
+            }}
             renderCalledShot={(slot, assignment, target) => (
               <CalledShotPicker
                 target={target}

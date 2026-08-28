@@ -21,11 +21,11 @@ import { useEffect, useRef } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
 
 import type { AttackBeatRecord, BodyId, MatchState, Vec3 } from '../../../sim/index.js';
-import type { TacticalView, TracePlayer } from '../../../render/index.js';
+import type { RangeShell, TacticalView, TracePlayer } from '../../../render/index.js';
 import type { MatchPhase } from '../../matchContext.js';
 
 import { CameraHud } from './CameraHud.js';
-import { aoeRingProjection, type AoeRingProjection } from './model.js';
+import { aoeRingProjection, type AoeRingProjection, type RangePreview } from './model.js';
 
 export interface AoePreview {
   readonly label: string;
@@ -41,6 +41,10 @@ export interface ViewportProps {
   readonly reducedMotion: boolean;
   readonly onResolveDone: () => void;
   readonly aoePreview: AoePreview | null;
+  /** Range shell geometry (SESSION-07) — non-null draws a translucent shell at
+   *  `center` sized to `radius`; null hides it. Never computes a to-hit number
+   *  (arch §13.3 — hit chance stays single-sourced through `hitChanceFor`). */
+  readonly rangePreview: RangePreview | null;
   /** The roster's current selection — drives the F-key focus source (S04 CP1). */
   readonly selectedId: BodyId | null;
   /** Position lookup for the selected body — pure sim read, no render leakage. */
@@ -66,6 +70,7 @@ export function Viewport(props: ViewportProps) {
     reducedMotion,
     onResolveDone,
     aoePreview,
+    rangePreview,
     selectedId,
     positionOf,
     onPickBody,
@@ -74,6 +79,7 @@ export function Viewport(props: ViewportProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewRef = useRef<TacticalView | null>(null);
   const playerRef = useRef<TracePlayer | null>(null);
+  const rangeShellRef = useRef<RangeShell | null>(null);
   /** 'pending' until the dynamic import settles; 'ready' | 'failed' after. */
   const status = useSignal<'pending' | 'ready' | 'failed'>('pending');
   /** Ring geometry driven by RAF while an AoE preview is live (CP2). Signal so
@@ -83,8 +89,8 @@ export function Viewport(props: ViewportProps) {
   // Latest reactive inputs the async mount + RAF loops read through a ref —
   // avoids stale closures in the camera focus source + ring reprojection
   // without spinning up an effect per input.
-  const latest = useRef({ selectedId, positionOf, aoePreview });
-  latest.current = { selectedId, positionOf, aoePreview };
+  const latest = useRef({ selectedId, positionOf, aoePreview, rangePreview });
+  latest.current = { selectedId, positionOf, aoePreview, rangePreview };
 
   // Mount: create the view + trace player from the dynamically-imported render
   // layer. Disposed on unmount. A `cancelled` guard covers an unmount that races
@@ -104,6 +110,27 @@ export function Viewport(props: ViewportProps) {
         view.setState(state);
         viewRef.current = view;
         playerRef.current = render.attachTracePlayer(view);
+        // SESSION-07 range shell — hidden until a weapon slot supplies geometry.
+        // Attached to the scene once so the RAF loop below just mutates its
+        // radius / centre / visibility (cheap; no per-selection add/remove).
+        // Best-effort: a stubbed render module (unit-adjacent e2e that omits
+        // `createRangeShell` or exposes a bare `scene: {}`) skips the shell
+        // silently — the WeaponBench text stays authoritative, the rest of
+        // the viewport wires up as before.
+        try {
+          const factory = (render as { createRangeShell?: typeof import('../../../render/index.js').createRangeShell }).createRangeShell;
+          const sceneRoot = view.scene?.context?.scene;
+          if (typeof factory === 'function' && sceneRoot !== undefined) {
+            const rangeShell = factory(0);
+            rangeShell.setVisible(false);
+            sceneRoot.add(rangeShell.mesh);
+            rangeShellRef.current = rangeShell;
+          }
+        } catch {
+          // Shell attach failed — proceed without it; bench text is authoritative.
+          rangeShellRef.current?.dispose();
+          rangeShellRef.current = null;
+        }
         // Override the render's default focus source (last-picked) so the F key
         // slides to the ROSTER'S selection — CP1 wiring per the S01 followUp.
         view.camera.setFocusSource(() => {
@@ -112,10 +139,11 @@ export function Viewport(props: ViewportProps) {
           const p = latest.current.positionOf(id);
           return p === null ? null : [p.x, p.y, p.z];
         });
-        // CP2 ring: reproject every frame while a preview is live so the ring
-        // stays glued to the world as the camera orbits. Compare against the
-        // last value before writing to the signal — else every RAF thrashes
-        // Preact's re-render pass.
+        // CP2 ring + SESSION-07 range shell: reproject every frame so both
+        // overlays stay glued to the world as the camera orbits. Compare
+        // against the last value before writing to the signal — else every
+        // RAF thrashes Preact's re-render pass. The shell mutates its mesh
+        // directly (no signal, no DOM churn).
         const reprojectRing = (): void => {
           const preview = latest.current.aoePreview;
           const prev = ring.value;
@@ -131,6 +159,17 @@ export function Viewport(props: ViewportProps) {
               prev.cy === next.cy &&
               prev.r === next.r);
           if (!same) ring.value = next;
+          const range = latest.current.rangePreview;
+          const shell = rangeShellRef.current;
+          if (shell !== null) {
+            if (range === null) {
+              shell.setVisible(false);
+            } else {
+              shell.setCenter(range.center.x, range.center.y, range.center.z);
+              shell.setRadius(range.radius);
+              shell.setVisible(true);
+            }
+          }
           if (hasRaf) ringRaf = requestAnimationFrame(reprojectRing);
         };
         if (hasRaf) ringRaf = requestAnimationFrame(reprojectRing);
@@ -146,8 +185,20 @@ export function Viewport(props: ViewportProps) {
       if (ringRaf !== 0 && typeof cancelAnimationFrame === 'function') {
         cancelAnimationFrame(ringRaf);
       }
+      const shell = rangeShellRef.current;
+      const view = viewRef.current;
+      if (shell !== null) {
+        try {
+          view?.scene?.context?.scene?.remove(shell.mesh);
+        } catch {
+          // Scene teardown ordering can put the scene beyond reach; the
+          // dispose() below still releases the shell's own resources.
+        }
+        shell.dispose();
+      }
       playerRef.current?.dispose();
       viewRef.current?.dispose();
+      rangeShellRef.current = null;
       playerRef.current = null;
       viewRef.current = null;
     };

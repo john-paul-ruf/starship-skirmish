@@ -56,6 +56,10 @@ export interface WeaponBenchProps {
     assignment: Assignment,
     target: BlindShipView,
   ) => ComponentChildren;
+  /** SESSION-07 — surface which fire slot the player is interacting with so
+   *  the tactical viewport can draw a range shell around its shooter. Called
+   *  on focus-within a row and on target change. */
+  readonly onSelectSlot?: (slot: FireSlot) => void;
 }
 
 export function WeaponBench(props: WeaponBenchProps) {
@@ -114,8 +118,17 @@ interface FireRowProps extends ShipGroupProps {
 }
 
 function FireRow(props: FireRowProps) {
-  const { slot, shooter, targets, view, assignments, onAssign, hitChanceFor, renderCalledShot } =
-    props;
+  const {
+    slot,
+    shooter,
+    targets,
+    view,
+    assignments,
+    onAssign,
+    hitChanceFor,
+    renderCalledShot,
+    onSelectSlot,
+  } = props;
   const assignment = assignments.get(slotKey(slot));
   const isMissile = slot.kind === 'missile';
   const label = `${isMissile ? 'M' : 'W'}${String(slot.index + 1)}`;
@@ -142,12 +155,21 @@ function FireRow(props: FireRowProps) {
   const onChange = (e: Event) => {
     const value = (e.currentTarget as HTMLSelectElement).value;
     onAssign(slot, value === HOLD ? null : Number(value));
+    onSelectSlot?.(slot);
   };
+
+  // SESSION-07 — any focus inside the row (target select, called-shot picker)
+  // surfaces this slot upward so the viewport range shell tracks what the
+  // player is actually interacting with. `focusin` bubbles natively (unlike
+  // `focus`), so a single handler on the row's outer div catches focus into
+  // any nested control — no per-control wiring.
+  const onSlotFocusIn = (): void => onSelectSlot?.(slot);
 
   return (
     <div
       data-testid="weapon-row"
       data-slot={slotKey(slot)}
+      onFocusIn={onSlotFocusIn}
       style={`border:1px solid var(--line);border-left:2px solid ${isMissile ? 'var(--red)' : 'var(--line-hot)'};border-radius:var(--r);padding:var(--s2) var(--s3)`}
     >
       <div style="display:flex;align-items:center;gap:var(--s2)">
