@@ -317,6 +317,18 @@ export const createMatchController = (
     resolve();
   };
 
+  /**
+   * The single hit-chance source the UI reads (arch §13.3) — mirrors the
+   * private `targetEvasion` composition in `sim/rules/attack.ts` so the bench
+   * breakdown matches the resolver's numbers exactly, AND mirrors the
+   * resolver's out-of-range refusal (`sim/rules/attack.ts` ~L241 —
+   * `if (range > weapon.range) continue;`). A shot ordered beyond the
+   * weapon's envelope fires ZERO times; the published breakdown must say 0%,
+   * never the `HIT_FLOOR` the pure formula clamps an out-of-range ratio to.
+   * The 5% floor still applies to genuinely hard IN-RANGE shots — that is
+   * correct behaviour, only the "past max range" case is untruthful without
+   * this gate (playtest-feedback-04 FB1, D-HITCHANCE-RANGE-GATE).
+   */
   const hitChanceFor = (
     shooterId: BodyId,
     targetId: BodyId,
@@ -338,6 +350,18 @@ export const createMatchController = (
     const weapon = shooter.ship.weapons[weaponIndex];
     if (weapon === undefined) return ZERO_BREAKDOWN;
     const range = distance(shooterBody.position, targetBody.position);
+    // Out-of-range refusal — mirror `sim/rules/attack.ts` (`range > weapon.range
+    // continue`). Do this BEFORE calling `hitChance` so the breakdown carries
+    // zeros across the board, not a floored 5% from a collapsed range ratio.
+    if (range > weapon.range) {
+      return {
+        base: weapon.accuracy,
+        rangeFactor: 0,
+        velocityFactor: 0,
+        evasionFactor: 0,
+        final: 0,
+      };
+    }
     const targetSpeed = length(targetBody.velocity);
     const evasion = evasionWithDecoy(target, s.turn);
     return hitChance(weapon, range, targetSpeed, evasion);
