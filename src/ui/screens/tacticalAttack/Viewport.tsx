@@ -59,6 +59,13 @@ export interface ViewportProps {
   readonly onPickBody: (id: BodyId | null) => void;
   /** Label the camera-HUD shows next to FOCUS — the selected ship's name or `—`. */
   readonly focusLabel: string;
+  /** playtest-feedback-05 SESSION-04 CP2 — current immersive-mode state; the
+   *  CameraHud button reports this via `aria-pressed` and swaps its glyph +
+   *  label between FULL FIELD (off) and RESTORE (on). */
+  readonly fullscreen: boolean;
+  /** Flip the immersive-mode toggle. The state signal lives on the hosting
+   *  screen (auto-resets on unmount); the Viewport only forwards the click. */
+  readonly onToggleFullscreen: () => void;
 }
 
 /** D-ATK-RESOLVE-MIN-HOLD (playtest-feedback-03 SESSION-01) — the minimum time
@@ -87,6 +94,8 @@ export function Viewport(props: ViewportProps) {
     positionOf,
     onPickBody,
     focusLabel,
+    fullscreen,
+    onToggleFullscreen,
   } = props;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewRef = useRef<TacticalView | null>(null);
@@ -334,6 +343,8 @@ export function Viewport(props: ViewportProps) {
           onFocus={onFocus}
           focusLabel={focusLabel}
           focusDisabled={selectedId === null}
+          fullscreen={fullscreen}
+          onToggleFullscreen={onToggleFullscreen}
         />
       ) : null}
 

@@ -602,6 +602,53 @@ test.describe('tactical attack screen', () => {
     expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
   });
 
+  test('the FULL FIELD toggle collapses to the tactical stage and Esc restores', async ({
+    page,
+  }) => {
+    // playtest-feedback-05 SESSION-04 CP2 (FB3 · D-IMMERSIVE-GRID-COLLAPSE):
+    // FULL FIELD hides the roster + plan-scroll + commit and grows the
+    // Viewport into the vacated space. Esc restores. Grid-collapse only —
+    // the shell stays inside `.app-main.is-fixed-frame`.
+    await page.setViewportSize({ width: 1280, height: 720 });
+    const errors = await mount(page);
+
+    const shell = page.getByTestId('screen-tactical-attack');
+    const roster = page.getByTestId('ta-col-l');
+    const planScroll = page.getByTestId('ta-plan-scroll');
+    const commit = page.getByTestId('commit-fire-btn');
+    const cameraHud = page.getByTestId('camera-hud');
+    const fullscreenBtn = page.getByTestId('cam-fullscreen');
+
+    // Baseline: everything visible, toggle reads its off-state.
+    await expect(roster).toBeVisible();
+    await expect(planScroll).toBeVisible();
+    await expect(commit).toBeVisible();
+    await expect(fullscreenBtn).toHaveAttribute('aria-pressed', 'false');
+    await expect(fullscreenBtn).toHaveText(/FULL FIELD/);
+
+    // Click FULL FIELD → immersive collapses the plan surfaces.
+    await fullscreenBtn.click();
+    await expect(shell).toHaveClass(/is-immersive/);
+    await expect(fullscreenBtn).toHaveAttribute('aria-pressed', 'true');
+    await expect(fullscreenBtn).toHaveText(/RESTORE/);
+    // Roster, plan-scroll, commit all hidden (display:none).
+    await expect(roster).toBeHidden();
+    await expect(planScroll).toBeHidden();
+    await expect(commit).toBeHidden();
+    // The Viewport (and its CameraHud) remain — the whole point of the mode.
+    await expect(cameraHud).toBeVisible();
+
+    // Esc restores everything.
+    await page.keyboard.press('Escape');
+    await expect(shell).not.toHaveClass(/is-immersive/);
+    await expect(roster).toBeVisible();
+    await expect(planScroll).toBeVisible();
+    await expect(commit).toBeVisible();
+    await expect(fullscreenBtn).toHaveAttribute('aria-pressed', 'false');
+
+    expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
+  });
+
   test('reduced motion skips the attack animation and hands off immediately', async ({ page }) => {
     const errors = await mount(page);
 

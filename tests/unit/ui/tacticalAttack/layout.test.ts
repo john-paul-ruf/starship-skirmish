@@ -7,7 +7,8 @@
 // (`tsconfig.node`) refuses `.tsx` transitive imports; the shipyard tests and
 // the shell-frame test use the same file-read + regex pattern.
 //
-// What this pins (CP1 — commit contained + pinned; single bench scroll):
+// What this pins (CP1 — commit contained + pinned; single bench scroll;
+//                 CP2 — .is-immersive grid-collapse toggle):
 //   • `CommitBar` renders `.panel-ft`; the scoped `.ta-col-r > .panel-ft {
 //     flex: none }` keeps it a pinned, non-stretching child of the right
 //     column — not a page-level sibling that could span the whole page at the
@@ -34,9 +35,13 @@ const SCREEN_PATH = fileURLToPath(
 const COMMITBAR_PATH = fileURLToPath(
   new URL('../../../../src/ui/screens/tacticalAttack/CommitBar.tsx', import.meta.url),
 );
+const CAMERAHUD_PATH = fileURLToPath(
+  new URL('../../../../src/ui/screens/tacticalAttack/CameraHud.tsx', import.meta.url),
+);
 
 const screenSrc = readFileSync(SCREEN_PATH, 'utf8');
 const commitBarSrc = readFileSync(COMMITBAR_PATH, 'utf8');
+const cameraHudSrc = readFileSync(CAMERAHUD_PATH, 'utf8');
 
 /** Body of the scoped `TA_STYLES = \`…\`` template literal in the screen.
  *  Walks over escaped backticks (`\``) inside CSS comments — a raw
@@ -138,5 +143,81 @@ describe('CP1 — the plan surface has exactly one primary scroll region', () =>
     // The min-height is what stopped the bench from being crushed when the
     // combat log filled up. Removing it would re-open the pf-03 regression.
     expect(TA_STYLES).toMatch(/\.ta-bench-scroll\s*\{[^}]*min-height:\s*\d+/);
+  });
+});
+
+// ---- CP2 — immersive full-field toggle -----------------------------------
+
+describe('CP2 — .is-immersive collapses to the tactical stage inside the fixed frame', () => {
+  it('exposes a boolean toggle via a fullscreen signal, not a DOM Fullscreen API dependency', () => {
+    // Grid-collapse (testable, no browser-API flake). The screen creates a
+    // signal so component tests can drive state without touching
+    // requestFullscreen(). The pf-05 State-Update decision D-IMMERSIVE-GRID-
+    // COLLAPSE says the OS API can be layered later if the owner wants it.
+    expect(screenSrc).toMatch(/const\s+fullscreen\s*=\s*useSignal\(false\)/);
+  });
+
+  it('applies .is-immersive to .ta-shell when fullscreen is true', () => {
+    // The scoped rules key off `.ta-shell.is-immersive` so a leak of the
+    // class onto another root would still be scoped to this screen. The class
+    // string is composed from `fullscreen.value`.
+    expect(screenSrc).toMatch(/is-immersive/);
+    expect(screenSrc).toMatch(/fullscreen\.value/);
+  });
+
+  it('collapses .ta-layout to a single column when immersive', () => {
+    // grid-template-columns collapses to `1fr` (or single track). The Viewport
+    // grows into the vacated space; the roster + bench + commit are hidden.
+    expect(TA_STYLES).toMatch(
+      /\.ta-shell\.is-immersive\s+\.ta-layout\s*\{[^}]*grid-template-columns:\s*1fr/,
+    );
+  });
+
+  it('hides the left roster column .ta-col-l when immersive', () => {
+    expect(TA_STYLES).toMatch(
+      /\.ta-shell\.is-immersive\s+\.ta-col-l\s*\{[^}]*display:\s*none/,
+    );
+  });
+
+  it('hides the plan-scroll wrapper .ta-bench-scroll when immersive', () => {
+    // Hiding the plan surface pulls hint/banner/bench/log out of view; the
+    // Viewport grows into their space.
+    expect(TA_STYLES).toMatch(
+      /\.ta-shell\.is-immersive\s+\.ta-bench-scroll\s*\{[^}]*display:\s*none/,
+    );
+  });
+
+  it('hides the pinned CommitBar (.panel-ft) when immersive', () => {
+    // Immersive is a look-at-the-field mode; assignment work resumes on
+    // restore. Keeping COMMIT visible during immersive would defeat the point
+    // (the button is not usable without seeing the bench above it).
+    expect(TA_STYLES).toMatch(
+      /\.ta-shell\.is-immersive\s+\.ta-col-r\s*>\s*\.panel-ft\s*\{[^}]*display:\s*none/,
+    );
+  });
+
+  it('stays inside the fixed frame — no position:fixed escape from .app-main', () => {
+    // Grid-collapse only; the shell never lifts itself out of the bounded
+    // `.app-main.is-fixed-frame`. A regression to `position: fixed` would
+    // break the desktop gate + the layered chrome (topbar, match-chrome).
+    expect(TA_STYLES).not.toMatch(/\.ta-shell\.is-immersive[^{]*\{[^}]*position:\s*fixed/);
+  });
+
+  it('CameraHud carries a maximize/restore control (text + aria-pressed, never colour-only)', () => {
+    // The FULL FIELD / RESTORE labels are text (design §1.1 never-color-alone)
+    // and the button reports its pressed state via aria-pressed so a screen
+    // reader hears the toggle. The two glyphs decorate; the labels carry.
+    expect(cameraHudSrc).toMatch(/FULL FIELD/);
+    expect(cameraHudSrc).toMatch(/RESTORE/);
+    expect(cameraHudSrc).toMatch(/aria-pressed/);
+    expect(cameraHudSrc).toMatch(/data-testid="cam-fullscreen"/);
+  });
+
+  it('Escape exits immersive (window keydown handler wired only while active)', () => {
+    // useEffect adds a keydown listener; on Escape it flips the signal back
+    // to false. Wiring the listener only WHILE immersive keeps Esc free for
+    // modals and pickers on the assignment rows the rest of the time.
+    expect(screenSrc).toMatch(/Escape/);
+    expect(screenSrc).toMatch(/keydown/);
   });
 });

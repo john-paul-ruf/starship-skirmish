@@ -24,10 +24,19 @@ export interface CameraHudProps {
   readonly focusLabel: string;
   /** Focus button is disabled when no ship is selected. */
   readonly focusDisabled: boolean;
+  /** playtest-feedback-05 SESSION-04 CP2 — current immersive-mode state.
+   *  Reported to assistive tech via `aria-pressed` on the maximize button so
+   *  a screen reader hears the toggle; the label + glyph flip together so a
+   *  colorblind display still reads the switch (never-color-alone §1.1). */
+  readonly fullscreen: boolean;
+  /** Flip the immersive mode. Escape also exits, wired on the hosting screen. */
+  readonly onToggleFullscreen: () => void;
 }
 
 export function CameraHud(props: CameraHudProps) {
-  const { onReset, onFocus, focusLabel, focusDisabled } = props;
+  const { onReset, onFocus, focusLabel, focusDisabled, fullscreen, onToggleFullscreen } = props;
+  const fsLabel = fullscreen ? '⤡ RESTORE' : '⤢ FULL FIELD';
+  const fsTitle = fullscreen ? 'Exit full-field view (Esc)' : 'Full-field tactical view';
   return (
     <div
       class="hud"
@@ -66,11 +75,22 @@ export function CameraHud(props: CameraHudProps) {
           ◎ FOCUS
         </button>
       </div>
+      <button
+        type="button"
+        class="btn btn-sm"
+        data-testid="cam-fullscreen"
+        onClick={onToggleFullscreen}
+        aria-pressed={fullscreen}
+        title={fsTitle}
+        aria-label={fsTitle}
+      >
+        {fsLabel}
+      </button>
       <div class="mono-xs c-dim" style="letter-spacing:.06em">
         <span class="kbd">WASD</span> / <span class="kbd">⭤</span> MOVE · <span class="kbd">Q</span> <span class="kbd">E</span> ELEV
       </div>
       <div class="mono-xs c-dim" style="letter-spacing:.06em">
-        DRAG ORBIT · <span class="kbd">SHIFT</span> PAN · <span class="kbd">F</span> FLEET VIEW
+        DRAG ORBIT · <span class="kbd">SHIFT</span> PAN · <span class="kbd">F</span> FLEET VIEW · <span class="kbd">ESC</span> RESTORE
       </div>
     </div>
   );

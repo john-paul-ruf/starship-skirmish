@@ -19,6 +19,7 @@
 // HUD. Every blind-fire invariant carries verbatim.
 
 import { useSignal } from '@preact/signals';
+import { useEffect } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 
 import type { BodyId, CalledShotTarget } from '../../sim/index.js';
@@ -88,6 +89,36 @@ export function TacticalAttack() {
    *  drives the tactical viewport range shell. Cleared when the player leaves
    *  the plan phase or the shooter goes away. */
   const selectedSlot = useSignal<FireSlot | null>(null);
+  /** playtest-feedback-05 SESSION-04 CP2 (FB3, D-IMMERSIVE-GRID-COLLAPSE) —
+   *  the "full-field" toggle. When true, the scoped `.ta-shell.is-immersive`
+   *  block collapses `.ta-layout` to a single column and hides the roster,
+   *  the plan-scroll, and the CommitBar so the Viewport fills the bounded
+   *  fixed frame. Grid-collapse only, NOT `position: fixed` (stays inside
+   *  `.app-main.is-fixed-frame`; the browser Fullscreen API can layer over
+   *  this later if the owner wants OS-level fullscreen — the pf-05 State
+   *  Update flags the semantics as an Open Question). Auto-resets on
+   *  unmount / phase change because the signal is scoped to this component. */
+  const fullscreen = useSignal(false);
+  // Esc exits immersive — a single window listener while the toggle is on.
+  // Guarded on `globalThis.addEventListener` so the SSR / node-test path (no
+  // DOM) still typechecks + no-ops instead of throwing. The listener is
+  // installed only WHILE immersive so nothing else on the screen races Esc
+  // (a modal open on an assignment row still gets its own Esc handler back
+  // when the toggle exits).
+  const isImmersive = fullscreen.value;
+  useEffect(() => {
+    if (!isImmersive) return;
+    const target = globalThis as {
+      addEventListener?: (t: string, l: (e: KeyboardEvent) => void) => void;
+      removeEventListener?: (t: string, l: (e: KeyboardEvent) => void) => void;
+    };
+    if (target.addEventListener === undefined) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') fullscreen.value = false;
+    };
+    target.addEventListener('keydown', onKey);
+    return () => target.removeEventListener?.('keydown', onKey);
+  }, [isImmersive, fullscreen]);
 
   // The screen is only meaningful in the two attack phases. Any other phase
   // renders a stable, empty root so the testid never disappears.
@@ -135,6 +166,8 @@ export function TacticalAttack() {
             positionOf={() => null}
             onPickBody={() => undefined}
             focusLabel="—"
+            fullscreen={false}
+            onToggleFullscreen={() => undefined}
           />
           <div class="mono-xs c-dim ta-resolve-note">
             RESOLVING FIRE AGAINST A PRE-DAMAGE SNAPSHOT …
@@ -212,6 +245,8 @@ export function TacticalAttack() {
           positionOf={() => null}
           onPickBody={() => undefined}
           focusLabel="—"
+          fullscreen={false}
+          onToggleFullscreen={() => undefined}
         />
       </section>
     );
@@ -311,8 +346,14 @@ export function TacticalAttack() {
   const names = nameByBodyId(match.initialFleets);
   const nameOf = (id: BodyId): string => names.get(id) ?? `BODY ${String(id)}`;
 
+  const onToggleFullscreen = () => {
+    fullscreen.value = !fullscreen.value;
+  };
+
+  const shellClass = `ta-shell${fullscreen.value ? ' is-immersive' : ''}`;
+
   return (
-    <section class="ta-shell" data-testid="screen-tactical-attack">
+    <section class={shellClass} data-testid="screen-tactical-attack">
       <TacticalAttackStyles />
       <header class="ta-header panel-hd">
         <span class="t-h2 grow">ATTACK PLAN</span>
@@ -367,6 +408,8 @@ export function TacticalAttack() {
               if (id !== null) selectedId.value = id;
             }}
             focusLabel={focusLabel}
+            fullscreen={fullscreen.value}
+            onToggleFullscreen={onToggleFullscreen}
           />
 
           {/*
@@ -490,6 +533,20 @@ const TA_STYLES = `
   .ta-col-r-resolve > .viewport { flex: 1 1 auto; min-height: 340px; }
   .ta-resolve-note { flex: none; }
   .ta-no-fire-note { flex: none; }
+
+  /* playtest-feedback-05 SESSION-04 CP2 (FB3 · D-IMMERSIVE-GRID-COLLAPSE) —
+     "full-field" immersive mode. The scoped block collapses the two-column
+     grid to a single track and hides every plan-time affordance except the
+     Viewport. Grid-collapse, NOT \`position: fixed\`: the shell stays inside
+     the bounded \`.app-main.is-fixed-frame\`, so no browser Fullscreen API
+     dependency (testable, no flake). Esc / the CameraHud toggle restore the
+     grid. The header stays visible so the ATTACK PLAN / NO TIMER / BLIND
+     COMMIT chrome remains legible while the field fills — the player never
+     loses track of what phase they are in. */
+  .ta-shell.is-immersive .ta-layout { grid-template-columns: 1fr; }
+  .ta-shell.is-immersive .ta-col-l { display: none; }
+  .ta-shell.is-immersive .ta-bench-scroll { display: none; }
+  .ta-shell.is-immersive .ta-col-r > .panel-ft { display: none; }
 `;
 
 function TacticalAttackStyles() {
