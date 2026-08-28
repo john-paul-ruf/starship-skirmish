@@ -17,6 +17,12 @@ export type { HazardInstances, HazardInput, HazardKind } from './hazards.js';
 export { HazardGlyph, bodyKindToGlyph } from './hazards.js';
 export type { BoundaryShell } from './boundary.js';
 
+// playtest-feedback-01 SESSION-07 — weapon-range preview shell. Screens attach
+// this to `.scene.context.scene` and drive it over the same seams that carry
+// the AoE ring; the shell computes no to-hit number (arch §13.3).
+export { createRangeShell } from './range.js';
+export type { RangeShell } from './range.js';
+
 // SESSION-03 — trace playback + plotting ghost. The Movement/Attack screens drive these
 // over the `.scene` seam; the ghost DRAWS a supplied `previewArc` path (it never
 // integrates one — the single-integrator invariant lives in `sim/physics`).
