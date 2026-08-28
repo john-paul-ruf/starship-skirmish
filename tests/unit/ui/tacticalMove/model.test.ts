@@ -36,6 +36,7 @@ import {
   setCoast,
   sliceSecondsFor,
   toMovementPlans,
+  velocityReadout,
   waypointBurnsFor,
   wrapBearing,
   type MarksIntervalValue,
@@ -43,6 +44,7 @@ import {
   type RosterShip,
   type WaypointDraft,
 } from '../../../../src/ui/screens/tacticalMove/model.js';
+import { dirFromBearingPitch, scale } from '../../../../src/sim/mathx/index.js';
 import type {
   BlindMatchView,
   BlindShipView,
@@ -725,5 +727,85 @@ describe('buildGhostArc', () => {
       markIntervalSec: 1,
     });
     expect(arc).not.toHaveProperty('markPositions');
+  });
+});
+
+// ---- Velocity readout (pf-05 SESSION-03 CP4 — plotter mock parity) --------
+
+describe('velocityReadout', () => {
+  /** Round-trip tolerance — mathx's atan2 kernel is `< 1e-6`; degrees widen it
+   *  by RAD_TO_DEG ≈ 57.3, so ~1e-4 covers the plotter's rounded display. */
+  const NEAR = 1e-4;
+
+  it('null velocity → null (no selected body, seam not resolved yet)', () => {
+    expect(velocityReadout(null)).toBeNull();
+  });
+
+  it('zero velocity → speed 0 with bearing/pitch collapsed to 0 (no direction to report)', () => {
+    expect(velocityReadout({ x: 0, y: 0, z: 0 })).toEqual({
+      speed: 0,
+      bearing: 0,
+      pitch: 0,
+    });
+  });
+
+  it('+X velocity → bearing 0, pitch 0, speed = |v|', () => {
+    const r = velocityReadout({ x: 12, y: 0, z: 0 });
+    expect(r).not.toBeNull();
+    expect(r!.speed).toBeCloseTo(12);
+    expect(r!.bearing).toBeCloseTo(0, 4);
+    expect(r!.pitch).toBeCloseTo(0, 4);
+  });
+
+  it('+Z velocity → bearing 90 (matches dirFromBearingPitch\'s convention)', () => {
+    const r = velocityReadout({ x: 0, y: 0, z: 7 });
+    expect(r!.bearing).toBeCloseTo(90, 3);
+    expect(r!.pitch).toBeCloseTo(0, 3);
+  });
+
+  it('-X velocity → bearing 180', () => {
+    const r = velocityReadout({ x: -5, y: 0, z: 0 });
+    expect(r!.bearing).toBeCloseTo(180, 3);
+    expect(r!.pitch).toBeCloseTo(0, 3);
+  });
+
+  it('-Z velocity → bearing wraps into [0,360) (270, not -90)', () => {
+    const r = velocityReadout({ x: 0, y: 0, z: -5 });
+    expect(r!.bearing).toBeCloseTo(270, 3);
+  });
+
+  it('+Y velocity → pitch 90 (straight up)', () => {
+    const r = velocityReadout({ x: 0, y: 3, z: 0 });
+    expect(r!.pitch).toBeCloseTo(90, 3);
+  });
+
+  it('-Y velocity → pitch -90 (straight down)', () => {
+    const r = velocityReadout({ x: 0, y: -3, z: 0 });
+    expect(r!.pitch).toBeCloseTo(-90, 3);
+  });
+
+  it('round-trips through dirFromBearingPitch for the mock example (bearing 41 / pitch +18)', () => {
+    const dir = dirFromBearingPitch(41, 18);
+    const v = scale(dir, 312); // mock: VEL 312 · BEARING 041 / +18°
+    const r = velocityReadout(v);
+    expect(r!.speed).toBeCloseTo(312, 3);
+    expect(r!.bearing).toBeCloseTo(41, 3);
+    expect(r!.pitch).toBeCloseTo(18, 3);
+  });
+
+  it('round-trips across a grid of bearings × pitches (inverse of dirFromBearingPitch)', () => {
+    const bearings = [0, 30, 90, 135, 180, 225, 270, 330];
+    const pitches = [-60, -30, -5, 0, 5, 30, 60];
+    for (const b of bearings) {
+      for (const p of pitches) {
+        const v = scale(dirFromBearingPitch(b, p), 100);
+        const r = velocityReadout(v);
+        expect(r).not.toBeNull();
+        expect(r!.speed).toBeCloseTo(100, 3);
+        const bearingErr = Math.abs(((r!.bearing - b + 540) % 360) - 180);
+        expect(bearingErr).toBeLessThan(NEAR);
+        expect(r!.pitch).toBeCloseTo(p, 3);
+      }
+    }
   });
 });

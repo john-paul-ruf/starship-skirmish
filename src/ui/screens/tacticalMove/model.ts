@@ -52,7 +52,14 @@ import type {
 // `sim/physics` + `sim/rules` paths are lint-banned for `ui`), and this stays a
 // TYPE-only import so no sim VALUE leaks into the ui bundle.
 import type { WaypointBurn } from '../../../sim/types.js';
-import { add, dirFromBearingPitch, scale } from '../../../sim/mathx/index.js';
+import {
+  add,
+  atan2,
+  dirFromBearingPitch,
+  length,
+  RAD_TO_DEG,
+  scale,
+} from '../../../sim/mathx/index.js';
 
 // ---- Draft state ----------------------------------------------------------
 
@@ -411,6 +418,41 @@ export const impulsiveTotalDeltaV = (
     acc = add(acc, scale(dirFromBearingPitch(wp.bearing, wp.pitch), mag));
   }
   return acc;
+};
+
+// ---- Velocity readout (playtest-feedback-05 SESSION-03 CP4) ---------------
+
+/**
+ * The plotter's current-velocity readout, decomposed into the mock's
+ * `VEL {speed} m/s · BEARING {b} / {p}°` shape (`mocks/tactical-move.html`,
+ * WIDOWMAKER panel).
+ *   • `speed`   = |v|, raw (m/s in-fiction; the caller formats).
+ *   • `bearing` = compass angle of the horizontal projection, degrees in
+ *     [0, 360). Inverse of `dirFromBearingPitch`'s bearing: `atan2(v.z, v.x)`.
+ *   • `pitch`   = elevation off the horizontal plane, degrees in [-90, 90].
+ *     Inverse of the pitch mapping: `atan2(v.y, sqrt(v.x² + v.z²))`.
+ * Zero-velocity ships get `{ 0, 0, 0 }` (no direction to report). A `null`
+ * velocity — no selected body, or the seam has not resolved yet — collapses to
+ * `null` so the caller can render an em-dash placeholder.
+ *
+ * Pure. Uses `sim/mathx.atan2` (deterministic on `+ - * /` + `sqrt`) and
+ * `Math.sqrt` on the horizontal projection; both are legal for `ui` (the
+ * transcendental ban is scoped to `sim/**` + `ai/**`). No new sim-side math.
+ */
+export interface VelocityReadout {
+  readonly speed: number;
+  readonly bearing: number;
+  readonly pitch: number;
+}
+
+export const velocityReadout = (v: Vec3 | null): VelocityReadout | null => {
+  if (v === null) return null;
+  const speed = length(v);
+  if (speed === 0) return { speed: 0, bearing: 0, pitch: 0 };
+  const horiz = Math.sqrt(v.x * v.x + v.z * v.z);
+  const bearing = wrapBearing(atan2(v.z, v.x) * RAD_TO_DEG);
+  const pitch = clampPitch(atan2(v.y, horiz) * RAD_TO_DEG);
+  return { speed, bearing, pitch };
 };
 
 // ---- Fleet commit gate (§4.3) ---------------------------------------------

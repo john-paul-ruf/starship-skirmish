@@ -20,9 +20,14 @@
 // together; none is dropped.
 
 import { Button, Field, Meter } from '../../components/index.js';
-import { length } from '../../../sim/mathx/index.js';
 import type { Vec3 } from '../../../sim/index.js';
-import { clampMag, type PlanDraft, type RosterShip, type WaypointDraft } from './model.js';
+import {
+  clampMag,
+  velocityReadout,
+  type PlanDraft,
+  type RosterShip,
+  type WaypointDraft,
+} from './model.js';
 
 export interface ArcPlotterProps {
   readonly ship: RosterShip | null;
@@ -83,10 +88,25 @@ export function ArcPlotter({
   const active = activeWaypoint(draft);
   const budget = ship.budget;
   const coasting = draft.status === 'coast';
-  const speed = velocity === null ? 0 : length(velocity);
+  const readout = velocityReadout(velocity);
   const activeMag = active === null ? 0 : clampMag(active.magnitude, magnitudeMax);
 
   const parse = (raw: string): number => (raw.trim() === '' ? 0 : Number(raw));
+
+  /** Compass bearing zero-padded to three digits, matching the mock (`041`). */
+  const padBearing = (b: number): string => {
+    const n = Math.round(b);
+    if (n >= 100) return String(n);
+    if (n >= 10) return `0${n}`;
+    return `00${n}`;
+  };
+
+  /** Signed pitch with an explicit `+` for non-negative values (`+18`, `-05`). */
+  const signedPitch = (p: number): string => {
+    const n = Math.round(p);
+    if (n < 0) return String(n);
+    return `+${n}`;
+  };
 
   return (
     <section class="tm-plotter panel-bd" data-testid="arc-plotter">
@@ -122,15 +142,27 @@ export function ArcPlotter({
         </p>
       </div>
 
-      {/* ---- current velocity ---- */}
-      <div class="tm-velocity">
+      {/* ---- current velocity (mock parity — pf-05 SESSION-03 CP4) ---- */}
+      <div class="tm-velocity" data-testid="velocity-readout">
         <div class="t-label">Current Velocity</div>
         <div class="mono-xs">
-          VEL <span class="c-cyan">{round(speed)}</span> ·{' '}
+          VEL{' '}
+          <span class="c-cyan">{readout === null ? '—' : round(readout.speed)}</span> m/s ·{' '}
+          BEARING{' '}
+          <span class="c-cyan">{readout === null ? '—' : padBearing(readout.bearing)}</span>{' '}
+          /{' '}
+          <span class="c-cyan">
+            {readout === null ? '—' : `${signedPitch(readout.pitch)}°`}
+          </span>
+        </div>
+        <div class="mono-xs c-dim">
           {velocity === null
             ? '—'
             : `VX ${round(velocity.x)} · VY ${round(velocity.y)} · VZ ${round(velocity.z)}`}
         </div>
+        <p class="tm-hint mono-xs">
+          Newtonian — velocity persists between turns. Thrust modifies it.
+        </p>
       </div>
 
       {/* ---- waypoint selector (SESSION-05 CP2) — hidden for single-burn plans ---- */}

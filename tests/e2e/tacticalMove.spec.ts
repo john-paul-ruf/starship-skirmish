@@ -653,4 +653,34 @@ test.describe('tactical movement screen', () => {
 
     expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
   });
+
+  // ---- pf-05 SESSION-03 CP4 — enriched velocity readout on the plotter ----
+
+  test('CP4 velocity readout shows VEL m/s · BEARING / pitch° with the Newtonian one-liner', async ({
+    page,
+  }) => {
+    const errors = await mount(page);
+
+    // The plotter mounts against WIDOWMAKER (bodyId 1) whose synthetic velocity
+    // is set in the harness (buildController). Whatever the harness sets, the
+    // enriched readout must show the mock's vocabulary (VEL / m/s / BEARING).
+    const readout = page.getByTestId('velocity-readout');
+    await expect(readout).toBeVisible();
+    await expect(readout).toContainText('Current Velocity');
+    await expect(readout).toContainText('VEL');
+    await expect(readout).toContainText('m/s');
+    await expect(readout).toContainText('BEARING');
+    // The Newtonian one-liner from mocks/tactical-move.html.
+    await expect(readout).toContainText(/Newtonian.*velocity persists between turns/);
+    // The legacy VX/VY/VZ line remains (parity IN ADDITION, not replacement).
+    await expect(readout).toContainText('VX');
+    await expect(readout).toContainText('VY');
+    await expect(readout).toContainText('VZ');
+
+    // Stroke 4 pixel evidence — capture the readout for the handoff record. The
+    // file lands under Playwright's default test artifacts (uncommitted).
+    await readout.screenshot({ path: 'test-results/pf05-s03-cp4-velocity-readout.png' });
+
+    expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
+  });
 });

@@ -23,10 +23,14 @@ const COMMIT_BAR_PATH = fileURLToPath(
 const CAMERA_HUD_PATH = fileURLToPath(
   new URL('../../../../src/ui/screens/tacticalMove/CameraHud.tsx', import.meta.url),
 );
+const ARC_PLOTTER_PATH = fileURLToPath(
+  new URL('../../../../src/ui/screens/tacticalMove/ArcPlotter.tsx', import.meta.url),
+);
 
 const screen = readFileSync(SCREEN_PATH, 'utf8');
 const commitBar = readFileSync(COMMIT_BAR_PATH, 'utf8');
 const cameraHud = readFileSync(CAMERA_HUD_PATH, 'utf8');
+const arcPlotter = readFileSync(ARC_PLOTTER_PATH, 'utf8');
 
 /** The scoped `TM_STYLES` template-literal body (everything between the
  *  backticks), so assertions read the actual shipped CSS, not JSX markup.
@@ -153,5 +157,45 @@ describe('CP3 immersive full-field mode', () => {
 
   it('keeps the fixed frame — no position:fixed escape from .tm-shell', () => {
     expect(tmStyles).not.toMatch(/\.tm-shell(?:\.is-immersive)?\s*\{[^}]*position:\s*fixed/);
+  });
+});
+
+// ---- CP4 — low-risk mock parity on the plotter velocity readout ------------
+
+describe('CP4 plotter velocity readout — mock parity', () => {
+  it('renders the mock\'s VEL … m/s · BEARING … / …° shape (bearing + pitch + speed unit)', () => {
+    // The mock (`mocks/tactical-move.html`, WIDOWMAKER panel) shows
+    // `VEL 312 m/s · BEARING 041 / +18°`. Assert the vocabulary is present.
+    expect(arcPlotter).toContain('VEL');
+    expect(arcPlotter).toContain('m/s');
+    expect(arcPlotter).toContain('BEARING');
+    expect(arcPlotter).toMatch(/padBearing\(readout\.bearing\)/);
+    expect(arcPlotter).toMatch(/signedPitch\(readout\.pitch\)/);
+  });
+
+  it('derives bearing/pitch via velocityReadout — no inline trig / no new sim math', () => {
+    // Consumes the shared model helper; no per-component atan2 call.
+    expect(arcPlotter).toMatch(/import\s*\{[^}]*velocityReadout[^}]*\}\s*from\s*'\.\/model\.js'/);
+    expect(arcPlotter).not.toContain('atan2');
+    expect(arcPlotter).not.toMatch(/Math\.atan/);
+  });
+
+  it('keeps the existing VX/VY/VZ readout (owner asked for parity in addition, not replacement)', () => {
+    expect(arcPlotter).toMatch(/VX \$\{round\(velocity\.x\)\}/);
+    expect(arcPlotter).toMatch(/VY \$\{round\(velocity\.y\)\}/);
+    expect(arcPlotter).toMatch(/VZ \$\{round\(velocity\.z\)\}/);
+  });
+
+  it('adds the Newtonian one-liner from the mock', () => {
+    expect(arcPlotter).toContain('Newtonian');
+    expect(arcPlotter).toContain('velocity persists between turns');
+    expect(arcPlotter).toContain('Thrust modifies it');
+  });
+
+  it('does NOT add OVERBURN, COAST/BURN/OVERBURN/MATCH presets (out of scope — needs mechanic decision)', () => {
+    expect(arcPlotter).not.toContain('OVERBURN');
+    expect(arcPlotter).not.toMatch(/\bBURN\b/);
+    expect(arcPlotter).not.toMatch(/\bMATCH\b/);
+    expect(arcPlotter).not.toMatch(/preset/i);
   });
 });
