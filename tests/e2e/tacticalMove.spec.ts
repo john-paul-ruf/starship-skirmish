@@ -107,7 +107,13 @@ const buildHarness = async (): Promise<string> => {
 
     const controller = {
       view, phase, turn: signal(1), movementBeat, attackBeat: signal(null), state,
-      outcome: signal(null), trace: signal({}), seedLabel: 'SK-7F3A-9C21-D4E8',
+      outcome: signal(null),
+      // playtest-feedback-03 SESSION-02 CP2: the persistent combat log strip
+      // now reads match.trace on the Move screen; needs a well-shaped
+      // ResolutionTrace so flattenCombatLog() doesn't throw. Empty turns → the
+      // strip renders its "NO FIRE RESOLVED YET" empty state.
+      trace: signal({ turns: [] }),
+      seedLabel: 'SK-7F3A-9C21-D4E8',
       playerFleetId: 0, initialFleets,
       // SESSION-05: previewArc accepts the discriminated Vec3 | {segments} union
       // (D-ADDITIVE-PLAN, S04). SESSION-05 CP3 has the screen always send
@@ -212,6 +218,14 @@ test.describe('tactical movement screen', () => {
     // Blind-commit contract is always present (§4.2).
     await expect(page.getByTestId('no-timer')).toBeVisible();
     await expect(page.getByTestId('blind-commit')).toContainText('NOT OBSERVABLE UNTIL RESOLUTION');
+
+    // playtest-feedback-03 SESSION-02 CP2 — persistent combat log strip is
+    // present on the Move screen from turn entry, showing its NO-FIRE empty
+    // state before any beat resolves (FB2 — "should be visible at all times").
+    await expect(page.getByTestId('combat-log-strip')).toBeVisible();
+    await expect(page.getByTestId('combat-log-strip-empty')).toContainText(
+      'NO FIRE RESOLVED YET',
+    );
 
     // playtest-feedback-03 SESSION-02 CP1 (D-COMMIT-DEFAULT-COAST): every
     // living ship starts on COAST, so the gate is OPEN on turn entry — the
