@@ -41,7 +41,7 @@ import {
   assignmentGate,
   fireContext,
   friendlyShips,
-  liveLogRows,
+  lastResolvedLogRows,
   positionOf as positionOfInView,
   rangePreviewFor,
   shipRangePreview,
@@ -106,8 +106,12 @@ export function TacticalAttack() {
   // the CombatLogPanel inside `.ta-col-r-strip` so the log follows the
   // shots as they resolve.
   if (phase === 'attack-resolve') {
-    const resolveTurn = match.turn.value;
-    const resolveRows = liveLogRows(match.trace.value, resolveTurn);
+    // playtest-feedback-04 FB3 / D-LOG-LAST-RESOLVED: surface the newest
+    // resolved turn. During `attack-resolve` of turn N, the trace has NOT yet
+    // received turn N (that write lands at turn-end, after this animation) —
+    // the newest resolved turn is N−1. The panel's turn label follows the
+    // selector's returned turn, never the (still-planning) counter.
+    const resolved = lastResolvedLogRows(match.trace.value);
     const resolveNames = nameByBodyId(match.initialFleets);
     const resolveNameOf = (id: BodyId): string =>
       resolveNames.get(id) ?? `BODY ${String(id)}`;
@@ -136,11 +140,13 @@ export function TacticalAttack() {
             RESOLVING FIRE AGAINST A PRE-DAMAGE SNAPSHOT …
           </div>
           <CombatLogPanel
-            rows={resolveRows}
+            rows={resolved.rows}
             nameOf={resolveNameOf}
-            turnLabel={`TURN ${String(resolveTurn)}`}
+            turnLabel={
+              resolved.turn !== null ? `TURN ${String(resolved.turn)}` : 'NO COMBAT YET'
+            }
           />
-          {resolveRows.length === 0 ? (
+          {resolved.rows.length === 0 ? (
             <div class="mono-xs c-dim ta-no-fire-note" data-testid="no-fire-note">
               NO FIRE THIS TURN — ALL SHOTS HELD OR OUT OF RANGE
             </div>
@@ -290,15 +296,18 @@ export function TacticalAttack() {
     match.commitAttack(toAttackPlans(staged, view.ships));
   };
 
-  // ---- Live combat log strip (playtest-feedback-02 · S04 CP4) -----------
+  // ---- Live combat log strip (playtest-feedback-04 CP3 / D-LOG-LAST-RESOLVED) —
   //
-  // The current-turn rows, surfaced verbatim from the resolved trace via
-  // `liveLogRows`. Blind-commit intact: `trace` accumulates only after a
-  // beat resolves; opponent plans never appear. Names come from the
-  // immutable initial rosters (matches the post-match combat log) so a
-  // ship destroyed earlier in the match still reads by its authored name.
-  const currentTurn = match.turn.value;
-  const logRows = liveLogRows(match.trace.value, currentTurn);
+  // Surfaces the NEWEST RESOLVED turn (via `lastResolvedLogRows`), not the
+  // in-flight `currentTurn` — the trace batches a turn at turn-end, so during
+  // `attack-plan` of turn N the newest resolved turn is N−1 (or `null` on
+  // turn 1). Reading `currentTurn` here (the pre-CP3 shape) yielded an empty
+  // strip the entire time the player was planning. Blind-commit intact:
+  // `trace` accumulates only after a beat resolves; opponent plans never
+  // appear. Names come from the immutable initial rosters (matches the
+  // post-match combat log) so a ship destroyed earlier in the match still
+  // reads by its authored name.
+  const resolved = lastResolvedLogRows(match.trace.value);
   const names = nameByBodyId(match.initialFleets);
   const nameOf = (id: BodyId): string => names.get(id) ?? `BODY ${String(id)}`;
 
@@ -387,9 +396,11 @@ export function TacticalAttack() {
           </div>
 
           <CombatLogPanel
-            rows={logRows}
+            rows={resolved.rows}
             nameOf={nameOf}
-            turnLabel={`TURN ${String(currentTurn)}`}
+            turnLabel={
+              resolved.turn !== null ? `TURN ${String(resolved.turn)}` : 'NO COMBAT YET'
+            }
           />
 
           <CommitBar gate={gate} onCommit={onCommit} />

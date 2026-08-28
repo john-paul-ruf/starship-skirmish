@@ -474,6 +474,49 @@ export const liveLogRows = (
   return filtered;
 };
 
+/**
+ * The newest fully-resolved turn's log rows (newest-first) + its turn number
+ * (playtest-feedback-04 FB3, D-LOG-LAST-RESOLVED). `{ rows: [], turn: null }`
+ * before any turn has resolved.
+ *
+ * Why this exists — trace timing (see `src/app/match/controller.ts::driveTurn`):
+ *   `withTurn` appends a `TurnRecord` to the trace ONCE per turn, at turn-end,
+ *   AFTER `attack-resolve`. `turn.value` bumps immediately after. So while the
+ *   player is looking at turn N (any phase), the newest turn in `trace.turns`
+ *   is N−1 — a `currentTurn` filter (see `liveLogRows` above) is EMPTY the
+ *   entire time the player is present at that turn. The correct fix surfaces
+ *   the newest resolved turn — the one that actually holds combat rows — so
+ *   the panel is never gratuitously empty during planning.
+ *
+ * The alternative — appending mid-turn to the trace — is a sim-loop / trace
+ * change (M10/M11), out of the M14 lease. It would ALSO not fix the Move
+ * screen's empty strip: on the Move screen there IS no current-turn combat
+ * yet (the attack beat hasn't happened). Only "last resolved" surfaces
+ * something legible in every phase.
+ *
+ * Ordering: `trace.turns` is push-ordered ascending by turn number (FR-28,
+ * never reordered). The last element is the newest. Rows within that turn
+ * follow `flattenCombatLog`'s movement-then-attack ordering; the reverse
+ * here gives newest-first for display. Blind-commit intact: the trace only
+ * accumulates resolved beats — never pending plans.
+ */
+export const lastResolvedLogRows = (
+  trace: ResolutionTrace,
+): { readonly rows: readonly LogRow[]; readonly turn: number | null } => {
+  const turnRecord = trace.turns[trace.turns.length - 1];
+  if (turnRecord === undefined) return { rows: [], turn: null };
+  // Flatten the whole trace and slice by the newest turn number — reuses the
+  // canonical `flattenCombatLog` walk (movement then attack per FR-28) so we
+  // never re-derive the row order or the seq stamping.
+  const all = flattenCombatLog(trace);
+  const rows: LogRow[] = [];
+  for (const row of all) {
+    if (row.entry.turn === turnRecord.turn) rows.push(row);
+  }
+  rows.reverse();
+  return { rows, turn: turnRecord.turn };
+};
+
 // ---- Plan emission --------------------------------------------------------
 
 /**
