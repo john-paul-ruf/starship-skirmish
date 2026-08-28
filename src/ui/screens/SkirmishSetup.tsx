@@ -40,10 +40,13 @@ import {
   setBotTier,
   setBudget,
   setSeed,
+  standardFleet,
   toMatchSetup,
+  type DraftSource,
   type SetupState,
 } from './skirmish/model.js';
 import type { BotTier } from '../../ai/index.js';
+import type { Build } from '../../domain/index.js';
 
 /** Mint a 48-bit preview seed (§4.11). UI-only randomness — the determinism
  *  ban-list scopes to `sim`/`ai`, not `ui`. Falls back to 0 with no crypto. */
@@ -64,11 +67,19 @@ export function SkirmishSetup() {
   const { catalog, repo } = services;
 
   const state = useSignal<SetupState>(initialSetupState(catalog, mintPreviewSeed()));
+  const source = useSignal<DraftSource>('library');
 
   // The library is static for the life of this screen (setup never mutates the
   // repo), so the eligible source list is computed once.
   const entries = useMemo(() => eligibleForDraft(repo), [repo]);
   const budgets = useMemo(() => legalBudgets(catalog), [catalog]);
+  // The Standard Fleet is a pure function of `(catalog, budget)` (fixed rngKey
+  // under the hood, so a re-render never re-rolls it) — recompute only when
+  // the budget changes.
+  const standardBuilds = useMemo(
+    () => standardFleet(catalog, state.value.budget),
+    [catalog, state.value.budget],
+  );
 
   const onBudget = (budget: number): void => {
     state.value = setBudget(state.value, catalog, budget);
@@ -82,6 +93,21 @@ export function SkirmishSetup() {
 
   const onRemove = (index: number): void => {
     state.value = removeFromDraft(state.value, index);
+  };
+
+  const onSetSource = (next: DraftSource): void => {
+    source.value = next;
+  };
+
+  const onAddStandard = (build: Build): void => {
+    state.value = addToDraft(state.value, build);
+  };
+
+  // CP3 replaces this stub with the real save-to-Encyclopedia (fresh identity
+  // via `mintUniqueName` + `repo.put`, toasted).
+  const onSaveStandard = (build: Build): void => {
+    const shipName = build.name.length > 0 ? build.name : 'STANDARD SHIP';
+    services.toast(`Save “${shipName}” is not yet wired.`, 'warn');
   };
 
   const onSetCount = (count: number): void => {
@@ -148,6 +174,11 @@ export function SkirmishSetup() {
           entries={entries}
           onAddEntry={onAddEntry}
           onRemove={onRemove}
+          source={source.value}
+          onSetSource={onSetSource}
+          standardBuilds={standardBuilds}
+          onAddStandard={onAddStandard}
+          onSaveStandard={onSaveStandard}
         />
 
         <div class="skm-right">

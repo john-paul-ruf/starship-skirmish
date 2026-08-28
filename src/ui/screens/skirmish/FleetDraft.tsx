@@ -11,15 +11,17 @@
 // every number flows from `domain` via the model.
 
 import type { Catalog } from '../../../catalog/index.js';
-import { pointCost } from '../../../domain/index.js';
+import { pointCost, type Build } from '../../../domain/index.js';
 import type { IndexEntry } from '../../../persist/index.js';
-import { Button, Chip } from '../../components/index.js';
+import { Button, Chip, Segmented } from '../../components/index.js';
 
 import {
   budgetStatus,
   draftAffordable,
   playerFleetCost,
   remainingPoints,
+  standardAffordable,
+  type DraftSource,
   type SetupState,
 } from './model.js';
 
@@ -33,6 +35,15 @@ export interface FleetDraftProps {
   readonly entries: readonly IndexEntry[];
   readonly onAddEntry: (id: string) => void;
   readonly onRemove: (index: number) => void;
+  /** Which pool the source panel is showing — MY FLEET (library) or STANDARD FLEET (prebuilt). */
+  readonly source: DraftSource;
+  readonly onSetSource: (source: DraftSource) => void;
+  /** The prebuilt roster for the current budget (see `standardFleet` in model.ts). */
+  readonly standardBuilds: readonly Build[];
+  /** Draft one standard ship into the player fleet (`addToDraft`). */
+  readonly onAddStandard: (build: Build) => void;
+  /** Copy one standard ship into the Encyclopedia so it can be customised (fresh identity). */
+  readonly onSaveStandard: (build: Build) => void;
 }
 
 const chassisLabel = (catalog: Catalog, chassisId: string): string => {
@@ -41,66 +52,158 @@ const chassisLabel = (catalog: Catalog, chassisId: string): string => {
   return `${chassis.name.toUpperCase()} · ${chassis.classId.replace('-', ' ').toUpperCase()}`;
 };
 
-export function FleetDraft({ catalog, state, entries, onAddEntry, onRemove }: FleetDraftProps) {
+export function FleetDraft({
+  catalog,
+  state,
+  entries,
+  onAddEntry,
+  onRemove,
+  source,
+  onSetSource,
+  standardBuilds,
+  onAddStandard,
+  onSaveStandard,
+}: FleetDraftProps) {
   const cost = playerFleetCost(state, catalog);
   const remaining = remainingPoints(state, catalog);
   const status = budgetStatus(state, catalog);
   const over = status === 'over';
+  const showingLibrary = source === 'library';
+  const countChip = showingLibrary
+    ? `${String(entries.length)} BUILDS`
+    : `${String(standardBuilds.length)} STANDARD`;
 
   return (
     <div class="skm-draft">
-      {/* ---- SOURCE: the Encyclopedia ---- */}
+      {/* ---- SOURCE: Encyclopedia (MY FLEET) or prebuilt (STANDARD FLEET) ---- */}
       <section class="panel" data-testid="draft-source">
         <div class="panel-hd">
-          <span class="t-h2">Your Encyclopedia</span>
+          <span class="t-h2">{showingLibrary ? 'Your Encyclopedia' : 'Standard Fleet'}</span>
           <span class="grow" />
-          <Chip>{`${String(entries.length)} BUILDS`}</Chip>
+          <Chip>{countChip}</Chip>
+        </div>
+        <div class="panel-bd" data-testid="draft-source-toggle">
+          <Segmented
+            aria-label="Draft source"
+            value={source}
+            options={[
+              { value: 'library', label: 'MY FLEET' },
+              { value: 'standard', label: 'STANDARD FLEET' },
+            ]}
+            onChange={(v) => {
+              onSetSource(v as DraftSource);
+            }}
+          />
         </div>
         <div class="panel-bd mono-xs" style="color:var(--cyan);border-bottom:1px solid var(--line)">
-          DUPLICATES ALLOWED — field as many copies as the points permit.
+          {showingLibrary
+            ? 'DUPLICATES ALLOWED — field as many copies as the points permit.'
+            : 'PREBUILT ROSTER — ＋ Add drafts a copy; ⭳ Save copies it to your Encyclopedia to edit.'}
         </div>
-        {entries.length === 0 ? (
+        {showingLibrary ? (
+          entries.length === 0 ? (
+            <div class="panel-bd t-prose">
+              No saved builds yet. Author one in the Shipyard, or switch to STANDARD FLEET to draft a prebuilt ship.
+            </div>
+          ) : (
+            <div class="skm-source-list">
+              {entries.map((entry) => {
+                const fits = draftAffordable(entry, state, catalog);
+                return (
+                  <div class="row" key={entry.id} style="align-items:flex-start">
+                    <span class="grow">
+                      <span class="skm-row-name">{entry.name.length > 0 ? entry.name : '(unnamed)'}</span>
+                      <span class="mono-xs" style="display:block">
+                        {chassisLabel(catalog, entry.chassisId)}
+                      </span>
+                      {entry.needsRefit ? (
+                        <span class="mono-xs" style="display:block;color:var(--amber)">
+                          ⚠ NEEDS REFIT · CURRENT COST FITS · DRAFTABLE
+                        </span>
+                      ) : null}
+                    </span>
+                    <span style="text-align:right;flex:none">
+                      <span class="t-num" style="display:block">
+                        {String(entry.currentCost)}
+                      </span>
+                      <Button
+                        size="sm"
+                        disabled={!fits}
+                        onClick={() => {
+                          onAddEntry(entry.id);
+                        }}
+                        aria-label={`Add ${entry.name} to your fleet`}
+                      >
+                        ＋ Add
+                      </Button>
+                      <span
+                        class="mono-xs"
+                        style={`display:block;margin-top:4px${fits ? '' : ';color:var(--amber)'}`}
+                      >
+                        {fits
+                          ? `COSTS ${String(entry.currentCost)} · ${String(Math.max(0, remaining))} LEFT`
+                          : `NEEDS ${String(entry.currentCost)} · ONLY ${String(Math.max(0, remaining))} LEFT`}
+                      </span>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )
+        ) : standardBuilds.length === 0 ? (
           <div class="panel-bd t-prose">
-            No saved builds yet. Author one in the Shipyard — the Encyclopedia is the only draft source.
+            No standard ships fit this budget. Raise the budget to see a roster.
           </div>
         ) : (
           <div class="skm-source-list">
-            {entries.map((entry) => {
-              const fits = draftAffordable(entry, state, catalog);
+            {standardBuilds.map((build, index) => {
+              const shipCost = pointCost(catalog, build);
+              const fits = standardAffordable(build, state, catalog);
+              const displayName = build.name.length > 0 ? build.name : '(unnamed)';
               return (
-                <div class="row" key={entry.id} style="align-items:flex-start">
+                <div
+                  class="row"
+                  key={`${build.id}-${String(index)}`}
+                  style="align-items:flex-start"
+                  data-testid="standard-row"
+                >
                   <span class="grow">
-                    <span class="skm-row-name">{entry.name.length > 0 ? entry.name : '(unnamed)'}</span>
+                    <span class="skm-row-name">{displayName}</span>
                     <span class="mono-xs" style="display:block">
-                      {chassisLabel(catalog, entry.chassisId)}
+                      {chassisLabel(catalog, build.chassisId)}
                     </span>
-                    {entry.needsRefit ? (
-                      <span class="mono-xs" style="display:block;color:var(--amber)">
-                        ⚠ NEEDS REFIT · CURRENT COST FITS · DRAFTABLE
-                      </span>
-                    ) : null}
                   </span>
                   <span style="text-align:right;flex:none">
                     <span class="t-num" style="display:block">
-                      {String(entry.currentCost)}
+                      {String(shipCost)}
                     </span>
                     <Button
                       size="sm"
                       disabled={!fits}
                       onClick={() => {
-                        onAddEntry(entry.id);
+                        onAddStandard(build);
                       }}
-                      aria-label={`Add ${entry.name} to your fleet`}
+                      aria-label={`Add ${displayName} to your fleet`}
                     >
                       ＋ Add
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        onSaveStandard(build);
+                      }}
+                      aria-label={`Save ${displayName} to your Encyclopedia`}
+                    >
+                      ⭳ Save
                     </Button>
                     <span
                       class="mono-xs"
                       style={`display:block;margin-top:4px${fits ? '' : ';color:var(--amber)'}`}
                     >
                       {fits
-                        ? `COSTS ${String(entry.currentCost)} · ${String(Math.max(0, remaining))} LEFT`
-                        : `NEEDS ${String(entry.currentCost)} · ONLY ${String(Math.max(0, remaining))} LEFT`}
+                        ? `COSTS ${String(shipCost)} · ${String(Math.max(0, remaining))} LEFT`
+                        : `NEEDS ${String(shipCost)} · ONLY ${String(Math.max(0, remaining))} LEFT`}
                     </span>
                   </span>
                 </div>
