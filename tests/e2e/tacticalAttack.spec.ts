@@ -1,28 +1,27 @@
-// tests/e2e/tacticalAttack.spec.ts — Tactical Attack screen e2e (S06 CP4).
+// tests/e2e/tacticalAttack.spec.ts — Tactical Attack mock-parity e2e
+// (tactical-attack-mock-parity SESSION-03 CP5).
 //
-// Chromium UI smoke (like skirmishBoot / postMatch — not a determinism check):
+// This supersedes the prior stub-only geometry test, which passed a false
+// ~full-content-width "right column" because it only required it to be < 1200px
+// at 1280. The rebuild is verified in a REAL browser with the REAL shipped
+// stylesheet, along two harnesses:
 //
-//   1. GUARD (served app): a bare deep-link to `#/skirmish/attack` with no active
-//      match redirects to setup — the screen never renders cold.
+//   • STUB harness (real CSS + a deterministic `worldToScreen` stub) — drives
+//     the screen's own interactions (assignment, single-sourced hit chance,
+//     called-shot unlock, AoE banner/ring, fire-context chips, per-shooter range
+//     envelopes, out-of-range, resolve min-hold, full-field, reduced motion).
 //
-//   2. PLAN + WIRING (setContent harness): mount the REAL `TacticalAttack` inside
-//      the REAL `AppContext` + `MatchProvider` with a synthetic controller at the
-//      `attack-plan` phase, then drive the real interactions — assign a weapon
-//      and read the single-sourced hit-chance breakdown, see the called-shot
-//      picker unlock on a shields-down target (and stay LOCKED on a shielded
-//      one), raise the friendly-fire banner with an AoE-over-friendly missile
-//      WITHOUT the commit being disabled, and COMMIT → `commitAttack` fires.
+//   • REAL harness (bundles the REAL M13 render, no stub) — a complete minimal
+//     `MatchState` renders true ship/hazard/missile tactical labels; the three-
+//     column geometry is measured mechanically at 1920×1080 and 1280×720; the
+//     plan overlays (range rings/labels, firing-solution lines + controller-
+//     derived percentage pills, boundary/legend/HUD/AoE/friendly text) are
+//     asserted present; and a reviewed Chromium screenshot baseline is captured
+//     (only the nondeterministic 3D `<canvas>` is masked — never the columns,
+//     overlays, labels, pills, rail, or commit footer).
 //
-//   3. REDUCED MOTION: flipping to `attack-resolve` under reduced motion skips
-//      the animation (playAttack is never called) and hands off immediately via
-//      `resolveAnimationDone`.
-//
-// A real match cannot be driven to the attack phase here — Setup (S04) / Move
-// (S05) are concurrent in this wave and no app test seam exists — so the harness
-// supplies the controller they would produce. The render layer is stubbed (no
-// WebGL) so the resolve hand-off is deterministic; the screen's OWN logic
-// (assignment, hit-chance readout, called-shot unlock, AoE geometry, commit) is
-// exercised end-to-end against the real components.
+// All percentages enter through the harness controller's `hitChanceFor` (68/41/
+// 77 by weapon index) — never hardcoded in production JSX/CSS (arch §13.3).
 
 import { test, expect } from '@playwright/test';
 import * as esbuild from 'esbuild';
@@ -35,625 +34,369 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
 const APP_URL = 'http://localhost:8081/starship-skirmish/';
 
-// Stub the render layer: createTacticalView / attachTracePlayer become no-ops so
-// the harness needs no WebGL. attachTracePlayer records playAttack calls so the
-// reduced-motion assertion can prove the animation was skipped. S04 CP1/CP2:
-// stub the new seams the screen wires — `pick`, `focusBody`, `worldToScreen`,
-// `camera.setFocusSource`, `camera.resetToFleetView`, `camera.focus`. The
-// worldToScreen fake is a simple top-down (x, z) → (400+x, 300+z) projection so
-// the AoE ring renders at predictable pixel coords the assertion can pin down.
-const renderStub: esbuild.Plugin = {
+// ---- Shared fixture + harness entry ---------------------------------------
+//
+// One fleet layout, expressed as BOTH a `BlindMatchView` (the screen's plan
+// logic) and a `MatchState` (the render layer's `setState`) so the two agree:
+//
+//   Fleet 0 (you): WIDOWMAKER (cruiser, 3 named weapons + TALON/HAMMERHEAD racks),
+//                  HARRIER-2 (frigate), TIN CAN 3 (fighter, shields down).
+//   Fleet 1:       SPUR (frigate, shields down → called shots unlock),
+//                  IRON VERDICT (mega-destroyer, shields up).
+//   Fleet 2:       MOTE (fighter), DULL EDGE (cruiser).
+//   Hazards:       debris D-20, tracking missile 30 → WIDOWMAKER, spent missile 31.
+//
+// hitChanceFor returns 0.68 / 0.41 / 0.77 by weapon index so the three staged
+// weapon shots read distinct, single-sourced percentages.
+const FIXTURE = `
+  import { h, render } from 'preact';
+  import { signal } from '@preact/signals';
+  import { AppContext } from '${REPO_ROOT}/src/ui/appContext.ts';
+  import { MatchProvider } from '${REPO_ROOT}/src/ui/matchContext.ts';
+  import { TacticalAttack } from '${REPO_ROOT}/src/ui/screens/TacticalAttack.tsx';
+
+  globalThis.__commitCalls = [];
+  globalThis.__resolveDoneCalls = 0;
+  globalThis.__playAttackCalls = 0;
+  globalThis.__focusBodyCalls = [];
+  globalThis.__resetCalls = 0;
+  globalThis.__focusSource = null;
+  globalThis.__rangeShellCalls = [];
+
+  const wpn = (r, d, s, a, name) => ({ range:r, damage:d, shotsPerTurn:s, accuracy:a, display:{id:'w-'+name, name} });
+  const rack = (name, ammo) => ({ ammo, damage:40, aoeRadius:60, boostVelocity:140, trackingTurnRate:1, bodyMass:5, bodyRadius:2, display:{id:'m-'+name, name} });
+  const sim = (name, cls, cn) => ({ buildId:'b-'+name, name, chassis:{id:'c', name:cn}, chassisClass:cls,
+    mass:100, radius:8, maxHull:140, shieldCapacity:45, shieldRegenPerTurn:2, deltaVPerTurn:30, baseEvasion:0.1, hullRepairPerTurn:0,
+    weapons:[wpn(260,18,2,0.68,'PHASE BEAM'), wpn(180,6,2,0.72,'PULSE ARRAY'), wpn(120,4,4,0.80,'FLAK BATTERY')],
+    missiles:[rack('TALON',3), rack('HAMMERHEAD',0)], pointDefense:[], decoys:[] });
+  const sv = (o) => ({ bodyId:0, fleetId:0, name:'S', chassisClass:'frigate', hull:100, maxHull:140, shields:30, shieldCapacity:45,
+    shieldGenAlive:true, engineAlive:true, weaponAlive:[true,true,true], missileAlive:[true,true], missileAmmo:[3,0],
+    pdAlive:[], decoyAlive:[], decoyCharges:[], decoyActiveUntilTurn:0,
+    ship:sim(o.name||'S', o.chassisClass||'frigate', o.chassisName||'HULL'), ...o });
+
+  const widow = sv({ bodyId:1, fleetId:0, name:'WIDOWMAKER', chassisClass:'cruiser', chassisName:'MERIDIAN', shields:31, hull:96 });
+  const harrier = sv({ bodyId:2, fleetId:0, name:'HARRIER-2', chassisClass:'frigate', chassisName:'HARRIER',
+    weaponAlive:[true], missileAlive:[true], missileAmmo:[2], ship:sim('HARRIER-2','frigate','HARRIER') });
+  const tin = sv({ bodyId:3, fleetId:0, name:'TIN CAN 3', chassisClass:'fighter', chassisName:'NEEDLE', shields:0, hull:18, maxHull:34,
+    weaponAlive:[true], missileAlive:[], missileAmmo:[], ship:sim('TIN CAN 3','fighter','NEEDLE') });
+  const spur = sv({ bodyId:4, fleetId:1, name:'SPUR', chassisClass:'frigate', chassisName:'LANCER', shields:0, hull:41,
+    weaponAlive:[true,false], missileAlive:[true], missileAmmo:[1] });
+  const iron = sv({ bodyId:5, fleetId:1, name:'IRON VERDICT', chassisClass:'mega-destroyer', chassisName:'OBELISK',
+    shields:88, shieldCapacity:140, hull:305, maxHull:420 });
+  const dull = sv({ bodyId:6, fleetId:2, name:'DULL EDGE', chassisClass:'cruiser', chassisName:'BULWARK', shields:74, shieldCapacity:90, hull:118, maxHull:160 });
+  const mote = sv({ bodyId:7, fleetId:2, name:'MOTE', chassisClass:'fighter', chassisName:'WASP', shields:11, shieldCapacity:20, hull:26, maxHull:30,
+    weaponAlive:[true], missileAlive:[], missileAmmo:[], ship:sim('MOTE','fighter','WASP') });
+
+  const at = (x,y,z) => ({ x:x||0, y:y||0, z:z||0 });
+  const bd = (id, kind, x,y,z, r) => ({ id, kind, position:at(x,y,z), velocity:at(0), mass:100, radius:r||8 });
+  const POS = { 1:[0,0,0], 2:[-80,0,40], 3:[200,0,110], 4:[100,0,0], 5:[200,0,60], 6:[-160,0,140], 7:[0,0,80] };
+
+  const view = { turn:4, arena:{ center:at(0), radius:600 }, selfFleetId:0,
+    ships:[widow,harrier,tin,spur,iron,dull,mote],
+    bodies:[ bd(1,'ship',0,0,0,8), bd(2,'ship',-80,0,40,6), bd(3,'ship',200,0,110,4), bd(4,'ship',100,0,0,6),
+      bd(5,'ship',200,0,60,12), bd(6,'ship',-160,0,140,8), bd(7,'ship',0,0,80,4),
+      bd(20,'debris',-100,0,80,4), bd(30,'missile',60,20,-50,2), bd(31,'missile',-140,30,70,2) ] };
+
+  const combat = (v) => ({ bodyId:v.bodyId, ship:v.ship, shields:v.shields, hull:v.hull });
+  const shipsMap = new Map(); [widow,harrier,tin,spur,iron,dull,mote].forEach(v => shipsMap.set(v.bodyId, combat(v)));
+  const bodiesMap = new Map(); view.bodies.forEach(b => bodiesMap.set(b.id, b));
+  const fleetOf = new Map([[1,0],[2,0],[3,0],[4,1],[5,1],[6,2],[7,2]]);
+  const state = { turn:4, arena:{ center:at(0), radius:600 }, bodies:bodiesMap, ships:shipsMap, fleetOf,
+    guidances:new Map([[30,{ targetId:1, trackingBeatsLeft:2 }]]), debrisAge:new Map([[20,1]]) };
+
+  const FINALS = [0.68, 0.41, 0.77];
+  const controller = {
+    view: signal(view), phase: signal('attack-plan'), turn: signal(4),
+    movementBeat: signal(null), attackBeat: signal(null), state: signal(state),
+    outcome: signal(null), trace: signal({ turns: [] }),
+    seedLabel:'SK-7F3A-9C21-D4E8', playerFleetId:0, initialFleets:[],
+    commitMovement(){}, commitAttack(p){ globalThis.__commitCalls.push(p); },
+    resolveAnimationDone(){ globalThis.__resolveDoneCalls += 1; },
+    hitChanceFor(s,t,w){ return { base:0.68, rangeFactor:1.08, velocityFactor:0.95, evasionFactor:0.97, final:(FINALS[w] ?? 0.5) }; },
+    previewArc(){ return { positions:[], endsOutsideArena:false }; }, concede(){}, rematch(){},
+  };
+  const services = { catalog:{}, repo:{}, durable:true, route:signal({ name:'tactical-attack' }),
+    reducedMotion:signal(false), toasts:signal([]), activeMatch:signal(controller),
+    navigate(){}, toast(){}, startMatch(){ return controller; } };
+
+  globalThis.__controller = controller;
+  globalThis.__services = services;
+  render(h(AppContext.Provider, { value: services }, h(MatchProvider, { controller }, h(TacticalAttack, {}))),
+    document.getElementById('app'));
+`;
+
+// Stub render: deterministic `worldToScreen`, a range-shell factory that records
+// its reconciliation calls, and a trace player that records playAttack.
+const STUB_RENDER = `
+  export const createTacticalView = () => ({
+    setState() {}, dispose() {}, resize() {},
+    pick() { return null; },
+    worldToScreen(pos) { return { x: 640 + pos[0], y: 360 + pos[2] }; },
+    focusBody(id) { globalThis.__focusBodyCalls.push(id); },
+    camera: {
+      resetToFleetView() { globalThis.__resetCalls += 1; },
+      focus() {},
+      setFocusSource(s) { globalThis.__focusSource = s; },
+    },
+    scene: { context: { scene: { add() {}, remove() {} } } },
+  });
+  export const createRangeShell = (r) => {
+    globalThis.__rangeShellCalls.push(['create', r]);
+    return { mesh: {}, setRadius(x){ globalThis.__rangeShellCalls.push(['radius', x]); },
+      setCenter(x,y,z){ globalThis.__rangeShellCalls.push(['center', x,y,z]); },
+      setVisible(v){ globalThis.__rangeShellCalls.push(['visible', v]); }, setQuality(){}, dispose(){} };
+  };
+  export const attachTracePlayer = () => ({
+    playMovement() { return mk(); },
+    playAttack(_rec, opts) { globalThis.__playAttackCalls += 1; if (opts && opts.onDone) opts.onDone(); return mk(); },
+    dispose() {},
+  });
+  function mk() { return { skip(){}, replay(){}, onDone(cb){ cb(); }, dispose(){} }; }
+`;
+
+const renderStubPlugin: esbuild.Plugin = {
   name: 'stub-render',
   setup(build) {
-    build.onResolve({ filter: /render\/index\.js$/ }, (args) => ({
-      path: args.path,
-      namespace: 'stub-render',
-    }));
-    build.onLoad({ filter: /.*/, namespace: 'stub-render' }, () => ({
-      contents: `
-        globalThis.__playAttackCalls = 0;
-        globalThis.__focusBodyCalls = [];
-        globalThis.__resetCalls = 0;
-        globalThis.__focusSource = null;
-        globalThis.__rangeShellCalls = [];
-        export const createTacticalView = () => ({
-          setState() {}, dispose() {}, resize() {},
-          pick() { return null; },
-          worldToScreen(pos) {
-            // Fake top-down projection: (x, z) → CSS-pixels (400+x, 300+z).
-            return { x: 400 + pos[0], y: 300 + pos[2] };
-          },
-          focusBody(id) { globalThis.__focusBodyCalls.push(id); },
-          camera: {
-            resetToFleetView() { globalThis.__resetCalls += 1; },
-            focus() {},
-            setFocusSource(source) { globalThis.__focusSource = source; },
-          },
-          // playtest-feedback-03 SESSION-01: a minimal scene-graph shape so
-          // Viewport's range-shell attach (\`view.scene.context.scene\`) finds
-          // somewhere to add/remove the shell mesh.
-          scene: { context: { scene: { add() {}, remove() {} } } },
-        });
-        // playtest-feedback-03 SESSION-01 — the range-shell factory Viewport
-        // attaches once per mount; calls are recorded so a test can assert the
-        // shell followed a ship selection without needing real WebGL.
-        export const createRangeShell = () => ({
-          mesh: {},
-          setRadius(r) { globalThis.__rangeShellCalls.push(['radius', r]); },
-          setCenter(x, y, z) { globalThis.__rangeShellCalls.push(['center', x, y, z]); },
-          setVisible(v) { globalThis.__rangeShellCalls.push(['visible', v]); },
-          setQuality() {},
-          dispose() {},
-        });
-        export const attachTracePlayer = () => ({
-          playMovement() { return mk(); },
-          playAttack(_rec, opts) {
-            globalThis.__playAttackCalls += 1;
-            if (opts && opts.onDone) opts.onDone();
-            return mk();
-          },
-          dispose() {},
-        });
-        function mk() { return { skip() {}, replay() {}, onDone(cb) { cb(); }, dispose() {} }; }
-      `,
-      loader: 'js',
-    }));
+    build.onResolve({ filter: /render\/index\.js$/ }, (args) => ({ path: args.path, namespace: 'stub-render' }));
+    build.onLoad({ filter: /.*/, namespace: 'stub-render' }, () => ({ contents: STUB_RENDER, loader: 'js' }));
   },
 };
 
-const buildHarness = async (): Promise<string> => {
-  const virtualEntry = `
-    import { h, render } from 'preact';
-    import { signal } from '@preact/signals';
-    import { AppContext } from '${REPO_ROOT}/src/ui/appContext.ts';
-    import { MatchProvider } from '${REPO_ROOT}/src/ui/matchContext.ts';
-    import { TacticalAttack } from '${REPO_ROOT}/src/ui/screens/TacticalAttack.tsx';
-
-    globalThis.__commitCalls = [];
-    globalThis.__resolveDoneCalls = 0;
-
-    // A missile rack with a 60u blast; enough weapon shape for hit-chance.
-    const rack = { ammo: 2, damage: 40, aoeRadius: 60, boostVelocity: 140,
-      trackingTurnRate: 1, bodyMass: 5, bodyRadius: 1 };
-    const weapon = { range: 260, damage: 18, shotsPerTurn: 2, accuracy: 0.68 };
-    const mkShip = (name, over) => ({ buildId: 'b-' + name, name, chassisClass: 'frigate',
-      mass: 100, radius: 4, maxHull: 140, shieldCapacity: 45, shieldRegenPerTurn: 2,
-      deltaVPerTurn: 30, baseEvasion: 0.1, hullRepairPerTurn: 0,
-      weapons: [weapon], missiles: [rack], pointDefense: [], decoys: [], ...over });
-
-    const shipView = (over) => ({ bodyId: 0, fleetId: 0, name: 'SHIP', chassisClass: 'frigate',
-      hull: 100, maxHull: 140, shields: 30, shieldCapacity: 45, shieldGenAlive: true,
-      engineAlive: true, weaponAlive: [true], missileAlive: [true], missileAmmo: [2],
-      pdAlive: [], decoyAlive: [], decoyCharges: [], decoyActiveUntilTurn: 0,
-      ship: mkShip(over && over.name || 'SHIP', {}), ...over });
-
-    // Player fleet 0: WIDOWMAKER (shooter) + TIN CAN 3 (a friendly near the target).
-    // Enemy fleet 1: SPUR (shields DOWN → called shots unlock) + IRON VERDICT (shields UP).
-    const widow = shipView({ bodyId: 1, fleetId: 0, name: 'WIDOWMAKER', chassisClass: 'cruiser',
-      ship: mkShip('WIDOWMAKER', { chassisClass: 'cruiser' }) });
-    const tin = shipView({ bodyId: 2, fleetId: 0, name: 'TIN CAN 3', chassisClass: 'fighter',
-      weaponAlive: [true], missileAlive: [], missileAmmo: [],
-      ship: mkShip('TIN CAN 3', { chassisClass: 'fighter', missiles: [] }) });
-    const spur = shipView({ bodyId: 3, fleetId: 1, name: 'SPUR', shields: 0, hull: 41,
-      weaponAlive: [true, false], missileAlive: [true], missileAmmo: [1] });
-    const iron = shipView({ bodyId: 4, fleetId: 1, name: 'IRON VERDICT', chassisClass: 'mega-destroyer',
-      shields: 88, shieldCapacity: 140, hull: 300 });
-
-    const at = (x) => ({ x, y: 0, z: 0 });
-    const body = (id, x) => ({ id, kind: 'ship', position: at(x), velocity: at(0), mass: 100, radius: 4 });
-    const view = {
-      turn: 4, arena: { center: at(0), radius: 5400 }, selfFleetId: 0,
-      ships: [widow, tin, spur, iron],
-      // WIDOWMAKER at 0, TIN CAN 3 at 244 (44u from SPUR@200 → inside r60), SPUR@200, IRON@600.
-      bodies: [body(1, 0), body(2, 244), body(3, 200), body(4, 600)],
-    };
-
-    const breakdown = { base: 0.68, rangeFactor: 0.90, velocityFactor: 0.95, evasionFactor: 0.97, final: 0.57 };
-
-    const controller = {
-      view: signal(view),
-      phase: signal('attack-plan'),
-      turn: signal(4),
-      movementBeat: signal(null),
-      attackBeat: signal(null),
-      state: signal({ arena: { center: at(0), radius: 5400 }, ships: new Map(), bodies: new Map() }),
-      outcome: signal(null),
-      trace: signal({ turns: [] }),
-      seedLabel: 'SK-7F3A-9C21-D4E8',
-      playerFleetId: 0,
-      initialFleets: [],
-      commitMovement() {},
-      commitAttack(plans) { globalThis.__commitCalls.push(plans); },
-      resolveAnimationDone() { globalThis.__resolveDoneCalls += 1; },
-      hitChanceFor() { return breakdown; },
-      previewArc() { return { positions: [], endsOutsideArena: false }; },
-      concede() {},
-      rematch() {},
-    };
-
-    const services = {
-      catalog: {}, repo: {}, durable: true,
-      route: signal({ name: 'tactical-attack' }),
-      reducedMotion: signal(false),
-      toasts: signal([]),
-      activeMatch: signal(controller),
-      navigate() {}, toast() {}, startMatch() { return controller; },
-    };
-
-    globalThis.__controller = controller;
-    globalThis.__services = services;
-
-    render(
-      h(AppContext.Provider, { value: services },
-        h(MatchProvider, { controller }, h(TacticalAttack, {}))),
-      document.getElementById('app'),
-    );
-  `;
-  const built = await esbuild.build({
-    stdin: { contents: virtualEntry, loader: 'ts', resolveDir: REPO_ROOT },
-    bundle: true,
-    format: 'iife',
-    platform: 'browser',
-    target: ['es2022'],
-    jsx: 'automatic',
-    jsxImportSource: 'preact',
-    plugins: [renderStub],
-    write: false,
-    logLevel: 'silent',
-  });
-  const out = built.outputFiles?.[0];
-  if (!out) throw new Error('esbuild produced no output for the tactical-attack harness bundle');
-  return out.text;
+const externalFonts: esbuild.Plugin = {
+  name: 'external-fonts',
+  setup(build) {
+    build.onResolve({ filter: /\.woff2$/ }, () => ({ path: 'font', external: true }));
+  },
 };
 
-let harnessJs: string;
+/** Build the harness page HTML. `stub` swaps the render layer for the recording
+ *  stub; otherwise the REAL M13 render is bundled. Both inject the REAL shipped
+ *  stylesheet (`src/ui/styles/index.css`) so styling is real visual evidence. */
+const buildHarness = async (stub: boolean): Promise<string> => {
+  const js = await esbuild.build({
+    stdin: { contents: FIXTURE, loader: 'ts', resolveDir: REPO_ROOT },
+    bundle: true, format: 'iife', platform: 'browser', target: ['es2022'],
+    jsx: 'automatic', jsxImportSource: 'preact',
+    plugins: stub ? [renderStubPlugin] : [], write: false, logLevel: 'silent',
+  });
+  const cssBuild = await esbuild.build({
+    entryPoints: [path.join(REPO_ROOT, 'src/ui/styles/index.css')],
+    bundle: true, write: false, plugins: [externalFonts], logLevel: 'silent',
+  });
+  const jsText = js.outputFiles?.[0]?.text;
+  const cssText = cssBuild.outputFiles?.[0]?.text;
+  if (!jsText || !cssText) throw new Error('esbuild produced no output for the tactical-attack harness');
+  return `<!doctype html><html><head><style>${cssText}</style><style>
+    html,body{height:100%;margin:0;background:var(--void)}
+    #app{height:100vh;display:flex;flex-direction:column}
+    .app-main.is-fixed-frame{flex:1 1 auto;min-height:0;overflow:hidden;display:flex;flex-direction:column}
+  </style></head><body class="desktop"><div id="app" class="app-main is-fixed-frame"></div><script>${jsText}</script></body></html>`;
+};
+
+let stubHtml: string;
+let realHtml: string;
 test.beforeAll(async () => {
-  harnessJs = await buildHarness();
+  [stubHtml, realHtml] = await Promise.all([buildHarness(true), buildHarness(false)]);
 });
 
-const mount = async (page: import('@playwright/test').Page): Promise<string[]> => {
+/** Mount a harness page and collect page/console/request/WebGL errors. */
+const mount = async (
+  page: import('@playwright/test').Page,
+  which: 'stub' | 'real',
+): Promise<string[]> => {
   const errors: string[] = [];
   page.on('pageerror', (err) => errors.push(`pageerror: ${err.message}`));
-  const html = `<!doctype html><html><body><div id="app"></div><script>${harnessJs}</script></body></html>`;
-  await page.setContent(html, { waitUntil: 'load' });
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(`console: ${m.text()}`);
+  });
+  page.on('requestfailed', (r) => errors.push(`requestfailed: ${r.url()}`));
+  await page.setContent(which === 'stub' ? stubHtml : realHtml, { waitUntil: 'load' });
   await expect(page.getByTestId('screen-tactical-attack')).toBeVisible();
   return errors;
 };
 
-// ---------------------------------------------------------------------------
+/** Stage the three distinct weapon shots + the AoE missile in the fire rail.
+ *  W1 → IRON (68%), W2 → SPUR (41%), W3 → MOTE (77%), M1 (TALON) → IRON (AoE
+ *  clips friendly TIN CAN 3). WIDOWMAKER is the default active shooter. */
+const stageAll = async (page: import('@playwright/test').Page): Promise<void> => {
+  const rows = page.getByTestId('weapon-row');
+  await rows.nth(0).locator('select').selectOption('5'); // W1 → IRON VERDICT
+  await rows.nth(1).locator('select').selectOption('4'); // W2 → SPUR
+  await rows.nth(2).locator('select').selectOption('7'); // W3 → MOTE
+  await rows.nth(3).locator('select').selectOption('5'); // M1 (TALON) → IRON VERDICT
+};
 
-test.describe('tactical attack screen', () => {
+// ===========================================================================
+// A. Served-app guard
+// ===========================================================================
+
+test.describe('tactical attack — served-app guard', () => {
   test('a bare deep-link to the attack route with no match redirects to setup', async ({ page }) => {
     await page.goto(`${APP_URL}#/skirmish/attack`);
     await expect(page.getByTestId('screen-skirmish-setup')).toBeVisible();
   });
+});
 
-  test('assigns a weapon, reads the hit-chance breakdown, and unlocks called shots on a shields-down target', async ({
-    page,
-  }) => {
-    const errors = await mount(page);
+// ===========================================================================
+// B. Interaction (stub harness, real CSS)
+// ===========================================================================
 
-    // Blind-commit + NO-TIMER chrome present from the start (§4.2).
-    await expect(page.getByTestId('blind-commit-label')).toBeVisible();
-
-    // Rows derive from live slots: WIDOWMAKER W1, WIDOWMAKER M1, TIN CAN 3 W1.
+test.describe('tactical attack — interactions', () => {
+  test('assigns a weapon, reads the single-sourced hit chance, unlocks/locks called shots', async ({ page }) => {
+    const errors = await mount(page, 'stub');
     const rows = page.getByTestId('weapon-row');
-    await expect(rows).toHaveCount(3);
+    // WIDOWMAKER's live slots: W1, W2, W3, M1(TALON) — HAMMERHEAD (ammo 0) excluded.
+    await expect(rows).toHaveCount(4);
 
-    // Assign WIDOWMAKER W1 → SPUR (bodyId 3). Hit chance reads through hitChanceFor.
-    await rows.nth(0).locator('select').selectOption('3');
-    await expect(page.getByTestId('hitchance-final')).toHaveText('57%');
+    await rows.nth(0).locator('select').selectOption('5'); // W1 → IRON (weapon index 0 → 68%)
+    await expect(page.getByTestId('hitchance-final')).toHaveText('68%');
 
-    // SPUR shields are down → the called-shot picker unlocks and lists subsystems.
-    const picker = rows.nth(0).getByTestId('called-shot-picker');
+    // W2 → SPUR (shields down) → called-shot picker unlocks.
+    await rows.nth(1).locator('select').selectOption('4');
+    const picker = rows.nth(1).getByTestId('called-shot-picker');
     await expect(picker).toHaveAttribute('data-locked', 'false');
-    // Subsystems are real, keyboard-reachable buttons.
     await picker.getByRole('button', { name: 'ENGINE' }).click();
-    await expect(picker.getByRole('button', { name: 'ENGINE' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
+    await expect(picker.getByRole('button', { name: 'ENGINE' })).toHaveAttribute('aria-pressed', 'true');
 
-    // Re-target to IRON VERDICT (shields up) → the picker LOCKS.
-    await rows.nth(0).locator('select').selectOption('4');
-    await expect(rows.nth(0).getByTestId('called-shot-picker')).toHaveAttribute(
-      'data-locked',
-      'true',
-    );
+    // Re-target W2 to IRON (shields up) → picker LOCKS.
+    await rows.nth(1).locator('select').selectOption('5');
+    await expect(rows.nth(1).getByTestId('called-shot-picker')).toHaveAttribute('data-locked', 'true');
 
-    expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
+    expect(errors, errors.join('\n')).toEqual([]);
   });
 
-  test('an AoE-over-friendly raises the danger banner without blocking commit', async ({ page }) => {
-    const errors = await mount(page);
-    const rows = page.getByTestId('weapon-row');
-
-    // WIDOWMAKER M1 (row 1, the missile rack) → SPUR@200. TIN CAN 3@244 is a
-    // friendly 44u inside the r60 blast → the banner fires.
-    await rows.nth(1).locator('select').selectOption('3');
+  test('an AoE-over-friendly raises the banner + a projected ring without blocking commit', async ({ page }) => {
+    const errors = await mount(page, 'stub');
+    // M1 (TALON) → IRON; friendly TIN CAN 3 sits 50u inside the r60 blast.
+    await page.getByTestId('weapon-row').nth(3).locator('select').selectOption('5');
 
     const banner = page.getByTestId('ff-banner');
     await expect(banner).toBeVisible();
     await expect(banner).toHaveAttribute('role', 'alert');
     await expect(banner).toContainText('TIN CAN 3');
 
-    // Commit is NEVER disabled by the warning (§4.6) — and firing it commits.
+    // The overlay draws the projected AoE ring (aria-hidden) + a friendly callout.
+    await expect(page.getByTestId('aoe-ring')).toBeVisible();
+    await expect(page.getByTestId('aoe-friendly-callout').first()).toContainText('FRIENDLY IN AoE');
+
     const commit = page.getByTestId('commit-fire-btn');
     await expect(commit).toBeEnabled();
     await commit.click();
-    const commitCalls = await page.evaluate(
-      () => (globalThis as Record<string, unknown>)['__commitCalls'] as unknown[],
-    );
+    const commitCalls = await page.evaluate(() => (globalThis as Record<string, unknown>)['__commitCalls'] as unknown[]);
     expect(commitCalls.length).toBe(1);
 
-    expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
+    expect(errors, errors.join('\n')).toEqual([]);
   });
 
-  test('left column lists ALL fleets with pips, and clicking an enemy row opens the inspector', async ({
-    page,
-  }) => {
-    const errors = await mount(page);
-
-    // The FR-15 left column is present with the no-fog caption.
+  test('roster lists all fleets; selecting a friendly makes it the active shooter, an enemy only inspects', async ({ page }) => {
+    const errors = await mount(page, 'stub');
     const roster = page.getByTestId('fleet-roster');
-    await expect(roster).toBeVisible();
     await expect(roster).toContainText('FULL STATE FOR ALL FLEETS · NO FOG OF WAR');
+    await expect(page.getByTestId('fleet-group')).toHaveCount(3); // player + 2 bots
+    await expect(page.getByTestId('roster-ship')).toHaveCount(7); // all alive
 
-    // Both fleets have groups — player fleet first, then bots.
-    const groups = page.getByTestId('fleet-group');
-    await expect(groups).toHaveCount(2);
-    await expect(groups.nth(0)).toHaveAttribute('data-fleet-role', 'player');
-    await expect(groups.nth(0)).toHaveAttribute('data-fleet-id', '0');
-    await expect(groups.nth(1)).toHaveAttribute('data-fleet-role', 'bot');
-    await expect(groups.nth(1)).toHaveAttribute('data-fleet-id', '1');
+    // Default active shooter is the lowest-bodyId player ship (WIDOWMAKER).
+    await expect(page.getByTestId('fire-shooter-name')).toHaveText('WIDOWMAKER');
 
-    // Living roster rows are real buttons; every ship in every fleet is listed.
-    const livingRows = page.getByTestId('roster-ship');
-    // 2 player ships + 2 bot ships (all alive in the fixture).
-    await expect(livingRows).toHaveCount(4);
-    // Each row carries pips (never color-alone: label + aria-label).
-    await expect(livingRows.nth(0).getByTestId('ship-pips')).toBeVisible();
+    // Clicking HARRIER-2 (friendly) promotes it to the active shooter.
+    await page.locator('[data-testid="roster-ship"][data-ship-id="2"]').click();
+    await expect(page.getByTestId('fire-shooter-name')).toHaveText('HARRIER-2');
 
-    // Inspector starts empty and announces SELECT A SHIP.
-    const inspector = page.getByTestId('ship-inspector');
-    await expect(inspector).toBeVisible();
-    await expect(page.getByTestId('inspector-empty')).toBeVisible();
-
-    // Click SPUR (an enemy, bodyId 3) → inspector switches, testid decorates it.
-    await page.locator('[data-testid="roster-ship"][data-ship-id="3"]').click();
-    await expect(page.getByTestId('inspector-empty')).toHaveCount(0);
-    await expect(page.getByTestId('ship-inspector')).toHaveAttribute('data-ship-id', '3');
-    await expect(page.getByTestId('ship-inspector')).toContainText('SPUR');
-
-    // The camera focus label updates too — the HUD's focus-label reads the selection.
+    // Clicking SPUR (enemy) inspects it but leaves HARRIER-2 in the rail.
+    await page.locator('[data-testid="roster-ship"][data-ship-id="4"]').click();
+    await expect(page.getByTestId('ship-inspector')).toHaveAttribute('data-ship-id', '4');
     await expect(page.getByTestId('camera-focus-label')).toHaveText('SPUR');
+    await expect(page.getByTestId('fire-shooter-name')).toHaveText('HARRIER-2');
 
-    // Roster row selection propagates to focusBody(3) so F would slide to it.
-    const focusCalls = await page.evaluate(
-      () => (globalThis as unknown as { __focusBodyCalls: number[] }).__focusBodyCalls,
-    );
-    // The screen owns the F-key focus source; roster click sets selection but
-    // does NOT call focusBody directly (the CAMERA HUD's FOCUS button does).
-    // Instead assert the focus-source closure returns SPUR's position.
-    const focusPos = await page.evaluate(() => {
-      const g = globalThis as unknown as { __focusSource: null | (() => readonly number[] | null) };
-      return g.__focusSource !== null ? g.__focusSource() : null;
-    });
-    expect(focusPos).toEqual([200, 0, 0]); // SPUR is at (200, 0, 0)
-    // The camera-HUD Focus button dispatches focusBody(3) explicitly.
+    // The camera-HUD Focus button dispatches focusBody(4).
     await page.getByTestId('cam-focus').click();
-    const postFocusCalls = await page.evaluate(
-      () => (globalThis as unknown as { __focusBodyCalls: number[] }).__focusBodyCalls,
-    );
-    expect(postFocusCalls).toEqual([...focusCalls, 3]);
-
-    // The Reset button snaps the camera back.
+    const focusCalls = await page.evaluate(() => (globalThis as unknown as { __focusBodyCalls: number[] }).__focusBodyCalls);
+    expect(focusCalls).toContain(4);
     await page.getByTestId('cam-reset').click();
-    const resetCalls = await page.evaluate(
-      () => (globalThis as unknown as { __resetCalls: number }).__resetCalls,
-    );
-    expect(resetCalls).toBe(1);
+    expect(await page.evaluate(() => (globalThis as unknown as { __resetCalls: number }).__resetCalls)).toBe(1);
 
-    expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
+    expect(errors, errors.join('\n')).toEqual([]);
   });
 
-  test('an AoE-over-friendly missile draws a projected ring alongside the authoritative banner', async ({
-    page,
-  }) => {
-    const errors = await mount(page);
-    const rows = page.getByTestId('weapon-row');
+  test('roster paints SHOOTER / TARGETED / AoE fire-context chips as assignments are staged', async ({ page }) => {
+    const errors = await mount(page, 'stub');
+    await page.getByTestId('weapon-row').nth(3).locator('select').selectOption('5'); // M1 → IRON
 
-    // WIDOWMAKER M1 → SPUR@(200,0,0). r60 blast. worldToScreen's top-down fake
-    // projects the target to (400+200, 300+0) = (600, 300); a sample offset by
-    // +radius on x maps to (660, 300) → pixel radius = 60.
-    await rows.nth(1).locator('select').selectOption('3');
-
-    // Ring reprojection lives in a RAF loop — poll until it lands.
-    const ring = page.getByTestId('aoe-ring');
-    await expect(ring).toBeVisible();
-    await expect(ring).toHaveAttribute('data-ring-cx', '600');
-    await expect(ring).toHaveAttribute('data-ring-cy', '300');
-    await expect(ring).toHaveAttribute('data-ring-r', '60');
-    // Ring is aria-hidden — informational overlay, banner carries the a11y channel.
-    await expect(ring).toHaveAttribute('aria-hidden', 'true');
-
-    // The banner remains authoritative and role="alert".
-    const banner = page.getByTestId('ff-banner');
-    await expect(banner).toBeVisible();
-    await expect(banner).toHaveAttribute('role', 'alert');
-
-    // Commit is NEVER disabled by the warning — the ring is informational.
-    await expect(page.getByTestId('commit-fire-btn')).toBeEnabled();
-
-    expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
-  });
-
-  test('roster paints TARGETED / SHOOTER / AoE fire-context chips as assignments are staged', async ({
-    page,
-  }) => {
-    const errors = await mount(page);
-    const rows = page.getByTestId('weapon-row');
-
-    // WIDOWMAKER M1 → SPUR. Fire context should paint SHOOTER on 1 and
-    // TARGETED on 3, plus AoE on 2 (TIN CAN 3 caught in the blast).
-    await rows.nth(1).locator('select').selectOption('3');
-
-    const shooterChip = page
-      .locator('[data-testid="roster-ship"][data-ship-id="1"]')
-      .getByTestId('roster-role-chip');
-    await expect(shooterChip).toHaveAttribute('data-role', 'shooter');
-
-    const targetedChip = page
-      .locator('[data-testid="roster-ship"][data-ship-id="3"]')
-      .getByTestId('roster-role-chip');
-    await expect(targetedChip).toHaveAttribute('data-role', 'targeted');
-
-    const aoeChip = page
-      .locator('[data-testid="roster-ship"][data-ship-id="2"]')
-      .getByTestId('roster-role-chip');
+    await expect(
+      page.locator('[data-testid="roster-ship"][data-ship-id="1"]').getByTestId('roster-role-chip'),
+    ).toHaveAttribute('data-role', 'shooter');
+    await expect(
+      page.locator('[data-testid="roster-ship"][data-ship-id="5"]').getByTestId('roster-role-chip'),
+    ).toHaveAttribute('data-role', 'targeted');
+    const aoeChip = page.locator('[data-testid="roster-ship"][data-ship-id="3"]').getByTestId('roster-role-chip');
     await expect(aoeChip).toHaveAttribute('data-role', 'aoe-friendly');
-    // The chip carries text ("⚠ IN AoE") in addition to color — never color-alone.
     await expect(aoeChip).toContainText('AoE');
 
-    expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
+    expect(errors, errors.join('\n')).toEqual([]);
   });
 
-  test('selecting a ship shows the range shell immediately — no weapon-slot focus required', async ({
-    page,
-  }) => {
-    const errors = await mount(page);
-
-    // Before any selection, the readout says so and no shell calls landed yet.
-    await expect(page.getByTestId('ship-range-readout')).toHaveText('SELECT A SHIP TO SEE ITS RANGE');
-
-    // Click WIDOWMAKER (bodyId 1, at world origin) in the roster — no weapon
-    // slot touched. D-ATK-ORIENTATION: the shell must appear from selection
-    // alone (FB1 — "where are my ranges").
-    await page.locator('[data-testid="roster-ship"][data-ship-id="1"]').click();
-
-    await expect(page.getByTestId('ship-range-readout')).toHaveText('ENGAGEMENT RANGE 260u');
+  test('the active shooter shows every live weapon envelope as a range shell', async ({ page }) => {
+    const errors = await mount(page, 'stub');
+    // WIDOWMAKER has three live weapons → three range shells created + made visible.
     await expect
       .poll(() =>
         page.evaluate(() => {
-          const calls = (globalThis as unknown as { __rangeShellCalls: unknown[][] }).__rangeShellCalls;
-          return calls.some((c) => c[0] === 'visible' && c[1] === true);
+          const c = (globalThis as unknown as { __rangeShellCalls: unknown[][] }).__rangeShellCalls;
+          return c.filter((x) => x[0] === 'create').length;
         }),
       )
-      .toBe(true);
-    const lastRadius = await page.evaluate(() => {
-      const calls = (globalThis as unknown as { __rangeShellCalls: unknown[][] }).__rangeShellCalls;
-      return [...calls].reverse().find((c) => c[0] === 'radius')?.[1];
+      .toBe(3);
+    const radii = await page.evaluate(() => {
+      const c = (globalThis as unknown as { __rangeShellCalls: unknown[][] }).__rangeShellCalls;
+      return c.filter((x) => x[0] === 'create').map((x) => x[1]);
     });
-    expect(lastRadius).toBe(260);
+    expect(new Set(radii)).toEqual(new Set([260, 180, 120]));
 
-    expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
+    // Selecting WIDOWMAKER surfaces its longest live-weapon range in the readout.
+    await expect(page.getByTestId('ship-range-readout')).toHaveText('SELECT A SHIP TO SEE ITS RANGE');
+    await page.locator('[data-testid="roster-ship"][data-ship-id="1"]').click();
+    await expect(page.getByTestId('ship-range-readout')).toHaveText('ENGAGEMENT RANGE 260u');
+
+    expect(errors, errors.join('\n')).toEqual([]);
   });
 
-  test('a zero-fire commit shows a legible resolve for the minimum hold before advancing', async ({
-    page,
-  }) => {
-    const errors = await mount(page);
-
-    // Flip straight to resolve with an empty beat (every slot HELD) — the
-    // trace has no turn-4 entries either, mirroring an all-HOLD commit.
+  test('a shot ordered past weapon.range reads OUT OF RANGE, never a lying %', async ({ page }) => {
+    const errors = await mount(page, 'stub');
     await page.evaluate(() => {
-      const g = globalThis as unknown as {
-        __controller: { attackBeat: { value: unknown }; phase: { value: string } };
-      };
+      const g = globalThis as unknown as { __controller: { hitChanceFor: unknown } };
+      g.__controller.hitChanceFor = () => ({ base: 0.68, rangeFactor: 0, velocityFactor: 0, evasionFactor: 0, final: 0 });
+    });
+    // Make WIDOWMAKER active, then W3 (range 120) → IRON at ~209u → out of range.
+    const rows = page.getByTestId('weapon-row');
+    await rows.nth(2).locator('select').selectOption('5');
+    await expect(rows.nth(2).getByTestId('weapon-out-of-range')).toContainText('SHOT WILL NOT FIRE');
+    await expect(rows.nth(2).getByTestId('hitchance-final')).toHaveCount(0);
+    await expect(rows.nth(2).locator('.chip').first()).toHaveText('OUT OF RANGE');
+    await expect(page.getByTestId('commit-fire-btn')).toBeEnabled();
+
+    expect(errors, errors.join('\n')).toEqual([]);
+  });
+
+  test('a zero-fire commit holds a legible resolve for the minimum before advancing', async ({ page }) => {
+    const errors = await mount(page, 'stub');
+    await page.evaluate(() => {
+      const g = globalThis as unknown as { __controller: { attackBeat: { value: unknown }; phase: { value: string } } };
       g.__controller.attackBeat.value = { log: [], destroyed: [], launchedMissileIds: [] };
       g.__controller.phase.value = 'attack-resolve';
     });
-
-    // The empty-state reads immediately — never a blank resolve screen.
     await expect(page.getByTestId('no-fire-note')).toBeVisible();
     await expect(page.getByTestId('combat-log-strip-empty')).toBeVisible();
-
-    // D-ATK-RESOLVE-MIN-HOLD: the hand-off does NOT fire the instant the
-    // (synchronous, in this stub) animation reports done — it waits out the
-    // minimum readable hold first, so the turn never flashes past.
     await page.waitForTimeout(100);
-    const early = await page.evaluate(
-      () => (globalThis as unknown as { __resolveDoneCalls: number }).__resolveDoneCalls,
-    );
-    expect(early).toBe(0);
-
+    expect(await page.evaluate(() => (globalThis as unknown as { __resolveDoneCalls: number }).__resolveDoneCalls)).toBe(0);
     await expect
-      .poll(() =>
-        page.evaluate(() => (globalThis as unknown as { __resolveDoneCalls: number }).__resolveDoneCalls),
-      )
+      .poll(() => page.evaluate(() => (globalThis as unknown as { __resolveDoneCalls: number }).__resolveDoneCalls))
       .toBeGreaterThan(0);
 
-    expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
-  });
-
-  test('a shot ordered past weapon.range reads OUT OF RANGE — never a lying 5%', async ({
-    page,
-  }) => {
-    // playtest-feedback-04 FB1 (D-HITCHANCE-RANGE-GATE): pick a target the
-    // resolver would refuse (IRON VERDICT at 600u; W1 range is 260u). The
-    // bench must announce OUT OF RANGE — no 5% floor readout, no HitChance
-    // block — and both the row's chip and the picker option must say so.
-    const errors = await mount(page);
-
-    // Override hitChanceFor for this test so the seam publishes the honest
-    // 0% breakdown the controller now returns for out-of-range shots (the
-    // harness's default returned a canned 57% for every input).
-    await page.evaluate(() => {
-      const g = globalThis as unknown as {
-        __controller: { hitChanceFor: (a: number, b: number, w: number) => unknown };
-      };
-      const zero = { base: 0.68, rangeFactor: 0, velocityFactor: 0, evasionFactor: 0, final: 0 };
-      g.__controller.hitChanceFor = () => zero;
-    });
-
-    const rows = page.getByTestId('weapon-row');
-    // Row 0 = WIDOWMAKER W1 (range 260). Assign it to IRON VERDICT (bodyId 4)
-    // at 600u — well past 260. The resolver would refuse this shot.
-    await rows.nth(0).locator('select').selectOption('4');
-
-    // The row surfaces the explicit OUT OF RANGE block — not the HitChance %.
-    await expect(rows.nth(0).getByTestId('weapon-out-of-range')).toBeVisible();
-    await expect(rows.nth(0).getByTestId('weapon-out-of-range')).toContainText(
-      'SHOT WILL NOT FIRE',
-    );
-    await expect(rows.nth(0).getByTestId('hitchance-final')).toHaveCount(0);
-
-    // The row's status chip flips to OUT OF RANGE (not ASSIGNED / HOLD).
-    await expect(rows.nth(0).locator('.chip').first()).toHaveText('OUT OF RANGE');
-
-    // The picker option itself carries the OUT OF RANGE suffix so the player
-    // sees the refusal BEFORE assigning next time. Still selectable — warns,
-    // never blocks (§4.6).
-    const options = await rows.nth(0).locator('select option').allInnerTexts();
-    const ironOption = options.find((o) => o.includes('IRON VERDICT'));
-    expect(ironOption, 'IRON VERDICT option').toBeDefined();
-    expect(ironOption).toContain('OUT OF RANGE');
-
-    // Commit is NOT gated by the out-of-range warning.
-    await expect(page.getByTestId('commit-fire-btn')).toBeEnabled();
-
-    expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
-  });
-
-  test('at 1280x720 the right column shows one primary scroll region and CommitBar stays visible', async ({
-    page,
-  }) => {
-    // playtest-feedback-04 FB2 (D-ATK-ONE-SCROLL): the fix collapses three
-    // stacked scroll regions (.ta-col-r safety, the old bench-scroll
-    // wrapper, and any outer chrome overflow) into a single .ta-plan-scroll
-    // wrapper (renamed from the pf-04 name in pf-05 SESSION-04 CP4). At the
-    // project's own minimum supported viewport (FORGE-CONFIG 1280x720),
-    // exactly one primary scroll surface lives in the right column, and the
-    // CommitBar is fully visible under it.
-    await page.setViewportSize({ width: 1280, height: 720 });
-    const errors = await mount(page);
-
-    // The single primary plan-time scroll region exists.
-    const planScroll = page.getByTestId('ta-plan-scroll');
-    await expect(planScroll).toBeVisible();
-
-    // The column itself does NOT scroll — its overflow is `hidden` (all
-    // scroll is delegated to the inner .ta-plan-scroll region).
-    const colOverflow = await page
-      .getByTestId('ta-plan-scroll')
-      .evaluate((el) => {
-        const col = el.parentElement as HTMLElement | null;
-        if (col === null) return null;
-        return window.getComputedStyle(col).overflowY;
-      });
-    expect(colOverflow).toBe('hidden');
-
-    // The plan wrapper OWNS scroll (auto).
-    const planOverflow = await planScroll.evaluate(
-      (el) => window.getComputedStyle(el as HTMLElement).overflowY,
-    );
-    expect(planOverflow).toBe('auto');
-
-    // COMMIT FIRE bar is inside the viewport (not clipped below the fold).
-    const commit = page.getByTestId('commit-fire-btn');
-    await expect(commit).toBeVisible();
-    const commitBox = await commit.boundingBox();
-    expect(commitBox, 'commit-fire button geometry').not.toBeNull();
-    // Fully within the 720px viewport.
-    expect(commitBox!.y + commitBox!.height).toBeLessThanOrEqual(720);
-    expect(commitBox!.y).toBeGreaterThanOrEqual(0);
-
-    // playtest-feedback-05 SESSION-04 CP1 (FB2 · "no bottom panel"): the
-    // commit is CONTAINED — it lives inside the right column and never spans
-    // the whole 1280px page width. The measured button sits well inside the
-    // frame: it must be less than half the viewport, and its parent (the
-    // right column) must be narrower than the viewport by at least the left
-    // column's minimum track. The two-column grid keeps roster + right col
-    // side-by-side even at the min viewport; a regression to a single-column
-    // grid at 1280 would fail this.
-    expect(commitBox!.width).toBeLessThan(1000);
-    const rightColWidth = await planScroll.evaluate((el) => {
-      const col = el.parentElement as HTMLElement | null;
-      return col === null ? null : col.getBoundingClientRect().width;
-    });
-    expect(rightColWidth, 'right-column width').not.toBeNull();
-    expect(rightColWidth!).toBeLessThan(1200);
-    // The button is fully inside its parent column horizontally.
-    const colLeft = await planScroll.evaluate((el) => {
-      const col = el.parentElement as HTMLElement | null;
-      return col === null ? null : col.getBoundingClientRect().left;
-    });
-    expect(colLeft!).toBeGreaterThan(0); // roster occupies the left gutter
-
-    expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
-  });
-
-  test('the FULL FIELD toggle collapses to the tactical stage and Esc restores', async ({
-    page,
-  }) => {
-    // playtest-feedback-05 SESSION-04 CP2 (FB3 · D-IMMERSIVE-GRID-COLLAPSE):
-    // FULL FIELD hides the roster + plan-scroll + commit and grows the
-    // Viewport into the vacated space. Esc restores. Grid-collapse only —
-    // the shell stays inside `.app-main.is-fixed-frame`.
-    await page.setViewportSize({ width: 1280, height: 720 });
-    const errors = await mount(page);
-
-    const shell = page.getByTestId('screen-tactical-attack');
-    const roster = page.getByTestId('ta-col-l');
-    const planScroll = page.getByTestId('ta-plan-scroll');
-    const commit = page.getByTestId('commit-fire-btn');
-    const cameraHud = page.getByTestId('camera-hud');
-    const fullscreenBtn = page.getByTestId('cam-fullscreen');
-
-    // Baseline: everything visible, toggle reads its off-state.
-    await expect(roster).toBeVisible();
-    await expect(planScroll).toBeVisible();
-    await expect(commit).toBeVisible();
-    await expect(fullscreenBtn).toHaveAttribute('aria-pressed', 'false');
-    await expect(fullscreenBtn).toHaveText(/FULL FIELD/);
-
-    // Click FULL FIELD → immersive collapses the plan surfaces.
-    await fullscreenBtn.click();
-    await expect(shell).toHaveClass(/is-immersive/);
-    await expect(fullscreenBtn).toHaveAttribute('aria-pressed', 'true');
-    await expect(fullscreenBtn).toHaveText(/RESTORE/);
-    // Roster, plan-scroll, commit all hidden (display:none).
-    await expect(roster).toBeHidden();
-    await expect(planScroll).toBeHidden();
-    await expect(commit).toBeHidden();
-    // The Viewport (and its CameraHud) remain — the whole point of the mode.
-    await expect(cameraHud).toBeVisible();
-
-    // Esc restores everything.
-    await page.keyboard.press('Escape');
-    await expect(shell).not.toHaveClass(/is-immersive/);
-    await expect(roster).toBeVisible();
-    await expect(planScroll).toBeVisible();
-    await expect(commit).toBeVisible();
-    await expect(fullscreenBtn).toHaveAttribute('aria-pressed', 'false');
-
-    expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
+    expect(errors, errors.join('\n')).toEqual([]);
   });
 
   test('reduced motion skips the attack animation and hands off immediately', async ({ page }) => {
-    const errors = await mount(page);
-
-    // Flip to the resolve phase under reduced motion, with a beat to animate.
+    const errors = await mount(page, 'stub');
     await page.evaluate(() => {
       const g = globalThis as unknown as {
         __services: { reducedMotion: { value: boolean } };
@@ -663,19 +406,202 @@ test.describe('tactical attack screen', () => {
       g.__controller.attackBeat.value = { log: [], destroyed: [], launchedMissileIds: [] };
       g.__controller.phase.value = 'attack-resolve';
     });
-
-    // The resolve branch renders and the hand-off fires without playAttack.
     await expect(page.getByTestId('attack-viewport')).toBeVisible();
     await expect
-      .poll(() =>
-        page.evaluate(() => (globalThis as unknown as { __resolveDoneCalls: number }).__resolveDoneCalls),
-      )
+      .poll(() => page.evaluate(() => (globalThis as unknown as { __resolveDoneCalls: number }).__resolveDoneCalls))
       .toBeGreaterThan(0);
-    const played = await page.evaluate(
-      () => (globalThis as unknown as { __playAttackCalls: number }).__playAttackCalls,
-    );
-    expect(played).toBe(0);
+    expect(await page.evaluate(() => (globalThis as unknown as { __playAttackCalls: number }).__playAttackCalls)).toBe(0);
 
-    expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
+    expect(errors, errors.join('\n')).toEqual([]);
+  });
+
+  test('FULL FIELD collapses to the tactical stage and Esc restores', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    const errors = await mount(page, 'stub');
+    const shell = page.getByTestId('screen-tactical-attack');
+    const roster = page.getByTestId('ta-col-l');
+    const fire = page.getByTestId('ta-col-fire');
+    const commit = page.getByTestId('commit-fire-btn');
+    const fullscreenBtn = page.getByTestId('cam-fullscreen');
+
+    await expect(roster).toBeVisible();
+    await expect(fullscreenBtn).toHaveText(/FULL FIELD/);
+    await fullscreenBtn.click();
+    await expect(shell).toHaveClass(/is-immersive/);
+    await expect(fullscreenBtn).toHaveText(/RESTORE/);
+    await expect(roster).toBeHidden();
+    await expect(fire).toBeHidden();
+    await expect(commit).toBeHidden();
+    await expect(page.getByTestId('camera-hud')).toBeVisible();
+
+    // Press Escape on the focused control (bubbles to the window keydown handler)
+    // — `page.keyboard.press` depends on page focus, which is flaky headless.
+    await fullscreenBtn.press('Escape');
+    await expect(shell).not.toHaveClass(/is-immersive/);
+    await expect(roster).toBeVisible();
+    await expect(fire).toBeVisible();
+    await expect(commit).toBeVisible();
+
+    expect(errors, errors.join('\n')).toEqual([]);
+  });
+});
+
+// ===========================================================================
+// C. Geometry (real render) — mechanical bounding-box checks
+// ===========================================================================
+
+const box = async (page: import('@playwright/test').Page, testid: string) => {
+  const b = await page.getByTestId(testid).boundingBox();
+  if (b === null) throw new Error(`no bounding box for ${testid}`);
+  return b;
+};
+
+for (const [w, h] of [[1920, 1080], [1280, 720]] as const) {
+  test(`geometry: three non-overlapping columns with bounded rails at ${w}×${h}`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const errors = await mount(page, 'real');
+    await stageAll(page);
+    await page.waitForTimeout(400);
+
+    const left = await box(page, 'ta-col-l');
+    const center = await box(page, 'ta-col-c');
+    const fire = await box(page, 'ta-col-fire');
+
+    // Ordered left → center → fire rail, side-by-side, non-overlapping.
+    expect(left.x).toBeLessThan(center.x);
+    expect(center.x).toBeLessThan(fire.x);
+    expect(left.x + left.width).toBeLessThanOrEqual(center.x + 1);
+    expect(center.x + center.width).toBeLessThanOrEqual(fire.x + 1);
+
+    // Bounded rails (design §D-TA-THREE-COLUMN): left 260–300, fire 320–360.
+    expect(left.width).toBeGreaterThanOrEqual(260);
+    expect(left.width).toBeLessThanOrEqual(300);
+    expect(fire.width).toBeGreaterThanOrEqual(320);
+    expect(fire.width).toBeLessThanOrEqual(360);
+
+    // The commit footer lives entirely within the fire rail — never a page bar.
+    const commit = await box(page, 'commit-fire-btn');
+    expect(commit.x).toBeGreaterThanOrEqual(fire.x - 1);
+    expect(commit.x + commit.width).toBeLessThanOrEqual(fire.x + fire.width + 1);
+    expect(commit.y + commit.height).toBeLessThanOrEqual(h);
+    expect(commit.y).toBeGreaterThanOrEqual(0);
+    // Commit width tracks the rail inner width (not the center / page).
+    expect(commit.width).toBeLessThan(fire.width);
+    expect(commit.width).toBeGreaterThan(fire.width - 60);
+
+    // Every weapon card lies within the fire rail.
+    const cards = page.getByTestId('weapon-row');
+    for (let i = 0; i < (await cards.count()); i += 1) {
+      const c = await cards.nth(i).boundingBox();
+      expect(c, `weapon card ${i}`).not.toBeNull();
+      expect(c!.x).toBeGreaterThanOrEqual(fire.x - 1);
+      expect(c!.x + c!.width).toBeLessThanOrEqual(fire.x + fire.width + 1);
+    }
+
+    // Combat log is under the center viewport and never crosses into the fire rail.
+    const log = await box(page, 'combat-log-strip');
+    const viewport = await box(page, 'attack-viewport');
+    expect(log.y).toBeGreaterThanOrEqual(viewport.y + viewport.height - 2);
+    expect(log.x + log.width).toBeLessThanOrEqual(fire.x + 1);
+    // No weapon/commit element hangs below the center column as a page-bottom pane.
+    expect(commit.y).toBeLessThan(log.y);
+
+    // `.ta-fire-scroll` is the only vertical scroller inside the fire rail.
+    const fireScrollOverflow = await page.getByTestId('ta-fire-scroll').evaluate((el) => getComputedStyle(el).overflowY);
+    expect(fireScrollOverflow).toBe('auto');
+    const fireColOverflow = await page.getByTestId('ta-col-fire').evaluate((el) => getComputedStyle(el).overflowY);
+    expect(fireColOverflow).toBe('hidden');
+
+    expect(errors, errors.join('\n')).toEqual([]);
+  });
+}
+
+// ===========================================================================
+// D. Visual vocabulary (real render)
+// ===========================================================================
+
+test.describe('tactical attack — real-render visual vocabulary', () => {
+  test('authored names, real tactical labels, range envelopes, solution pills, and HUD are all present', async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    const errors = await mount(page, 'real');
+    await stageAll(page);
+    await page.waitForTimeout(800); // let the ~15Hz label pass + overlay projection settle
+
+    // Authored shooter/chassis + weapon names (SESSION-01 identity).
+    await expect(page.getByTestId('fire-shooter-name')).toHaveText('WIDOWMAKER');
+    await expect(page.getByTestId('ta-col-fire')).toContainText('MERIDIAN');
+    for (const name of ['PHASE BEAM', 'PULSE ARRAY', 'FLAK BATTERY', 'TALON']) {
+      await expect(page.getByTestId('ta-col-fire')).toContainText(name);
+    }
+
+    // Real M13 tactical labels — ship + hazard + tracking + spent missile.
+    const labels = await page.locator('.tactical-label').allInnerTexts();
+    const joined = labels.join(' | ');
+    expect(joined).toContain('WIDOWMAKER');
+    expect(joined).toMatch(/DEBRIS/);
+    expect(joined).toMatch(/MISSILE .*↦/); // tracking missile
+    expect(joined).toMatch(/SPENT/); // spent missile
+
+    // At least three weapon range envelopes + three range labels.
+    const rangeLabels = await page.getByTestId('range-label').allInnerTexts();
+    expect(rangeLabels.length).toBeGreaterThanOrEqual(3);
+    expect(rangeLabels.some((t) => t.includes('PHASE BEAM'))).toBe(true);
+
+    // Firing-solution lines + percentage/status pills with the distinct values.
+    const svgLines = await page.locator('[data-testid="field-overlay"] svg line').count();
+    expect(svgLines).toBeGreaterThanOrEqual(3);
+    const pills = await page.getByTestId('solution-pill').allInnerTexts();
+    const pillText = pills.join(' | ');
+    expect(pillText).toContain('68% · W1');
+    expect(pillText).toContain('41% · W2');
+    expect(pillText).toContain('77% · W3');
+    expect(pillText).toMatch(/M1 .*TALON.*↦/);
+
+    // Boundary radius/exit labels, body-class legend, beat/turn HUD, camera HUD,
+    // AoE ring, friendly-fire text.
+    await expect(page.getByTestId('boundary-top')).toContainText('KILL BOUNDARY · R 600');
+    await expect(page.getByTestId('field-overlay')).toContainText('EXIT = IMMEDIATE DESTRUCTION');
+    await expect(page.getByTestId('field-legend')).toContainText('WEAPON RANGE RING');
+    await expect(page.getByTestId('beat-hud')).toContainText('BEAT 3 / 4 — ATTACK PLAN');
+    await expect(page.getByTestId('beat-hud')).toContainText('TURN 4');
+    await expect(page.getByTestId('camera-hud')).toBeVisible();
+    await expect(page.getByTestId('aoe-ring')).toBeVisible();
+    await expect(page.getByTestId('aoe-friendly-callout').first()).toContainText('FRIENDLY IN AoE');
+
+    // A selected callout appears when a body is picked (roster selection).
+    await page.locator('[data-testid="roster-ship"][data-ship-id="1"]').click();
+    await page.waitForTimeout(200);
+    await expect(page.getByTestId('selected-callout')).toContainText('WIDOWMAKER');
+
+    expect(errors, `real-render errors:\n${errors.join('\n')}`).toEqual([]);
+  });
+});
+
+// ===========================================================================
+// E. Reviewed real-render screenshot baseline
+// ===========================================================================
+
+test.describe('tactical attack — mock-parity screenshot baseline', () => {
+  test('real-render attack-plan matches the reviewed baseline @1920×1080', async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    const errors = await mount(page, 'real');
+    await stageAll(page);
+    await page.locator('[data-testid="roster-ship"][data-ship-id="1"]').click();
+    await page.waitForTimeout(1200); // camera settle + label/overlay projection stable
+
+    // Nothing is masked: the DOM overlays (range labels, solution lines,
+    // percentage pills, AoE ring, boundary/legend/HUD text), the rail cards, the
+    // commit footer, and the three columns are all compared. The 3D `<canvas>`
+    // beneath them is deterministic on a fixed engine (SwiftShader, a settled
+    // camera) — a small per-pixel AA threshold + a bounded diff ratio absorb
+    // rasterisation noise without a permissive whole-screen diff. The snapshot is
+    // platform-scoped (`-chromium-darwin`); other platforms author their own.
+    await expect(page).toHaveScreenshot('attack-plan-1920.png', {
+      maxDiffPixelRatio: 0.02,
+      threshold: 0.2,
+      animations: 'disabled',
+    });
+
+    expect(errors, errors.join('\n')).toEqual([]);
   });
 });
