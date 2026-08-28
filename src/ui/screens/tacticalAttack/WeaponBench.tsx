@@ -133,6 +133,11 @@ function FireRow(props: FireRowProps) {
   const isMissile = slot.kind === 'missile';
   const label = `${isMissile ? 'M' : 'W'}${String(slot.index + 1)}`;
   const shooterPos = positionOf(view, shooter.bodyId);
+  // playtest-feedback-03 SESSION-01 CP2 — surface the weapon's own range /
+  // damage / shots in the row header so the player connects this row to the
+  // engagement shell drawn around the ship (D-ATK-ORIENTATION). Read straight
+  // off `SimWeapon`; never a to-hit number (arch §13.3 stays `HitChance`-only).
+  const weapon = isMissile ? undefined : shooter.ship.weapons[slot.index];
 
   const options: SelectOption[] = [
     { value: HOLD, label: isMissile ? '— HOLD LAUNCH —' : '— HOLD FIRE —' },
@@ -183,6 +188,12 @@ function FireRow(props: FireRowProps) {
           <span class="chip">{assignment ? 'ASSIGNED' : 'HOLD'}</span>
         )}
       </div>
+
+      {!isMissile && weapon !== undefined ? (
+        <div class="mono-xs c-dim" style="margin:3px 0 6px">
+          {`RANGE ${String(weapon.range)} · DMG ${String(weapon.damage)} ×${String(weapon.shotsPerTurn)} SHOTS · ACC ${weapon.accuracy.toFixed(2)}`}
+        </div>
+      ) : null}
 
       <Select
         aria-label={`${shooter.name} ${label} target`}

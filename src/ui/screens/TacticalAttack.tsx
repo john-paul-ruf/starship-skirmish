@@ -355,6 +355,10 @@ export function TacticalAttack() {
             focusLabel={focusLabel}
           />
 
+          <div class="mono-xs c-cyan ta-orientation" data-testid="fire-flow-hint">
+            SELECT A WEAPON → PICK A TARGET → COMMIT FIRE · OR HOLD ALL AND COMMIT
+          </div>
+
           <FriendlyFireBanner warnings={warnings} />
 
           <div class="ta-bench-scroll">
@@ -404,7 +408,11 @@ const TA_STYLES = `
   .ta-shell { display: flex; flex-direction: column; flex: 1 1 auto;
               height: 100%; min-height: 0;
               gap: var(--s3); padding: var(--s3); }
-  .ta-shell-resolve, .ta-shell-boot { }
+  .ta-shell-resolve { }
+  /* Boot (view not yet populated): Viewport owns no inline min-height of its
+     own (playtest-feedback-03 SESSION-01 CP2 — sizing is the hosting screen's
+     call in every phase, not the component's). */
+  .ta-shell-boot > .viewport { flex: 1 1 auto; min-height: 200px; }
   .ta-header { flex: none; }
   .ta-subhead { flex: none; }
 
@@ -421,15 +429,30 @@ const TA_STYLES = `
                       border-radius: var(--r); }
   .ta-col-l-ft { flex: none; letter-spacing: .14em; }
 
+  /* playtest-feedback-03 SESSION-01 CP2: \`overflow-y: auto\` (was \`hidden\`) is
+     a deliberate safety net, not the primary layout — at the project's OWN
+     minimum supported viewport (1280x720, FORGE-CONFIG) the fixed chrome
+     above (topbar + header + subhead) plus the commit bar + combat log left
+     the bench with a HARD ZERO height under \`overflow: hidden\`, making the
+     entire weapon bench (and the tail of the commit bar) invisible and
+     unreachable — the mechanical root of FB1 "stuck on this, can't go back".
+     A column scrollbar only appears once every floor below is exhausted. */
   .ta-col-r { display: flex; flex-direction: column; gap: var(--s3);
-              min-width: 0; min-height: 0; overflow: hidden; }
-  /* Viewport pins under the frame: grows to fill available height,
-     shrinks only down to a legible tactical minimum (mock \`.viewport.grow\`). */
-  .ta-col-r > .viewport { flex: 1 1 400px; min-height: 340px; }
-  /* Bench (+ combat log, mounted in CP4) scrolls independently under
-     the pinned viewport (mock \`.col-r .scrolly\`). */
-  .ta-bench-scroll { flex: 1 1 260px; min-height: 0;
+              min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+  /* Viewport pins under the frame: grows to fill available height, shrinks
+     down to a smaller-but-still-legible tactical minimum (was 340 — lowered
+     so the bench below it keeps a guaranteed floor at the 720px minimum). */
+  .ta-col-r > .viewport { flex: 1 1 320px; min-height: 200px; }
+  .ta-orientation { flex: none; letter-spacing: .1em; }
+  /* Bench (+ combat log, mounted in CP4) scrolls independently under the
+     pinned viewport (mock \`.col-r .scrolly\`). \`min-height\` is the fix: never
+     let the fire-assignment controls collapse to zero under a squeeze — a
+     player can always scroll to reach every weapon row. */
+  .ta-bench-scroll { flex: 1 1 200px; min-height: 110px;
                      overflow-y: auto; overflow-x: hidden; }
+  /* The commit action never shrinks or gets clipped by the safety scrollbar
+     above — it is short, load-bearing, and must stay fully rendered. */
+  .ta-col-r > .panel-ft { flex: none; }
 
   .ta-col-r-resolve { flex: 1 1 auto; min-height: 0; }
   .ta-col-r-resolve > .viewport { flex: 1 1 auto; min-height: 340px; }

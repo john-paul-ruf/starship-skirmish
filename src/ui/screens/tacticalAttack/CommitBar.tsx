@@ -30,6 +30,9 @@ export function CommitBar(props: CommitBarProps) {
         ALL FIRE RESOLVES SIMULTANEOUSLY AGAINST A PRE-DAMAGE SNAPSHOT. A SHIP YOU DESTROY STILL
         LANDS ITS SHOTS.
       </div>
+      <div class="mono-xs c-dim" style="margin-top:6px">
+        {`HOLDING FIRE ON EVERY SLOT IS A LEGAL PLAN — 0/${String(gate.total)} STILL COMMITS.`}
+      </div>
       <div
         class="mono-xs c-dim"
         style="margin-top:6px;border-top:1px solid var(--line);padding-top:6px"

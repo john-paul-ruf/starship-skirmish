@@ -16,6 +16,12 @@
 //     animation finishes, call `onResolveDone` so the controller advances;
 //   • reduced motion (or render unavailable) skips straight to the final frame
 //     and fires `onResolveDone` — the match never stalls on missing WebGL.
+//
+// playtest-feedback-03 SESSION-01 CP2: the outer `.viewport` div carries no
+// inline min-height of its own — sizing is the HOSTING SCREEN's call in every
+// phase (plan / resolve / boot), since only the screen knows how much room
+// the sibling panels need at a given phase. See `TacticalAttack.tsx`'s scoped
+// styles for the per-phase floor.
 
 import { useEffect, useRef } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
@@ -254,7 +260,7 @@ export function Viewport(props: ViewportProps) {
   const currentRing = ring.value;
 
   return (
-    <div class="viewport" style="position:relative;min-height:360px" data-testid="attack-viewport">
+    <div class="viewport" style="position:relative" data-testid="attack-viewport">
       <canvas
         ref={canvasRef}
         onClick={onCanvasClick}
