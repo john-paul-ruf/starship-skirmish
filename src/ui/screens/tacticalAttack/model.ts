@@ -17,9 +17,11 @@ import type {
   BlindShipView,
   BodyId,
   CalledShotTarget,
+  ResolutionTrace,
   Vec3,
 } from '../../../sim/index.js';
 import { distance } from '../../../sim/mathx/index.js';
+import { flattenCombatLog, type LogRow } from '../postMatch/model.js';
 
 // ---- Assignments ----------------------------------------------------------
 
@@ -373,6 +375,39 @@ export const rangePreviewFor = (
  */
 export const hitChanceTone = (final: number): 'c-green' | 'c-amber' | 'c-red' =>
   final >= 0.66 ? 'c-green' : final >= 0.4 ? 'c-amber' : 'c-red';
+
+// ---- Live combat log strip (playtest-feedback-02 · S04 CP3) ---------------
+
+/**
+ * Rows the in-match `CombatLogPanel` renders — the current turn's already-
+ * resolved fire, newest first. Pure surfacing of the existing
+ * `flattenCombatLog` → `LogRow[]` sequence (postMatch/model): the log
+ * shape and kind-tagging are already the deterministic record (FR-28), and
+ * every "why" a miss carries — `entry.roll > entry.chance` when
+ * `entry.result === 'miss'` — is already on `CombatLogEntry`. NO sim/trace
+ * change (session-prompt D-LOG-SURFACE-ONLY).
+ *
+ * Filtered to `currentTurn` so during attack-plan of turn N the strip
+ * shows the just-resolved movement-beat contacts of turn N, and during
+ * attack-resolve of turn N it fills with the resolving attack entries as
+ * they land. Blind-commit intact: the strip only sees the trace, which
+ * only accumulates AFTER a beat resolves — never pending plans.
+ *
+ * "Newest first" — the underlying flattened sequence is never reordered
+ * (FR-28); reversal is a display transform on the filtered slice.
+ */
+export const liveLogRows = (
+  trace: ResolutionTrace,
+  currentTurn: number,
+): readonly LogRow[] => {
+  const all = flattenCombatLog(trace);
+  const filtered: LogRow[] = [];
+  for (const row of all) {
+    if (row.entry.turn === currentTurn) filtered.push(row);
+  }
+  filtered.reverse();
+  return filtered;
+};
 
 // ---- Plan emission --------------------------------------------------------
 
