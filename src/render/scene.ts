@@ -22,6 +22,7 @@ import {
 } from 'three';
 import type { PerspectiveCamera } from 'three';
 import type { BodyId } from '../sim/index.js';
+import { createBloomComposer, type BloomComposer } from './postfx.js';
 import type { RenderQuality } from './types.js';
 
 // Palette mirrors mocks/console.css §1 (the CSS is the source of truth; render mirrors
@@ -111,6 +112,11 @@ export const createSceneContext = (
 
   let quality: RenderQuality = 'high';
 
+  // Bloom composer lives INSIDE the scene context so every caller of `render(camera)`
+  // — the live view AND SESSION-03 playback via `view.scene.render()` — inherits the
+  // glow with no barrel/API change (arch §9 half-res selective bloom).
+  const bloom: BloomComposer = createBloomComposer(renderer, scene, quality);
+
   const syncStalks = (bodies: readonly StalkInput[]): void => {
     const groundY = -currentArenaRadius;
     const n = Math.min(bodies.length, MAX_STALK_BODIES);
@@ -140,15 +146,23 @@ export const createSceneContext = (
     // Visual-only degrade: stalks are a supporting cue, so fade them under `reduced`.
     stalkMat.opacity = next === 'reduced' ? 0.28 : 0.42;
     stalkMat.needsUpdate = true;
+    bloom.setQuality(next);
   };
 
   const resize = (width: number, height: number, dpr?: number): void => {
     renderer.setPixelRatio(clampDpr(dpr));
     renderer.setSize(width, height, false);
+    bloom.setSize(width, height);
   };
 
   const render = (camera: PerspectiveCamera): void => {
-    renderer.render(scene, camera);
+    // `reduced` bypasses the composer so the degraded path is byte-equivalent to the
+    // original direct render (no post-processing cost when quality drops).
+    if (bloom.enabled) {
+      bloom.render(camera);
+    } else {
+      renderer.render(scene, camera);
+    }
   };
 
   const dispose = (): void => {
@@ -159,6 +173,7 @@ export const createSceneContext = (
     for (const m of gridMats) (m as LineBasicMaterial).dispose();
     stalkGeom.dispose();
     stalkMat.dispose();
+    bloom.dispose();
     renderer.dispose();
   };
 
