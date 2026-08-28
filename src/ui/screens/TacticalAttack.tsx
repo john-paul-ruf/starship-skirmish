@@ -29,6 +29,7 @@ import { useApp } from '../appContext.js';
 import { useMatch } from '../matchContext.js';
 
 import { CalledShotPicker } from './tacticalAttack/CalledShotPicker.js';
+import { CombatLogPanel } from './tacticalAttack/CombatLogPanel.js';
 import { CommitBar } from './tacticalAttack/CommitBar.js';
 import { FriendlyFireBanner } from './tacticalAttack/FriendlyFireBanner.js';
 import type { FriendlyFireWarning } from './tacticalAttack/FriendlyFireBanner.js';
@@ -40,6 +41,7 @@ import {
   assignmentGate,
   fireContext,
   friendlyShips,
+  liveLogRows,
   positionOf as positionOfInView,
   rangePreviewFor,
   shipViewOf,
@@ -49,6 +51,7 @@ import {
   type FireContextRole,
   type FireSlot,
 } from './tacticalAttack/model.js';
+import { nameByBodyId } from './postMatch/model.js';
 
 /** Roster badge for one role. Text + color-token — never color alone (§1.1). */
 const ROLE_BADGE: Readonly<Record<FireContextRole, { readonly label: string; readonly cls: string }>> = {
@@ -102,6 +105,11 @@ export function TacticalAttack() {
   // the CombatLogPanel inside `.ta-col-r-strip` so the log follows the
   // shots as they resolve.
   if (phase === 'attack-resolve') {
+    const resolveTurn = match.turn.value;
+    const resolveRows = liveLogRows(match.trace.value, resolveTurn);
+    const resolveNames = nameByBodyId(match.initialFleets);
+    const resolveNameOf = (id: BodyId): string =>
+      resolveNames.get(id) ?? `BODY ${String(id)}`;
     return (
       <section class="ta-shell ta-shell-resolve" data-testid="screen-tactical-attack">
         <TacticalAttackStyles />
@@ -126,6 +134,11 @@ export function TacticalAttack() {
           <div class="mono-xs c-dim ta-resolve-note">
             RESOLVING FIRE AGAINST A PRE-DAMAGE SNAPSHOT …
           </div>
+          <CombatLogPanel
+            rows={resolveRows}
+            nameOf={resolveNameOf}
+            turnLabel={`TURN ${String(resolveTurn)}`}
+          />
         </div>
       </section>
     );
@@ -264,6 +277,18 @@ export function TacticalAttack() {
     match.commitAttack(toAttackPlans(staged, view.ships));
   };
 
+  // ---- Live combat log strip (playtest-feedback-02 · S04 CP4) -----------
+  //
+  // The current-turn rows, surfaced verbatim from the resolved trace via
+  // `liveLogRows`. Blind-commit intact: `trace` accumulates only after a
+  // beat resolves; opponent plans never appear. Names come from the
+  // immutable initial rosters (matches the post-match combat log) so a
+  // ship destroyed earlier in the match still reads by its authored name.
+  const currentTurn = match.turn.value;
+  const logRows = liveLogRows(match.trace.value, currentTurn);
+  const names = nameByBodyId(match.initialFleets);
+  const nameOf = (id: BodyId): string => names.get(id) ?? `BODY ${String(id)}`;
+
   return (
     <section class="ta-shell" data-testid="screen-tactical-attack">
       <TacticalAttackStyles />
@@ -336,6 +361,12 @@ export function TacticalAttack() {
               )}
             />
           </div>
+
+          <CombatLogPanel
+            rows={logRows}
+            nameOf={nameOf}
+            turnLabel={`TURN ${String(currentTurn)}`}
+          />
 
           <CommitBar gate={gate} onCommit={onCommit} />
         </div>
