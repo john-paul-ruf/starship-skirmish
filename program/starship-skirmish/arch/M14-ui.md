@@ -874,3 +874,102 @@ Recorded here so a future reader doesn't re-derive them from the report:
 - `tests/unit/ui/encyclopedia/export.test.ts` still exposes the
   unrelated `TS6142` node-config baseline — outside every lease this
   cycle (see ROSHI-LOG cycle 5).
+
+<!-- SESSION-01 · tactical-attack-full-field-resize · M14 tactical-attack Viewport lifecycle delta -->
+## M14 UI — tactical-attack Viewport lifecycle delta (SESSION-01 · tactical-attack-full-field-resize)
+
+Jikijitsu stapled no M14 arch commit for this session (the Final Report
+explicitly notes "M14 consumes the existing M13 public resize seam. No public
+render API … or architecture record changed. No architecture fragment was
+produced."). The change is a lifecycle correction inside
+`src/ui/screens/tacticalAttack/Viewport.tsx`; no public export renamed, no new
+file added, no CSS or component-library edit. The seven `D-TA-*` design
+decisions in `prompts/tactical-attack-full-field-resize/STATE.md` are, however,
+new invariants a future editor of that file must preserve, so — same
+discipline pf-05 cycle 4 and tactical-attack-mock-parity cycle 5 applied when
+Jikijitsu declined a mid-run staple — the reconciliation captures them here.
+
+### Behaviour landed (no public API change)
+
+`src/ui/screens/tacticalAttack/Viewport.tsx` now, immediately after creating
+its tactical view:
+
+1. Reads the live `.viewport` container's `clientWidth` / `clientHeight` and
+   calls `TacticalView.resize(w, h)` before any state / label projection and
+   before the overlay animation loop starts.
+2. Attaches a `ResizeObserver` bound to that same container (the canvas'
+   `parentElement`); every positive-size change is forwarded through the SAME
+   `TacticalView.resize` seam. Zero-size transition notifications are ignored.
+3. Disconnects the observer before disposing the tactical view.
+
+The `FULL FIELD` immersive toggle continues to expand and restore the same
+view instance — orbit/focus state survives (FR-14) — because the observer
+serves the CSS grid collapse defined by `D-IMMERSIVE-GRID-COLLAPSE` (pf-05
+SESSION-03+04, above) without recreating the renderer. Escape restore still
+contracts back to the center viewport.
+
+### Load-bearing invariants (Viewport.tsx must preserve)
+
+- **`D-TA-CONTAINER-IS-SIZE-TRUTH`** — every resize reads the live `.viewport`
+  container's positive `clientWidth`/`clientHeight`. No window-size proxy, no
+  hard-coded rail subtraction, no direct canvas-attribute mutation.
+- **`D-TA-IMMEDIATE-PLUS-OBSERVED`** — size once immediately after the view is
+  created, then observe. Both codepaths funnel through the same seam call.
+- **`D-TA-ONE-RESIZE-SEAM`** — call `TacticalView.resize(w, h)` only. Renderer
+  sizing, DPR capping, camera-aspect math, line resolution, and the
+  `worldToScreen` projection cache all live in M13 (`src/render/TacticalView.ts`
+  line 208) and stay single-sourced there.
+- **`D-TA-NO-RECREATE`** — expand and restore reuse the same view instance;
+  never remount or reset orbit/focus merely to pick up dimensions. FR-14
+  camera persistence must not regress.
+- **`D-TA-IMMERSIVE-SEMANTICS-STABLE`** — `FULL FIELD` remains an in-frame
+  grid collapse (the pf-05 `D-IMMERSIVE-GRID-COLLAPSE` contract). No browser
+  Fullscreen API is introduced. If OS-level `requestFullscreen()` is ever
+  wanted, it layers over this toggle without unwinding the observer path.
+
+### M19 gates hardened (test-shape decisions codified)
+
+- **`D-TA-OWNER-VIEWPORT-REGRESSION`** — the tactical-attack e2e now runs the
+  established 1920×1080 and 1280×720 gates AND the owner-reported 2048×996
+  reproduction viewport as a permanent regression. Assertions derive expected
+  backing-store dimensions from each live `.viewport` bounding box and account
+  for the renderer's capped DPR with rounding tolerance.
+- **`D-TA-UNMASKED-FULL-FIELD-GATE`** — a new reviewed baseline
+  `tests/e2e/tacticalAttack.spec.ts-snapshots/attack-plan-full-field-1920-chromium-darwin.png`
+  captures the real canvas + DOM field overlays unmasked. Passing
+  hidden-column geometry alone is insufficient — the immersive-mode screenshot
+  is now a first-class gate alongside the pre-existing normal `attack-plan-1920`
+  baseline (unchanged; already correctly sized at mount).
+
+Both gates extend the `D-TA-VISUAL-GATE` + `D-TA-NO-DEFERRED-BROWSER` rules
+codified by the mock-parity SESSION-03 fragment above; the mock-parity
+baseline itself was reviewed and did not require modification.
+
+### Cross-reference to M13
+
+The single-integrator + single-seam rule for tactical view sizing continues
+to live in `arch/M13-render.md` (`src/render/TacticalView.ts::resize`, exposed
+via the `TacticalView` public surface since the tactical-skirmish SESSION-02
+"static tactical view" fragment). This session added no new render API and no
+new render module file — the only new consumer edge is M14 → M13 through the
+already-published seam.
+
+### Not touched
+
+`src/render/**` (M13 public surface unchanged — the resize seam consumed here
+was in place since tactical-skirmish SESSION-02), `src/sim/**`,
+`src/sim/trace/**`, `src/sim/rules/**`, `src/ai/**`,
+`src/ui/styles/components.css`, `src/ui/styles/tokens.css`,
+`src/ui/components/**`, `src/ui/components/roster/**`,
+`src/ui/matchContext.ts`, `MatchController` signatures. No catalog, share
+token, JSON export, migration, or persistence surface changed. Module Registry
+`M14` `Key Files` column (`screens/*, components/*, tokens.css`) still
+describes the surface faithfully — no drift signal.
+
+### Known scoped gap (from Final Report §Residual gap — informational)
+
+- The full-field screenshot baseline is macOS-specific
+  (`attack-plan-full-field-1920-chromium-darwin.png`); enabling this assertion
+  on Linux CI needs its `-chromium-linux` counterpart or an explicit platform
+  scope on the screenshot step. Same shape as the pre-existing normal
+  `attack-plan-1920-chromium-darwin.png` gap called out one section above.

@@ -911,3 +911,217 @@ justifies it. Vow 3.)*
    prior-fragment supersession note.
 3. `FORGE.md`, `MU.md`, `ENSO.md`, `JIKIJITSU.md` — byte-identical,
    not touched.
+
+---
+
+## 2026-08-28 — Cycle 6 — `tactical-attack-full-field-resize`
+
+**Envelope in:** Final Report at
+`program/starship-skirmish/prompts/tactical-attack-full-field-resize/FINAL-REPORT.md`;
+1/1 sessions `done` (S01) in a single one-member wave; 2 Mu checkpoint
+commits (S01 2/2); **0 Jikijitsu arch commits** (Mu declared no arch
+fragment produced — M14 consumes the existing M13 `TacticalView.resize`
+seam, no public API touched). Post-merge unit **1578 pass / 0 fail**
+across 104 files; app-side typecheck clean; lint clean; build clean;
+Chromium tactical-attack **18/18 pass** across three consecutive
+full-file runs, including the owner-reported 2048×996 reproduction and
+a new reviewed FULL FIELD screenshot baseline. Same pre-existing
+encyclopedia `TS6142` (`tsconfig.node.json` + `--jsx`) still red at HEAD
+— now cycle 6 of independent observation. Zero lease violations, zero
+checkpoint shortfalls, zero wave-plan corrections.
+
+### Reconciled this run
+
+- **`arch/M14-ui.md`** — appended a new
+  `SESSION-01 · tactical-attack-full-field-resize · M14 tactical-attack
+  Viewport lifecycle delta` fragment at end of file. Jikijitsu stapled
+  no arch commit this cycle because the M13 `TacticalView.resize` seam
+  was already published (tactical-skirmish SESSION-02, memorialised in
+  `arch/M13-render.md`) and M14's fix is a consumer-side lifecycle
+  correction inside `src/ui/screens/tacticalAttack/Viewport.tsx`. The
+  Final Report §Architecture impact expressly says "No architecture
+  fragment was produced," and that call was correct for mid-run
+  (no public API change). But the STATE.md §Design Decisions block
+  names **seven** load-bearing `D-TA-*` invariants a future editor of
+  Viewport.tsx must preserve (`D-TA-CONTAINER-IS-SIZE-TRUTH`,
+  `D-TA-IMMEDIATE-PLUS-OBSERVED`, `D-TA-ONE-RESIZE-SEAM`,
+  `D-TA-NO-RECREATE`, `D-TA-IMMERSIVE-SEMANTICS-STABLE`,
+  `D-TA-OWNER-VIEWPORT-REGRESSION`, `D-TA-UNMASKED-FULL-FIELD-GATE`),
+  plus M19 gate-shape decisions (2048×996 permanent regression +
+  unmasked full-field baseline) — the same class of load-bearing
+  decisions cycle 4 (pf-05 tactical-screen delta) and cycle 5
+  (tactical-attack-mock-parity SESSION-03 rebuild) captured for
+  Jikijitsu-declined fragments. Fragment cross-references the pf-05
+  `D-IMMERSIVE-GRID-COLLAPSE` section (the CSS grid collapse the
+  observer now serves) and the tactical-skirmish SESSION-02 M13 fragment
+  (where the `TacticalView.resize(w, h, dpr?)` seam it consumes was
+  first published). Grounded in the Final Report + STATE.md verbatim +
+  current source at `src/ui/screens/tacticalAttack/Viewport.tsx:169,213-228`
+  and `src/render/TacticalView.ts:208,236`, plus commits `2ebd21b`
+  (CP1 bind) and `7a07573` (CP2 real-render regression + baseline).
+
+### Not reconciled — deliberately
+
+- **`arch/M14-ui.md` D-IMMERSIVE-GRID-COLLAPSE section (pf-05 fragment
+  body)** — NOT edited. That section was accurate at pf-05 landing (the
+  immersive-toggle really was a pure CSS grid-collapse at that layer);
+  the resize path this cycle added is a NEW invariant the observer
+  brings, not a contradiction of the CSS behaviour. The new fragment
+  forward-references D-IMMERSIVE-GRID-COLLAPSE explicitly — same
+  discipline as cycles 3/4/5 (never rewrite a prior fragment body when
+  it was true at its landing; add a forward pointer instead).
+- **`arch/M13-render.md`** — no M13 public API changed. The
+  `TacticalView.resize(w, h, dpr?)` seam consumed here was published by
+  the tactical-skirmish SESSION-02 fragment already in the file. The
+  new M14 fragment cross-references it explicitly so a reader landing
+  on the resize behaviour finds both ends of the edge; the M13 fragment
+  itself needs no touch.
+- **`arch/M14-ui.md` per-session block structure** — kept intact for
+  the seventh consecutive cycle. Fragments still compose additively;
+  no cross-body contradiction (only forward pointers). File is now
+  ~965 lines and remains readable in session-timeline order. Same
+  Vow-2 bolt-on-vs-edit weighing as prior cycles; same resolution.
+- **`arch/M11-trace.md` `AttackBeatRecord.launchedMissileIds` gap**
+  — memorialised cycle 1; still an open note for a future M11 lease.
+  This cycle did no sim/trace work; nothing to touch.
+- **Module Registry `M14` Key Files** — reads `screens/*,
+  components/*, tokens.css`. This session added no new file; only
+  behaviour inside the existing `src/ui/screens/tacticalAttack/
+  Viewport.tsx`. No drift signal.
+- **Module Registry `M13` "Key Files (planned)"** — the drift cycle 1
+  flagged, cycles 2–5 held, still holds this cycle. No render file
+  was added or removed; the `(planned)` hedge on the column header
+  still reads honestly. Seventh-consecutive cycle patient observation
+  on this specific item.
+- **`FORGE-CONFIG.md` Conventions / Custom Rules** — no additions.
+  Nothing this cycle is convention-shaped that also clears the
+  3-cycle recurrence bar (Vow 4).
+
+### Registry updated
+
+**No.** No new module, no path scope change, no `catalog/**` edit, no
+change to any `Owns` list this cycle.
+
+### Conventions added to `FORGE-CONFIG.md`
+
+**None** this cycle (Vow 4: repetition across ≥3 cycles is the
+threshold, AND the recurrence must be convention-shaped).
+
+### Proposed for the framework — with cycle count
+
+*(These go here, NOT into `FORGE.md`/`MU.md`/`ENSO.md`/`JIKIJITSU.md`.
+Roshi recommends; a human folds them in by hand once the count
+justifies it. Vow 3.)*
+
+- **[cycles: 6/3+ — STILL OPEN, TOP-OF-LOG BANNER AS PROMISED CYCLE 5]
+  Owner hygiene — encyclopedia typecheck baseline.** Cycle 5 said "if
+  cycle 6 sees it again, this note should escalate to a top-of-log
+  banner rather than a bullet." Cycle 6 sees it again:
+  `tests/unit/ui/encyclopedia/export.test.ts:31` (TS6142;
+  `BackupBanner.tsx` imported under `tsconfig.node.json` with `--jsx`
+  unset) is still red at HEAD. Final Report §Known aggregate-typecheck
+  baseline names it explicitly and confirms it is "pre-existing,
+  out-of-lease." The cure remains one line under M01: add `"jsx":
+  "preserve"` to `tsconfig.node.json`, or narrow its `include` to
+  exclude `.tsx`-importing test files, in one green-tree commit. **Six
+  consecutive cycles of independent Mu triage on a one-line owner
+  scheduling ask.** Not a framework change, not something Roshi can
+  land. Recommend the owner take the one commit next cycle rather
+  than pay a seventh Mu-hour tax on the same defect.
+- **[cycles: 1/3+] Forge / Mu handoff — exit contract explicitly
+  requires numeric evidence when the Final Report must reproduce
+  it.** Final Report §Renderer dimensions and lifecycle notes: "The
+  worker handoff did not enumerate the measured numeric
+  initial/immersive/restored width-height triplets, so this report
+  does not invent them; the committed browser tests retain the
+  mechanical evidence." STATE.md §SESSION-01 handoff notes similarly
+  give prose summary but no numeric triplet table. Jikijitsu's own
+  §Granularity feedback for Forge names this: "Require numeric
+  dimension triplets explicitly in the exit contract when the Final
+  Report must reproduce them; this session verified them mechanically
+  but omitted them from its handoff." First observation of this
+  specific exit-contract gap (mechanically-verified → prose-only in
+  handoff). Not framework yet; watch cycle 7+ for a repeat. If a
+  second geometry-heavy session's Final Report has to disclaim
+  numeric evidence its tests actually pin, this becomes a
+  Forge-facing recommendation (require numeric-triplet arrays in the
+  exit-contract schema for geometry/layout sessions).
+- **[cycles: 3/3+ · HELD, RECEDED THIS CYCLE] Verification-gate
+  reachability — Playwright `webServer` provisioning.** Cycles 1–2
+  flagged; cycle 3 saw the infra fix land; cycle 4 mixed; cycle 5
+  positive (Enso 14/14). Cycle 6: e2e ran cleanly THREE times against
+  the full 18-test tactical-attack file in the Mu sandbox, meeting the
+  worker's per-checkpoint gate contract. The observed variance from
+  cycles 3–5 appears environment-dependent and, this cycle, absent.
+  Final Report §Residual gap #2 notes a post-gate ad-hoc partial run
+  hit two Escape actionability timeouts under host load, but the three
+  required consecutive full-file runs had already passed. Not
+  incrementing; **noting as receded** at 3/3+ pending another
+  observation. If cycle 7+ sees a structural (not
+  environmental-transient) e2e reachability failure, restart tally.
+- **[cycles: 2/3+ · HELD from cycle 5] Enso-brush transport
+  reliability — new observation.** Cycles 4 and 5 both observed the
+  internal await transport failing while the durable-handle reattach
+  recovered without loss. Cycle 6 had no Enso delegation (single-Mu
+  session, no long await), so the pattern could not recur. Held.
+- **[cycles: 1/3+ · HELD from cycle 5] Forge granularity — route
+  M14-heavy screen rebuilds with browser gates to Enso from spawn.**
+  Cycle 6's SESSION-01 was routed to Mu with a mid-flight Mu→Enso
+  delegation (Final Report §Wave plan as executed cites: "Mu delegated
+  the visual/browser work to Enso and returned one complete handoff").
+  Jikijitsu's §Granularity feedback repeats the cycle-5 observation
+  verbatim: "The viewport-heavy M14 write set, screenshot evidence,
+  geometry assertions, and real-browser gate were strong spawn-time
+  signals for Enso; equivalent future sessions should route directly
+  rather than relying on a mid-flight Mu→Enso handoff." Second cycle
+  of the SAME pattern with SAME framing from Jikijitsu — increment
+  to **2/3+**. One more repeat and this promotes to a Forge-facing
+  convention: features whose write set is dominated by an M13/M14
+  viewport rebuild + a real-browser visual gate SHOULD spawn directly
+  on Enso.
+- **[cycles: 1/3+ · HELD from cycle 2] Forge granularity — "stuck /
+  can't proceed" playtest notes may hide latent bugs.** Cycle 6 was a
+  targeted owner-report defect fix, not a playtest-feedback
+  decomposition; pattern could not recur. Held.
+- **[cycles: 1/3+ · HELD from cycle 1] Sim-record extensions before
+  their render consumer.** Cycle 6 did no `sim/trace` or render-record
+  work; coupling could not recur. Held.
+
+### Verification (Roshi's output is prose)
+
+1. Every claim traces to git or the attached record. The
+   `ResizeObserver` binding is verifiable at
+   `src/ui/screens/tacticalAttack/Viewport.tsx:169,213-228`; the
+   `TacticalView.resize` seam it feeds is verifiable at
+   `src/render/TacticalView.ts:208,236`. The two Mu checkpoint commits
+   `2ebd21b` (CP1: `Viewport.tsx` +29 / `tacticalAttack.spec.ts` +46)
+   and `7a07573` (CP2: `tacticalAttack.spec.ts` +130 / new
+   `attack-plan-full-field-1920-chromium-darwin.png` baseline) are
+   verifiable via `git log --stat -3`. The "0 Jikijitsu arch commits"
+   claim is verifiable via `git log --oneline
+   -- program/starship-skirmish/arch/ b286ecb..HEAD` returning empty.
+   The "1578 pass / 0 fail" number is verbatim from Final Report
+   §Full verification (`npm run test:unit` — 104 files / 1578 tests
+   passed); "18/18 tests passing on three consecutive full-file runs"
+   is verbatim from §Summary; the 2048×996, 1920×1080, and 1280×720
+   viewport gates are verbatim from §Renderer dimensions and
+   lifecycle. The seven `D-TA-*` invariants are named verbatim from
+   `program/starship-skirmish/prompts/tactical-attack-full-field-resize/
+   STATE.md` §Design Decisions #1–#7. The encyclopedia `TS6142`
+   observation is Final Report §Known aggregate-typecheck baseline
+   verbatim.
+2. Re-read after writing: the new `arch/M14-ui.md` fragment does NOT
+   edit the D-IMMERSIVE-GRID-COLLAPSE section (pf-05 SESSION-03+04
+   fragment above); it forward-points to that section under
+   `D-TA-IMMERSIVE-SEMANTICS-STABLE`. The cross-reference to
+   `arch/M13-render.md` reads consistently (the resize seam was
+   published by the tactical-skirmish SESSION-02 M13 fragment as
+   `resize(w, h, dpr?): void`; the new M14 fragment refers to it as
+   `TacticalView.resize(w, h)` because M14's consumer does not pass
+   `dpr` — no contradiction; the third parameter is optional in the
+   M13 signature and M14 correctly relies on the M13-side default).
+   No contradiction with the tactical-attack-mock-parity SESSION-03
+   `D-TA-VISUAL-GATE` + `D-TA-NO-DEFERRED-BROWSER` section above (the
+   new fragment extends both to the full-field baseline case).
+3. `FORGE.md`, `MU.md`, `ENSO.md`, `JIKIJITSU.md` — byte-identical,
+   not touched.
