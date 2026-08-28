@@ -213,20 +213,25 @@ test.describe('tactical movement screen', () => {
     await expect(page.getByTestId('no-timer')).toBeVisible();
     await expect(page.getByTestId('blind-commit')).toContainText('NOT OBSERVABLE UNTIL RESOLUTION');
 
-    // Gate starts closed — WIDOWMAKER + HARRIER-2 both UNPLANNED (§4.3).
+    // playtest-feedback-03 SESSION-02 CP1 (D-COMMIT-DEFAULT-COAST): every
+    // living ship starts on COAST, so the gate is OPEN on turn entry — the
+    // fleet may commit with zero interaction.
     const commit = page.getByTestId('commit-btn');
-    await expect(commit).toBeDisabled();
-    await expect(commit).toContainText('0/2 PLANNED');
+    await expect(commit).toBeEnabled();
+    await expect(commit).toContainText('2/2 PLANNED');
 
-    // Plot the selected ship (WIDOWMAKER) — a bearing edit marks it PLANNED.
+    // Plot the selected ship (WIDOWMAKER) — a bearing edit still flips the
+    // draft to PLANNED (coast → planned override), gate stays open at 2/2.
     await page.getByLabel('Bearing in degrees, 0 to 360').fill('45');
-    await expect(commit).toContainText('1/2 PLANNED');
+    await expect(commit).toContainText('2/2 PLANNED');
 
-    // COAST the second ship — select via the shared FleetRoster row (data-ship-id 2).
+    // COAST the second ship — select via the shared FleetRoster row
+    // (data-ship-id 2). It's already COAST by default; the Set to Coast button
+    // is idempotent and keeps HARRIER-2 on coast (no toggling to unplanned).
     await page.locator('[data-testid="roster-ship"][data-ship-id="2"]').click();
     await page.getByRole('button', { name: /Set to Coast/ }).click();
 
-    // Gate opens.
+    // Gate remains open.
     await expect(commit).toBeEnabled();
     await expect(commit).toContainText('2/2 PLANNED');
 

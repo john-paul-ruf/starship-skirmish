@@ -93,8 +93,11 @@ export function TacticalMove() {
   const burnOpts = { sliceSeconds, ...(maxAccel !== undefined ? { maxAccel } : {}) };
 
   // (Re)initialize the drafts + selection whenever a new plan turn begins.
-  // Engine-dead ships start on COAST (initialDraft); every other living ship
-  // starts UNPLANNED and must be decided before the gate opens. Selection
+  // Every living ship starts on COAST (playtest-feedback-03 `D-COMMIT-DEFAULT-
+  // COAST`) so the §4.3 fleet gate is OPEN on entry — the fleet may commit
+  // without touching a single control ("commit without changing any values").
+  // Plotting any waypoint magnitude/bearing flips the draft back to PLANNED
+  // via `plotWaypoint`, so intentional arcs still override the default. Selection
   // defaults to the first living player ship so the plotter has a target on
   // entry (roster clicks can then move selection to any fleet). Also clears
   // the flown trail so a new plan turn opens with a clean historical layer.

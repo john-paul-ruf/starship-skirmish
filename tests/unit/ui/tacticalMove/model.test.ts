@@ -347,7 +347,12 @@ describe('previewInputFor', () => {
 // ---- Draft transitions ----------------------------------------------------
 
 describe('draft transitions', () => {
-  it('initialDraft: living ship gets N zeroed waypoints matching the interval; engine-dead COAST', () => {
+  it('initialDraft: every living ship starts COAST (D-COMMIT-DEFAULT-COAST) with N zeroed waypoints', () => {
+    // playtest-feedback-03 SESSION-02 CP1 — living ships start on `coast` so
+    // `fleetGateStatus.canCommit` is true on turn entry. Engine-dead ships were
+    // already coasting for the same underlying reason (zero Δv budget); that
+    // path is unchanged. A plotted waypoint still flips a coast draft to
+    // `planned` via `plotWaypoint` (asserted below in draft transitions).
     const live: RosterShip = {
       bodyId: 1, name: 'A', chassisClass: 'fighter', budget: 60, engineAlive: true, alive: true,
     };
@@ -355,7 +360,7 @@ describe('draft transitions', () => {
       bodyId: 2, name: 'B', chassisClass: 'fighter', budget: 0, engineAlive: false, alive: true,
     };
     const d1 = initialDraft(live, { interval: 2, beatSeconds: 8 });
-    expect(d1.status).toBe('unplanned');
+    expect(d1.status).toBe('coast');
     expect(d1.activeIndex).toBe(0);
     expect(d1.waypoints).toHaveLength(4); // 2s → 4 segments (session example)
     for (const w of d1.waypoints) expect(w).toEqual({ bearing: 0, pitch: 0, magnitude: 0 });
@@ -363,6 +368,21 @@ describe('draft transitions', () => {
     const d2 = initialDraft(dead, { interval: 1, beatSeconds: 8 });
     expect(d2.status).toBe('coast');
     expect(d2.waypoints).toHaveLength(8);
+  });
+
+  it('a fresh turn is immediately committable — every living ship coasts by default', () => {
+    // The D-COMMIT-DEFAULT-COAST invariant, end to end: the drafts we build
+    // for every living ship on turn entry, unchanged, satisfy the §4.3 gate.
+    const rows: readonly RosterShip[] = [
+      { bodyId: 1, name: 'WIDOWMAKER', chassisClass: 'fighter', budget: 70, engineAlive: true, alive: true },
+      { bodyId: 2, name: 'HARRIER-2', chassisClass: 'fighter', budget: 40, engineAlive: true, alive: true },
+      { bodyId: 3, name: 'IRON VERDICT', chassisClass: 'cruiser', budget: 0, engineAlive: false, alive: true },
+    ];
+    const drafts = rows.map((r) => initialDraft(r, { interval: 1, beatSeconds: 8 }));
+    const gate = fleetGateStatus(drafts);
+    expect(gate.canCommit).toBe(true);
+    expect(gate.plannedCount).toBe(rows.length);
+    expect(gate.total).toBe(rows.length);
   });
 
   it('plotWaypoint sanitizes inputs and marks the ACTIVE waypoint planned', () => {

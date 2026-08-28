@@ -237,9 +237,14 @@ const zeroWaypoint = (bearing = 0, pitch = 0): WaypointDraft => ({
 
 /**
  * The starting draft for a roster ship at a given marks interval + beat length.
- * An engine-dead ship coasts automatically (§4.3, "a destroyed engine means
- * zero delta-V"); every other living ship starts `unplanned` and must be decided
- * before commit. All waypoints start zeroed at bearing 0 / pitch 0.
+ * Every living ship starts on `coast` — no Δv spent, keep current momentum —
+ * so `fleetGateStatus.canCommit` is true on turn entry and the fleet can commit
+ * without touching a single control (playtest-feedback-03 `D-COMMIT-DEFAULT-
+ * COAST`; supersedes the pre-feedback-03 "living → `unplanned`" seed). Plotting
+ * any waypoint magnitude/bearing flips the draft back to `planned` via
+ * `plotWaypoint`, so an intentional arc still overrides the default. Engine-dead
+ * ships were already coasting (§4.3, "a destroyed engine means zero delta-V");
+ * that path is unchanged. All waypoints start zeroed at bearing 0 / pitch 0.
  */
 export const initialDraft = (
   row: RosterShip,
@@ -252,7 +257,7 @@ export const initialDraft = (
     bodyId: row.bodyId,
     waypoints,
     activeIndex: 0,
-    status: row.engineAlive ? 'unplanned' : 'coast',
+    status: 'coast',
   };
 };
 
