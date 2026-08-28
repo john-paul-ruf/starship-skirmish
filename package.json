@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Deterministic, offline, 3D turn-based tactical fleet-combat game — static SPA, no backend.",
   "scripts": {
+    "prepare": "node ./.githooks/install.mjs",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",

@@ -1,0 +1,21 @@
+#!/bin/sh
+# .githooks/pre-push — GitHub Pages readiness gate.
+#
+# Runs before every ordinary `git push`. Delegates to the SAME `verify:pages`
+# aggregate that CI runs, so a green local push implies a green CI run for the
+# repository-local checks (typecheck / lint / unit / catalog-lock /
+# determinism / migration fixtures / harness purity / build / cross-engine
+# determinism specs on Chromium + Firefox + WebKit).
+#
+# Honest boundary: this is a client-side hook. It rejects a normal push when
+# any gate exits nonzero; it CANNOT prove GitHub service availability or
+# deployment permissions, and Git's built-in `git push --no-verify` bypasses
+# it. Hard remote enforcement is a separate GitHub repository-rule concern.
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+printf '%s\n' '[pre-push] Verifying GitHub Pages readiness...'
+printf '%s\n' '[pre-push] Install Playwright browsers once if the browser gate reports they are missing.'
+exec npm run verify:pages
