@@ -24,6 +24,7 @@ import {
   shipRangePreview,
   slotKey,
   toAttackPlans,
+  weaponOutOfRange,
   type Assignment,
   type FireSlot,
 } from '../../../../src/ui/screens/tacticalAttack/model.js';
@@ -570,6 +571,68 @@ describe('shipRangePreview', () => {
   it('returns null when the ship view exists but its body has no position', () => {
     const viewNoBody = viewOf([shooter], []);
     expect(shipRangePreview(viewNoBody, 1)).toBeNull();
+  });
+});
+
+describe('weaponOutOfRange (playtest-feedback-04 FB1)', () => {
+  const w = (over: Partial<SimWeapon> = {}): SimWeapon => ({
+    range: 300,
+    damage: 12,
+    shotsPerTurn: 1,
+    accuracy: 0.6,
+    ...over,
+  });
+  const shooter = shipView({
+    bodyId: 1,
+    fleetId: 0,
+    ship: simShip({ weapons: [w({ range: 300 })] }),
+    weaponAlive: [true],
+    missileAlive: [],
+    missileAmmo: [],
+  });
+  const target = shipView({ bodyId: 3, fleetId: 1 });
+  const build = (targetX: number): BlindMatchView =>
+    viewOf([shooter, target], [body(1, at(0)), body(3, at(targetX))]);
+
+  it('past-range → true (the resolver will refuse the shot)', () => {
+    expect(weaponOutOfRange(build(500), 1, 0, 3)).toBe(true);
+  });
+
+  it('inside-range → false', () => {
+    expect(weaponOutOfRange(build(200), 1, 0, 3)).toBe(false);
+  });
+
+  it('exactly-at-range → false (mirrors the resolver\'s strict `>` in attack.ts)', () => {
+    // sim/rules/attack.ts uses `range > weapon.range`, so distance === range
+    // still fires — the bench must NOT label it OUT OF RANGE. The pure
+    // formula's HIT_FLOOR still applies here (the read-out shows 5%), and
+    // that 5% is honest for an in-range hard shot.
+    expect(weaponOutOfRange(build(300), 1, 0, 3)).toBe(false);
+  });
+
+  it('missile-index-out-of-bounds / unknown weapon → false (nothing to warn about)', () => {
+    expect(weaponOutOfRange(build(500), 1, 9, 3)).toBe(false);
+  });
+
+  it('missing shooter view / missing body → false (silent skip)', () => {
+    expect(weaponOutOfRange(build(500), 999, 0, 3)).toBe(false);
+    const missingBody = viewOf([shooter, target], []); // ships but no bodies
+    expect(weaponOutOfRange(missingBody, 1, 0, 3)).toBe(false);
+  });
+
+  it('per-slot: uses the weapon at the given index, not W1', () => {
+    // W1 range 100 (out), W2 range 500 (in). Target at 200:
+    //   - weaponIndex 0 → out of range (200 > 100)
+    //   - weaponIndex 1 → in range (200 ≤ 500)
+    const twoWeapons = shipView({
+      bodyId: 1,
+      fleetId: 0,
+      ship: simShip({ weapons: [w({ range: 100 }), w({ range: 500 })] }),
+      weaponAlive: [true, true],
+    });
+    const v = viewOf([twoWeapons, target], [body(1, at(0)), body(3, at(200))]);
+    expect(weaponOutOfRange(v, 1, 0, 3)).toBe(true);
+    expect(weaponOutOfRange(v, 1, 1, 3)).toBe(false);
   });
 });
 

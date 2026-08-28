@@ -27,6 +27,7 @@ import {
   liveFireSlots,
   positionOf,
   slotKey,
+  weaponOutOfRange,
   type Assignment,
   type FireSlot,
 } from './model.js';
@@ -147,7 +148,17 @@ function FireRow(props: FireRowProps) {
         shooterPos !== undefined && tPos !== undefined
           ? ` · ${String(Math.round(distance(shooterPos, tPos)))}u`
           : '';
-      return { value: String(t.bodyId), label: `${t.name} · ${t.chassisClass.toUpperCase()}${d}` };
+      // Playtest-feedback-04 FB1: weapon slots flag out-of-range enemies in
+      // the picker itself so the player sees "the resolver will refuse this"
+      // BEFORE assigning — the row still allows the pick (warns, never
+      // blocks, §4.6). Missile racks have no line-of-sight envelope; skip.
+      const outOfRange =
+        !isMissile && weaponOutOfRange(view, shooter.bodyId, slot.index, t.bodyId);
+      const oor = outOfRange ? ' · OUT OF RANGE' : '';
+      return {
+        value: String(t.bodyId),
+        label: `${t.name} · ${t.chassisClass.toUpperCase()}${d}${oor}`,
+      };
     }),
   ];
 
@@ -156,6 +167,15 @@ function FireRow(props: FireRowProps) {
     assignment?.targetId !== undefined
       ? targets.find((t) => t.bodyId === assignment.targetId)
       : undefined;
+  // Playtest-feedback-04 FB1: for a weapon slot with an assigned target, does
+  // the resolver refuse the shot? The bench must announce OUT OF RANGE instead
+  // of a HitChance readout — the controller now publishes 0% for this case
+  // (CP1), but the player needs the reason spelled out. Missile slots stay
+  // free of this — they have no line-of-sight envelope.
+  const outOfRange =
+    !isMissile && targetView !== undefined
+      ? weaponOutOfRange(view, shooter.bodyId, slot.index, targetView.bodyId)
+      : false;
 
   const onChange = (e: Event) => {
     const value = (e.currentTarget as HTMLSelectElement).value;
@@ -185,7 +205,9 @@ function FireRow(props: FireRowProps) {
         {isMissile ? (
           <span class="mono-xs">{`AMMO ${String(shooter.missileAmmo[slot.index] ?? 0)}`}</span>
         ) : (
-          <span class="chip">{assignment ? 'ASSIGNED' : 'HOLD'}</span>
+          <span class={`chip${outOfRange ? ' chip-red' : ''}`}>
+            {outOfRange ? 'OUT OF RANGE' : assignment ? 'ASSIGNED' : 'HOLD'}
+          </span>
         )}
       </div>
 
@@ -203,7 +225,11 @@ function FireRow(props: FireRowProps) {
       />
 
       {!isMissile && targetView !== undefined ? (
-        <HitChance breakdown={hitChanceFor(shooter.bodyId, targetView.bodyId, slot.index)} />
+        outOfRange ? (
+          <OutOfRange />
+        ) : (
+          <HitChance breakdown={hitChanceFor(shooter.bodyId, targetView.bodyId, slot.index)} />
+        )
       ) : null}
 
       {isMissile ? (
@@ -218,6 +244,35 @@ function FireRow(props: FireRowProps) {
       targetView !== undefined
         ? renderCalledShot(slot, assignment, targetView)
         : null}
+    </div>
+  );
+}
+
+/**
+ * Playtest-feedback-04 FB1: replaces the HitChance readout when the resolver
+ * would refuse the shot (`weaponOutOfRange`). Text-first + `c-red` — never
+ * colour alone (§1.1); the block spells out WHY (SHOT WILL NOT FIRE) so the
+ * player can distinguish this from a hard-but-legal in-range 5% shot.
+ */
+function OutOfRange() {
+  return (
+    <div
+      data-testid="weapon-out-of-range"
+      role="status"
+      style="margin-top:6px"
+    >
+      <div style="display:flex;align-items:baseline;justify-content:space-between">
+        <span class="t-label">HIT CHANCE</span>
+        <span
+          class="t-num c-red"
+          style="font-size:14px;font-weight:700;letter-spacing:.08em"
+        >
+          OUT OF RANGE
+        </span>
+      </div>
+      <div class="mono-xs c-red" style="margin-top:5px">
+        SHOT WILL NOT FIRE · MOVE CLOSER OR RE-TARGET.
+      </div>
     </div>
   );
 }

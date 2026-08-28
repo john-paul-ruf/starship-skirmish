@@ -406,6 +406,41 @@ export const shipRangePreview = (
 export const hitChanceTone = (final: number): 'c-green' | 'c-amber' | 'c-red' =>
   final >= 0.66 ? 'c-green' : final >= 0.4 ? 'c-amber' : 'c-red';
 
+/**
+ * True when a chosen target sits BEYOND the shooter's weapon range — the
+ * resolver refuses such a shot outright (`sim/rules/attack.ts` — `if (range >
+ * weapon.range) continue;`), so the bench must announce it as OUT OF RANGE
+ * instead of the honest-but-empty 0% the controller now publishes for that
+ * case (playtest-feedback-04 FB1, D-HITCHANCE-RANGE-GATE).
+ *
+ * A range COMPARISON, not a to-hit number: the same `mathx.distance` +
+ * `weapon.range` geometry the range shell already trusts (arch §13.3 bans
+ * recomputing the `%`, not the envelope). Missile slots return `false` — a
+ * missile rack has no line-of-sight range envelope; its AoE friendly-fire
+ * warning is a separate channel (§4.6). Missing shooter view, missing target
+ * position, unknown weapon index → `false` (nothing to warn about; the bench
+ * still shows the honest 0% breakdown for the truly-absent case).
+ *
+ * The predicate mirrors the resolver's STRICT `>`: a shot exactly at
+ * `weapon.range` still fires (and reads as HIT_FLOOR 5% via the pure
+ * formula), so the bench must not label it OUT OF RANGE.
+ */
+export const weaponOutOfRange = (
+  view: BlindMatchView,
+  shooterId: BodyId,
+  weaponIndex: number,
+  targetId: BodyId,
+): boolean => {
+  const shooter = shipViewOf(view, shooterId);
+  if (shooter === undefined) return false;
+  const weapon = shooter.ship.weapons[weaponIndex];
+  if (weapon === undefined) return false;
+  const shooterPos = positionOf(view, shooterId);
+  const targetPos = positionOf(view, targetId);
+  if (shooterPos === undefined || targetPos === undefined) return false;
+  return distance(shooterPos, targetPos) > weapon.range;
+};
+
 // ---- Live combat log strip (playtest-feedback-02 · S04 CP3) ---------------
 
 /**
