@@ -960,3 +960,63 @@ body.rm .sweeper {
   letter-spacing: 0.08em;
   color: var(--ink-dim);
 }
+
+/* ---------- 19. INFOTIP (stateless, CSS-revealed) ------------ */
+/* Playtest-feedback-01 · S06. Tokens only (design §1.1 — never a raw hex or
+   magic z-index here). The reveal is `.tip:hover .tip-pop` +
+   `.tip:focus-within .tip-pop` so keyboard focus on the trigger button opens
+   the popup identically to a mouse hover — no JS state (the M14 component
+   library forbids hooks; see primitives.ts). Motion honours the same
+   opt-out contract as §14: a soft opacity fade only, and `pointer-events:
+   none` on the popup keeps the trigger the only interactive surface. */
+.tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.tip-dot {
+  border: 0;
+  background: none;
+  cursor: help;
+  color: var(--ink-dim);
+  font-size: 11px;
+  line-height: 1;
+  padding: 0 var(--s1);
+  font-family: var(--font-mono);
+}
+.tip-dot:hover,
+.tip-dot:focus-visible {
+  color: var(--cyan);
+}
+.tip-dot:focus-visible {
+  outline: none;
+  box-shadow: var(--glow-2);
+  border-radius: var(--r-sm);
+}
+.tip-pop {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  min-width: 180px;
+  max-width: 280px;
+  padding: var(--s2) var(--s3);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--glow-2);
+  color: var(--ink-hi);
+  font-size: 11px;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease;
+  pointer-events: none;
+}
+.tip:hover .tip-pop,
+.tip:focus-within .tip-pop {
+  opacity: 1;
+  visibility: visible;
+}
