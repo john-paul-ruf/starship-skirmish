@@ -25,6 +25,7 @@ import { BackupBanner } from './encyclopedia/BackupBanner.js';
 import { BuildCard } from './encyclopedia/BuildCard.js';
 import { DeleteModal } from './encyclopedia/DeleteModal.js';
 import { FilterBar } from './encyclopedia/FilterBar.js';
+import { ShareModal } from './encyclopedia/ShareModal.js';
 import {
   collectAvailableTags,
   duplicateIdentity,
@@ -44,7 +45,7 @@ import {
   type IndexEntry,
   type UsageLevel,
 } from '../../persist/index.js';
-import { exportLibrary, exportToText } from '../../io/index.js';
+import { encodeShareToken, exportLibrary, exportToText } from '../../io/index.js';
 import type { Build } from '../../domain/index.js';
 
 // Warn / critical are UI-band ratios (§3.7). The absolute values live in
@@ -62,6 +63,11 @@ export function Encyclopedia() {
   const view = useSignal<EncyclopediaView>(viewFromPrefs(repo.loadPrefs()));
   const selection = useSignal<readonly string[]>([]);
   const pendingDeleteId = useSignal<string | null>(null);
+  // Outbound-share state (§S05): a null pair means "no modal". Populated by
+  // `onShareOne` after `encodeShareToken` succeeds; the modal owns Close.
+  const shareModal = useSignal<{ readonly name: string; readonly token: string } | null>(
+    null,
+  );
   // Session-scoped dismissals — §4.8: the backup nudge is dismissible-but-
   // recurring (never persisted). Same for per-build refit-receipts ("KEEP AS
   // IS"): they hide inside this tab only; a fresh visit re-surfaces the badge.
@@ -258,6 +264,28 @@ export function Encyclopedia() {
     exportBuilds('selected', collectBuilds([id]));
   };
 
+  // ---- Share --------------------------------------------------------------
+
+  const onShareOne = (id: string): void => {
+    const loaded = repo.get(id);
+    if (loaded === null) {
+      services.toast('This build cannot be shared.', 'warn');
+      return;
+    }
+    // `encodeShareToken` returns a Result — fail closed to a toast, never
+    // throw across the io boundary (§4 error handling).
+    const res = encodeShareToken(catalog, loaded.build);
+    if (!res.ok) {
+      services.toast(`Could not build a share token (${res.error.code}).`, 'danger');
+      return;
+    }
+    shareModal.value = { name: loaded.build.name, token: res.value };
+  };
+
+  const onShareCopied = (what: 'token' | 'url'): void => {
+    services.toast(what === 'token' ? 'Copied share token.' : 'Copied share URL.');
+  };
+
   // ---- Refit resolve -------------------------------------------------------
 
   const onRefit = (id: string) => {
@@ -304,7 +332,7 @@ export function Encyclopedia() {
             navigate({ name: 'share' });
           }}
         >
-          🔗 SHARE / IMPORT
+          ⭳ IMPORT
         </Button>
       </div>
 
@@ -364,7 +392,7 @@ export function Encyclopedia() {
               onDuplicate={onDuplicate}
               onDelete={onDelete}
               onExport={onExportOne}
-              onShare={() => undefined}
+              onShare={onShareOne}
               onRefit={onRefit}
               onKeepAsIs={onKeepAsIs}
               refitDismissed={isRefitDismissed(entry)}
@@ -384,6 +412,17 @@ export function Encyclopedia() {
           onExport={() => {
             onExportOne(pendingDelete.id);
           }}
+        />
+      ) : null}
+
+      {shareModal.value !== null ? (
+        <ShareModal
+          buildName={shareModal.value.name}
+          token={shareModal.value.token}
+          onClose={() => {
+            shareModal.value = null;
+          }}
+          onCopied={onShareCopied}
         />
       ) : null}
     </div>
