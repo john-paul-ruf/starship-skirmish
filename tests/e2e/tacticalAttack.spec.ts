@@ -55,6 +55,7 @@ const renderStub: esbuild.Plugin = {
         globalThis.__focusBodyCalls = [];
         globalThis.__resetCalls = 0;
         globalThis.__focusSource = null;
+        globalThis.__rangeShellCalls = [];
         export const createTacticalView = () => ({
           setState() {}, dispose() {}, resize() {},
           pick() { return null; },
@@ -68,7 +69,21 @@ const renderStub: esbuild.Plugin = {
             focus() {},
             setFocusSource(source) { globalThis.__focusSource = source; },
           },
-          scene: {},
+          // playtest-feedback-03 SESSION-01: a minimal scene-graph shape so
+          // Viewport's range-shell attach (\`view.scene.context.scene\`) finds
+          // somewhere to add/remove the shell mesh.
+          scene: { context: { scene: { add() {}, remove() {} } } },
+        });
+        // playtest-feedback-03 SESSION-01 — the range-shell factory Viewport
+        // attaches once per mount; calls are recorded so a test can assert the
+        // shell followed a ship selection without needing real WebGL.
+        export const createRangeShell = () => ({
+          mesh: {},
+          setRadius(r) { globalThis.__rangeShellCalls.push(['radius', r]); },
+          setCenter(x, y, z) { globalThis.__rangeShellCalls.push(['center', x, y, z]); },
+          setVisible(v) { globalThis.__rangeShellCalls.push(['visible', v]); },
+          setQuality() {},
+          dispose() {},
         });
         export const attachTracePlayer = () => ({
           playMovement() { return mk(); },
@@ -399,6 +414,74 @@ test.describe('tactical attack screen', () => {
     await expect(aoeChip).toHaveAttribute('data-role', 'aoe-friendly');
     // The chip carries text ("⚠ IN AoE") in addition to color — never color-alone.
     await expect(aoeChip).toContainText('AoE');
+
+    expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
+  });
+
+  test('selecting a ship shows the range shell immediately — no weapon-slot focus required', async ({
+    page,
+  }) => {
+    const errors = await mount(page);
+
+    // Before any selection, the readout says so and no shell calls landed yet.
+    await expect(page.getByTestId('ship-range-readout')).toHaveText('SELECT A SHIP TO SEE ITS RANGE');
+
+    // Click WIDOWMAKER (bodyId 1, at world origin) in the roster — no weapon
+    // slot touched. D-ATK-ORIENTATION: the shell must appear from selection
+    // alone (FB1 — "where are my ranges").
+    await page.locator('[data-testid="roster-ship"][data-ship-id="1"]').click();
+
+    await expect(page.getByTestId('ship-range-readout')).toHaveText('ENGAGEMENT RANGE 260u');
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const calls = (globalThis as unknown as { __rangeShellCalls: unknown[][] }).__rangeShellCalls;
+          return calls.some((c) => c[0] === 'visible' && c[1] === true);
+        }),
+      )
+      .toBe(true);
+    const lastRadius = await page.evaluate(() => {
+      const calls = (globalThis as unknown as { __rangeShellCalls: unknown[][] }).__rangeShellCalls;
+      return [...calls].reverse().find((c) => c[0] === 'radius')?.[1];
+    });
+    expect(lastRadius).toBe(260);
+
+    expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
+  });
+
+  test('a zero-fire commit shows a legible resolve for the minimum hold before advancing', async ({
+    page,
+  }) => {
+    const errors = await mount(page);
+
+    // Flip straight to resolve with an empty beat (every slot HELD) — the
+    // trace has no turn-4 entries either, mirroring an all-HOLD commit.
+    await page.evaluate(() => {
+      const g = globalThis as unknown as {
+        __controller: { attackBeat: { value: unknown }; phase: { value: string } };
+      };
+      g.__controller.attackBeat.value = { log: [], destroyed: [], launchedMissileIds: [] };
+      g.__controller.phase.value = 'attack-resolve';
+    });
+
+    // The empty-state reads immediately — never a blank resolve screen.
+    await expect(page.getByTestId('no-fire-note')).toBeVisible();
+    await expect(page.getByTestId('combat-log-strip-empty')).toBeVisible();
+
+    // D-ATK-RESOLVE-MIN-HOLD: the hand-off does NOT fire the instant the
+    // (synchronous, in this stub) animation reports done — it waits out the
+    // minimum readable hold first, so the turn never flashes past.
+    await page.waitForTimeout(100);
+    const early = await page.evaluate(
+      () => (globalThis as unknown as { __resolveDoneCalls: number }).__resolveDoneCalls,
+    );
+    expect(early).toBe(0);
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => (globalThis as unknown as { __resolveDoneCalls: number }).__resolveDoneCalls),
+      )
+      .toBeGreaterThan(0);
 
     expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
   });
