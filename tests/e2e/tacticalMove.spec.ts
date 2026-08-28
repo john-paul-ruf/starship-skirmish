@@ -111,7 +111,8 @@ const buildHarness = async (): Promise<string> => {
       // playtest-feedback-03 SESSION-02 CP2: the persistent combat log strip
       // now reads match.trace on the Move screen; needs a well-shaped
       // ResolutionTrace so flattenCombatLog() doesn't throw. Empty turns → the
-      // strip renders its "NO FIRE RESOLVED YET" empty state.
+      // strip renders its "NO FIRE RESOLVED YET" empty state under a
+      // "NO COMBAT YET" turn label (playtest-feedback-04 SESSION-02).
       trace: signal({ turns: [] }),
       seedLabel: 'SK-7F3A-9C21-D4E8',
       playerFleetId: 0, initialFleets,
@@ -154,6 +155,14 @@ const buildHarness = async (): Promise<string> => {
       },
       hitChanceFor() { return {}; },
       concede() {}, rematch() {},
+    };
+
+    // playtest-feedback-04 SESSION-02 — test hook to inject a resolved
+    // TurnRecord into the trace so we can prove the Move-screen combat log
+    // surfaces the LAST resolved turn (D-LOG-LAST-RESOLVED). Kept off the
+    // controller surface (real controllers do not expose a setter).
+    globalThis.__setTrace = (turns) => {
+      controller.trace.value = { turns };
     };
 
     const services = {
@@ -222,7 +231,13 @@ test.describe('tactical movement screen', () => {
     // playtest-feedback-03 SESSION-02 CP2 — persistent combat log strip is
     // present on the Move screen from turn entry, showing its NO-FIRE empty
     // state before any beat resolves (FB2 — "should be visible at all times").
+    // playtest-feedback-04 SESSION-02 — the header chip now reads NO COMBAT
+    // YET while the trace holds no resolved turn (the empty state's body
+    // reads NO FIRE RESOLVED YET regardless of the header).
     await expect(page.getByTestId('combat-log-strip')).toBeVisible();
+    await expect(page.getByTestId('combat-log-strip-turn')).toContainText(
+      'NO COMBAT YET',
+    );
     await expect(page.getByTestId('combat-log-strip-empty')).toContainText(
       'NO FIRE RESOLVED YET',
     );
@@ -266,6 +281,75 @@ test.describe('tactical movement screen', () => {
     });
     expect(commitShape).not.toBeNull();
     for (const p of commitShape!) expect(p.segCount).toBeGreaterThan(0);
+
+    expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
+  });
+
+  test('combat log surfaces the last RESOLVED turn while the player plans the next move', async ({
+    page,
+  }) => {
+    const errors = await mount(page);
+
+    // Turn-1 entry: no prior turn has resolved. Header + body announce the
+    // absence of combat (D-LOG-LAST-RESOLVED: `logTurn === null` on entry).
+    await expect(page.getByTestId('combat-log-strip-turn')).toContainText(
+      'NO COMBAT YET',
+    );
+    await expect(page.getByTestId('combat-log-strip-empty')).toBeVisible();
+
+    // Simulate turn 1 having resolved (movement + attack beats). The Move
+    // screen the player now looks at is the NEXT plan turn; the strip must
+    // show turn 1's rows under a TURN 1 label — proving the panel reads the
+    // newest FULLY-RESOLVED turn, not the empty currentTurn slice.
+    await page.evaluate(() => {
+      const g = globalThis as unknown as {
+        __setTrace: (turns: readonly unknown[]) => void;
+      };
+      g.__setTrace([
+        {
+          turn: 1,
+          movement: {
+            subStepCount: 0,
+            keyframes: [],
+            contacts: [],
+            removedHazardIds: [],
+            log: [],
+            destroyed: [],
+          },
+          attack: {
+            log: [
+              {
+                turn: 1,
+                beat: 'attack',
+                source: 'weapon',
+                sourceId: 1, // WIDOWMAKER (player)
+                targetId: 3, // IRON VERDICT (BOT-01)
+                result: 'hit',
+                chance: 0.6,
+                roll: 0.3,
+                damage: 12,
+                shieldBefore: 20,
+                shieldAfter: 8,
+                hullBefore: 60,
+                hullAfter: 60,
+              },
+            ],
+            destroyed: [],
+            launchedMissileIds: [],
+          },
+        },
+      ]);
+    });
+
+    // Header label now announces the newest resolved turn.
+    await expect(page.getByTestId('combat-log-strip-turn')).toContainText('TURN 1');
+    // The row surfaces from initialFleets — even a body pruned from view.ships
+    // would still read by its authored name (nameByBodyId reads initial fleets).
+    const body = page.getByTestId('combat-log-strip-body');
+    await expect(body).toContainText('WIDOWMAKER');
+    await expect(body).toContainText('IRON VERDICT');
+    // Empty-state row is gone.
+    await expect(page.getByTestId('combat-log-strip-empty')).toHaveCount(0);
 
     expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
   });
