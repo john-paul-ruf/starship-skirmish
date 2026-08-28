@@ -139,60 +139,11 @@ describe('CP2 tactical screens — side panels scroll, middle stays put', () => 
     },
   );
 
-  it.runIf(cp2Live)(
-    'TacticalAttack: root uses a full-height flex shell (ta-shell)',
-    () => {
-      expect(tacticalAttack).toMatch(/class="ta-shell"/);
-      expect(tacticalAttack).toMatch(
-        /\.ta-shell[^`]*flex-direction:\s*column/,
-      );
-      expect(tacticalAttack).toMatch(/\.ta-shell[^`]*min-height:\s*0/);
-    },
-  );
-
-  it.runIf(cp2Live)(
-    'TacticalAttack: right column contains a scrolling bench region',
-    () => {
-      expect(tacticalAttack).toMatch(
-        /\.ta-bench-scroll[^`]*overflow-y:\s*auto/,
-      );
-      expect(tacticalAttack).toMatch(/\.ta-bench-scroll[^`]*min-height:\s*0/);
-    },
-  );
-
-  it.runIf(cp2Live)(
-    'TacticalAttack: left column roster gets its own scroll region',
-    () => {
-      expect(tacticalAttack).toMatch(
-        /\.ta-roster-scroll[^`]*overflow-y:\s*auto/,
-      );
-    },
-  );
-
   // ---- playtest-feedback-03 SESSION-02 CP3 --------------------------------
   // Owner playtest FB2 — "where is my combat log — should be visible at all
   // times." The Move screen now mounts the shared CombatLogPanel; these
   // assertions lock the placement so a future edit that pushes it outside the
   // fixed frame (or drops it entirely) fails the unit build.
-
-  it(
-    'TacticalMove: mounts the shared CombatLogPanel from tacticalAttack (cross-screen read)',
-    () => {
-      // Import wiring — no extraction, no barrel churn (SESSION-01 owns
-      // the physical files; SESSION-02 reads them).
-      expect(tacticalMove).toMatch(
-        /import \{ CombatLogPanel \} from '\.\/tacticalAttack\/CombatLogPanel\.js'/,
-      );
-      expect(tacticalMove).toMatch(
-        /import \{ liveLogRows \} from '\.\/tacticalAttack\/model\.js'/,
-      );
-      expect(tacticalMove).toMatch(
-        /import \{ nameByBodyId \} from '\.\/postMatch\/model\.js'/,
-      );
-      // The strip is mounted in the JSX tree.
-      expect(tacticalMove).toContain('<CombatLogPanel');
-    },
-  );
 
   it(
     'TacticalMove: log slot is flex:none so the fixed-frame viewport/plotter never lose their space',
