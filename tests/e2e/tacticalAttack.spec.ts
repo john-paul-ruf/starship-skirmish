@@ -486,6 +486,100 @@ test.describe('tactical attack screen', () => {
     expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
   });
 
+  test('a shot ordered past weapon.range reads OUT OF RANGE — never a lying 5%', async ({
+    page,
+  }) => {
+    // playtest-feedback-04 FB1 (D-HITCHANCE-RANGE-GATE): pick a target the
+    // resolver would refuse (IRON VERDICT at 600u; W1 range is 260u). The
+    // bench must announce OUT OF RANGE — no 5% floor readout, no HitChance
+    // block — and both the row's chip and the picker option must say so.
+    const errors = await mount(page);
+
+    // Override hitChanceFor for this test so the seam publishes the honest
+    // 0% breakdown the controller now returns for out-of-range shots (the
+    // harness's default returned a canned 57% for every input).
+    await page.evaluate(() => {
+      const g = globalThis as unknown as {
+        __controller: { hitChanceFor: (a: number, b: number, w: number) => unknown };
+      };
+      const zero = { base: 0.68, rangeFactor: 0, velocityFactor: 0, evasionFactor: 0, final: 0 };
+      g.__controller.hitChanceFor = () => zero;
+    });
+
+    const rows = page.getByTestId('weapon-row');
+    // Row 0 = WIDOWMAKER W1 (range 260). Assign it to IRON VERDICT (bodyId 4)
+    // at 600u — well past 260. The resolver would refuse this shot.
+    await rows.nth(0).locator('select').selectOption('4');
+
+    // The row surfaces the explicit OUT OF RANGE block — not the HitChance %.
+    await expect(rows.nth(0).getByTestId('weapon-out-of-range')).toBeVisible();
+    await expect(rows.nth(0).getByTestId('weapon-out-of-range')).toContainText(
+      'SHOT WILL NOT FIRE',
+    );
+    await expect(rows.nth(0).getByTestId('hitchance-final')).toHaveCount(0);
+
+    // The row's status chip flips to OUT OF RANGE (not ASSIGNED / HOLD).
+    await expect(rows.nth(0).locator('.chip').first()).toHaveText('OUT OF RANGE');
+
+    // The picker option itself carries the OUT OF RANGE suffix so the player
+    // sees the refusal BEFORE assigning next time. Still selectable — warns,
+    // never blocks (§4.6).
+    const options = await rows.nth(0).locator('select option').allInnerTexts();
+    const ironOption = options.find((o) => o.includes('IRON VERDICT'));
+    expect(ironOption, 'IRON VERDICT option').toBeDefined();
+    expect(ironOption).toContain('OUT OF RANGE');
+
+    // Commit is NOT gated by the out-of-range warning.
+    await expect(page.getByTestId('commit-fire-btn')).toBeEnabled();
+
+    expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
+  });
+
+  test('at 1280x720 the right column shows one primary scroll region and CommitBar stays visible', async ({
+    page,
+  }) => {
+    // playtest-feedback-04 FB2 (D-ATK-ONE-SCROLL): the fix collapses three
+    // stacked scroll regions (.ta-col-r safety, .ta-bench-scroll, and any
+    // outer chrome overflow) into a single .ta-plan-scroll wrapper. At the
+    // project's own minimum supported viewport (FORGE-CONFIG 1280x720),
+    // exactly one primary scroll surface lives in the right column, and the
+    // CommitBar is fully visible under it.
+    await page.setViewportSize({ width: 1280, height: 720 });
+    const errors = await mount(page);
+
+    // The single primary plan-time scroll region exists.
+    const planScroll = page.getByTestId('ta-plan-scroll');
+    await expect(planScroll).toBeVisible();
+
+    // The column itself does NOT scroll — its overflow is `hidden` (all
+    // scroll is delegated to the inner .ta-plan-scroll region).
+    const colOverflow = await page
+      .getByTestId('ta-plan-scroll')
+      .evaluate((el) => {
+        const col = el.parentElement as HTMLElement | null;
+        if (col === null) return null;
+        return window.getComputedStyle(col).overflowY;
+      });
+    expect(colOverflow).toBe('hidden');
+
+    // The plan wrapper OWNS scroll (auto).
+    const planOverflow = await planScroll.evaluate(
+      (el) => window.getComputedStyle(el as HTMLElement).overflowY,
+    );
+    expect(planOverflow).toBe('auto');
+
+    // COMMIT FIRE bar is inside the viewport (not clipped below the fold).
+    const commit = page.getByTestId('commit-fire-btn');
+    await expect(commit).toBeVisible();
+    const commitBox = await commit.boundingBox();
+    expect(commitBox, 'commit-fire button geometry').not.toBeNull();
+    // Fully within the 720px viewport.
+    expect(commitBox!.y + commitBox!.height).toBeLessThanOrEqual(720);
+    expect(commitBox!.y).toBeGreaterThanOrEqual(0);
+
+    expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
+  });
+
   test('reduced motion skips the attack animation and hands off immediately', async ({ page }) => {
     const errors = await mount(page);
 

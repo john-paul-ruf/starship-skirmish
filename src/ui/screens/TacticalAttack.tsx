@@ -369,13 +369,26 @@ export function TacticalAttack() {
             focusLabel={focusLabel}
           />
 
-          <div class="mono-xs c-cyan ta-orientation" data-testid="fire-flow-hint">
-            SELECT A WEAPON → PICK A TARGET → COMMIT FIRE · OR HOLD ALL AND COMMIT
-          </div>
+          {/*
+           * playtest-feedback-04 FB2 (D-ATK-ONE-SCROLL): every plan-time
+           * element between the pinned viewport and the pinned CommitBar
+           * lives in ONE scroll container. Was three independent scroll
+           * regions in the right column (`.ta-col-r` safety, `.ta-bench-scroll`
+           * wrapping only the bench, and the log's internal `max-height:132px`);
+           * now they nest inside a single primary scroll. The `.ta-bench-scroll`
+           * class name is retained (external `inMatchLayout.test.ts` locks it)
+           * even though the wrapper now spans hint→banner→bench→log — the
+           * scroll region IS the plan surface, semantic drift Forge can rename
+           * in a future refactor. The bench-never-collapses guarantee (FB1
+           * regression from pf-03) carries via this wrapper's `min-height`.
+           */}
+          <div class="ta-bench-scroll" data-testid="ta-plan-scroll">
+            <div class="mono-xs c-cyan ta-orientation" data-testid="fire-flow-hint">
+              SELECT A WEAPON → PICK A TARGET → COMMIT FIRE · OR HOLD ALL AND COMMIT
+            </div>
 
-          <FriendlyFireBanner warnings={warnings} />
+            <FriendlyFireBanner warnings={warnings} />
 
-          <div class="ta-bench-scroll">
             <WeaponBench
               view={view}
               selfFleetId={selfFleetId}
@@ -393,15 +406,15 @@ export function TacticalAttack() {
                 />
               )}
             />
-          </div>
 
-          <CombatLogPanel
-            rows={resolved.rows}
-            nameOf={nameOf}
-            turnLabel={
-              resolved.turn !== null ? `TURN ${String(resolved.turn)}` : 'NO COMBAT YET'
-            }
-          />
+            <CombatLogPanel
+              rows={resolved.rows}
+              nameOf={nameOf}
+              turnLabel={
+                resolved.turn !== null ? `TURN ${String(resolved.turn)}` : 'NO COMBAT YET'
+              }
+            />
+          </div>
 
           <CommitBar gate={gate} onCommit={onCommit} />
         </div>
@@ -445,29 +458,32 @@ const TA_STYLES = `
                       border-radius: var(--r); }
   .ta-col-l-ft { flex: none; letter-spacing: .14em; }
 
-  /* playtest-feedback-03 SESSION-01 CP2: \`overflow-y: auto\` (was \`hidden\`) is
-     a deliberate safety net, not the primary layout — at the project's OWN
-     minimum supported viewport (1280x720, FORGE-CONFIG) the fixed chrome
-     above (topbar + header + subhead) plus the commit bar + combat log left
-     the bench with a HARD ZERO height under \`overflow: hidden\`, making the
-     entire weapon bench (and the tail of the commit bar) invisible and
-     unreachable — the mechanical root of FB1 "stuck on this, can't go back".
-     A column scrollbar only appears once every floor below is exhausted. */
+  /* playtest-feedback-04 SESSION-01 CP4 (D-ATK-ONE-SCROLL): the right column
+     is now a fixed frame — Viewport pinned at the top, CommitBar pinned at
+     the bottom, and a SINGLE inner scroll region (\`.ta-plan-scroll\`) for
+     everything between. The pf-03 \`.ta-col-r { overflow-y: auto }\` safety net
+     is gone: with the inner region owning scroll, the column-level safety
+     was one of three stacked scrollbars the owner called a "nightmare". The
+     bench-never-collapses guarantee (FB1 regression) is preserved by the
+     inner wrapper's own \`min-height\` — the same floor, moved one level in. */
   .ta-col-r { display: flex; flex-direction: column; gap: var(--s3);
-              min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+              min-width: 0; min-height: 0; overflow: hidden; }
   /* Viewport pins under the frame: grows to fill available height, shrinks
-     down to a smaller-but-still-legible tactical minimum (was 340 — lowered
-     so the bench below it keeps a guaranteed floor at the 720px minimum). */
+     down to a smaller-but-still-legible tactical minimum. */
   .ta-col-r > .viewport { flex: 1 1 320px; min-height: 200px; }
-  .ta-orientation { flex: none; letter-spacing: .1em; }
-  /* Bench (+ combat log, mounted in CP4) scrolls independently under the
-     pinned viewport (mock \`.col-r .scrolly\`). \`min-height\` is the fix: never
-     let the fire-assignment controls collapse to zero under a squeeze — a
-     player can always scroll to reach every weapon row. */
-  .ta-bench-scroll { flex: 1 1 200px; min-height: 110px;
+  /* Single primary scroll region for the plan-time surface — orientation
+     hint + friendly-fire banner + weapon bench + combat log all live in this
+     container. Only ONE scrollbar surfaces here even when the bench is long.
+     Class name \`.ta-bench-scroll\` predates FB2 (it wrapped only the bench);
+     kept as-is because an external layout test locks it — the DOM shape is
+     the load-bearing thing here, not the class name (see the wrapper's own
+     handoff note). */
+  .ta-bench-scroll { display: flex; flex-direction: column; gap: var(--s3);
+                     flex: 1 1 200px; min-height: 110px;
                      overflow-y: auto; overflow-x: hidden; }
-  /* The commit action never shrinks or gets clipped by the safety scrollbar
-     above — it is short, load-bearing, and must stay fully rendered. */
+  .ta-orientation { letter-spacing: .1em; }
+  /* The commit action never shrinks or scrolls out of view — it is short,
+     load-bearing, and must stay fully rendered at every viewport size. */
   .ta-col-r > .panel-ft { flex: none; }
 
   .ta-col-r-resolve { flex: 1 1 auto; min-height: 0; }
