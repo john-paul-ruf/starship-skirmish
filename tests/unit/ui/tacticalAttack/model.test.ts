@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  activeShooterOf,
   aoeOverlapsFriendly,
   aoeRingProjection,
   assignmentGate,
@@ -154,6 +155,60 @@ describe('roster slicing', () => {
   });
 });
 
+// ---- Active shooter (SESSION-03 · D-TA-RAIL-SHOOTER) -----------------------
+
+describe('activeShooterOf', () => {
+  const s = (bodyId: number) => shipView({ bodyId, fleetId: 0, hull: 50 });
+
+  it('defaults to the lowest-bodyId shooter when no preference is set (entry default)', () => {
+    expect(activeShooterOf([s(2), s(5), s(7)], null)?.bodyId).toBe(2);
+  });
+
+  it('honours a still-valid preferred shooter (roster / canvas selection)', () => {
+    expect(activeShooterOf([s(2), s(5), s(7)], 5)?.bodyId).toBe(5);
+  });
+
+  it('falls back to the default when the preferred id is not a current shooter', () => {
+    // Enemy focus (id never in the shooter list) or the active shooter's death
+    // both land here — the rail self-heals to the lowest-bodyId survivor.
+    expect(activeShooterOf([s(2), s(5)], 99)?.bodyId).toBe(2);
+  });
+
+  it('returns null when the player has no ship left to fire', () => {
+    expect(activeShooterOf([], 2)).toBeNull();
+    expect(activeShooterOf([], null)).toBeNull();
+  });
+});
+
+// ---- Assignment retention across shooters (SESSION-03) ---------------------
+
+describe('assignment retention across shooters (D-TA-RAIL-SHOOTER)', () => {
+  it("slotKey namespaces by shooter so two ships' slots never collide", () => {
+    expect(slotKey({ shooterId: 1, kind: 'weapon', index: 0 })).not.toBe(
+      slotKey({ shooterId: 2, kind: 'weapon', index: 0 }),
+    );
+  });
+
+  it('the gate counts assignments across ALL player ships, not just the active shooter', () => {
+    // Switching the rail's active shooter never discards another ship's staged
+    // plan: the fleet-wide gate still sees both.
+    const ships = [
+      shipView({ bodyId: 1, weaponAlive: [true] }),
+      shipView({ bodyId: 2, weaponAlive: [true] }),
+    ];
+    const staged: Assignment[] = [
+      { shooterId: 1, targetId: 9, weaponIndex: 0 },
+      { shooterId: 2, targetId: 9, weaponIndex: 0 },
+    ];
+    expect(assignmentGate(staged, ships)).toEqual({ assigned: 2, total: 2 });
+  });
+
+  it('holding fire on every slot is a legal plan (gate reports 0/total, never blocks)', () => {
+    const ships = [shipView({ bodyId: 1, weaponAlive: [true, true] })];
+    expect(assignmentGate([], ships)).toEqual({ assigned: 0, total: 2 });
+  });
+});
+
 // ---- Called-shot unlock (§4.5 / FR-25) ------------------------------------
 
 describe('calledShotUnlocked', () => {
@@ -201,6 +256,74 @@ describe('calledShotOptions', () => {
     expect(opts.find((o) => o.label === 'DECOY1')?.target).toEqual({ kind: 'special', index: 1 });
     // Generator hint verbatim (§4.5).
     expect(opts.find((o) => o.label === 'SHIELD GENERATOR')?.hint).toBe(GENERATOR_HINT);
+  });
+
+  it('enriches per-slot labels with authored component names where present (SESSION-03)', () => {
+    const t = shipView({
+      weaponAlive: [true],
+      missileAlive: [true],
+      pdAlive: [true],
+      decoyAlive: [true],
+      ship: simShip({
+        weapons: [
+          {
+            range: 260,
+            damage: 18,
+            shotsPerTurn: 2,
+            accuracy: 0.68,
+            display: { id: 'wpn-phase-beam', name: 'PHASE BEAM' },
+          },
+        ],
+        missiles: [
+          {
+            ammo: 2,
+            damage: 18,
+            aoeRadius: 40,
+            boostVelocity: 140,
+            trackingTurnRate: 1,
+            bodyMass: 5,
+            bodyRadius: 1,
+            display: { id: 'msl-talon', name: 'TALON' },
+          },
+        ],
+        pointDefense: [
+          {
+            interceptRange: 100,
+            interceptChance: 0.5,
+            interceptsPerTurn: 1,
+            display: { id: 'spc-pd', name: 'POINT DEFENCE' },
+          },
+        ],
+        decoys: [
+          {
+            charges: 2,
+            evasionBonus: 0.1,
+            durationTurns: 1,
+            display: { id: 'spc-decoy', name: 'FLARE' },
+          },
+        ],
+      }),
+    });
+    const labels = calledShotOptions(t).map((o) => o.label);
+    expect(labels).toEqual([
+      'W1 · PHASE BEAM',
+      'M1 · TALON',
+      'SHIELD GENERATOR', // aggregate — no single resolved component to name
+      'ENGINE',
+      'PD1 · POINT DEFENCE',
+      'DECOY1 · FLARE',
+    ]);
+  });
+
+  it('keeps bare index labels when the profile carries no display identity (legacy fixtures)', () => {
+    const t = shipView({ weaponAlive: [true, true], missileAlive: [true] });
+    expect(calledShotOptions(t).map((o) => o.label)).toEqual([
+      'W1',
+      'W2',
+      'M1',
+      'SHIELD GENERATOR',
+      'ENGINE',
+    ]);
   });
 });
 

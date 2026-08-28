@@ -110,6 +110,28 @@ export const enemyShips = (
 ): BlindShipView[] =>
   view.ships.filter((s) => s.fleetId !== selfFleetId && s.hull > 0);
 
+/**
+ * The active shooter — the single living player-fleet ship whose weapons drive
+ * the right fire rail (D-TA-RAIL-SHOOTER). `shooters` is the living player
+ * fleet in bodyId order (from `friendlyShips`, which preserves the view's
+ * bodyId sort). Selection follows the roster: a still-valid `preferredId` (a
+ * ship that is currently in `shooters`) wins; otherwise it falls back to the
+ * lowest-bodyId living player ship (`shooters[0]`), so the rail defaults on
+ * entry and self-heals when the active shooter dies or leaves the view. Returns
+ * `null` only when the player has no ship left to fire. Pure — no signals, no
+ * DOM: the screen holds the `preferredId` signal and calls this each render.
+ */
+export const activeShooterOf = (
+  shooters: readonly BlindShipView[],
+  preferredId: BodyId | null,
+): BlindShipView | null => {
+  if (preferredId !== null) {
+    const found = shooters.find((s) => s.bodyId === preferredId);
+    if (found !== undefined) return found;
+  }
+  return shooters[0] ?? null;
+};
+
 /** Look up a ship's plan-blind view by body id. */
 export const shipViewOf = (
   view: BlindMatchView,
@@ -156,18 +178,40 @@ export interface SubsystemOption {
 }
 
 /**
+ * Suffix a base subsystem label with its authored component name when the
+ * resolved `SimShip` carries one (SESSION-01 display identity) — `W1` becomes
+ * `W1 · PHASE BEAM`, mirroring the mock's `.comp-btn` labels
+ * (mocks/tactical-attack.html:734-739). Absent identity (legacy / synthetic
+ * fixtures that build `SimShip` literals without `display`) keeps the bare
+ * index label, so a colourblind-safe, always-present tag survives (§1.1).
+ */
+const namedLabel = (base: string, name: string | undefined): string =>
+  name !== undefined && name.length > 0 ? `${base} · ${name}` : base;
+
+/**
  * The subsystem list for a target's `BlindShipView`: each weapon, each missile
  * rack, the shield generator, the engine, then the flat specials array (point
  * defence then decoys — the SAME layout `sim/rules.calledShot` indexes, so a
- * `special` index round-trips correctly).
+ * `special` index round-trips correctly). Per-slot labels are enriched with the
+ * authored component name where the resolved profile carries one; the aggregate
+ * shield-generator / engine subsystems keep their fixed labels (they have no
+ * single resolved component to name).
  */
 export const calledShotOptions = (t: BlindShipView): SubsystemOption[] => {
   const opts: SubsystemOption[] = [];
   t.weaponAlive.forEach((alive, i) =>
-    opts.push({ target: { kind: 'weapon', index: i }, label: `W${String(i + 1)}`, alive }),
+    opts.push({
+      target: { kind: 'weapon', index: i },
+      label: namedLabel(`W${String(i + 1)}`, t.ship.weapons[i]?.display?.name),
+      alive,
+    }),
   );
   t.missileAlive.forEach((alive, i) =>
-    opts.push({ target: { kind: 'missile', index: i }, label: `M${String(i + 1)}`, alive }),
+    opts.push({
+      target: { kind: 'missile', index: i },
+      label: namedLabel(`M${String(i + 1)}`, t.ship.missiles[i]?.display?.name),
+      alive,
+    }),
   );
   opts.push({
     target: { kind: 'shield-generator' },
@@ -178,12 +222,16 @@ export const calledShotOptions = (t: BlindShipView): SubsystemOption[] => {
   opts.push({ target: { kind: 'engine' }, label: 'ENGINE', alive: t.engineAlive });
   const pdCount = t.pdAlive.length;
   t.pdAlive.forEach((alive, k) =>
-    opts.push({ target: { kind: 'special', index: k }, label: `PD${String(k + 1)}`, alive }),
+    opts.push({
+      target: { kind: 'special', index: k },
+      label: namedLabel(`PD${String(k + 1)}`, t.ship.pointDefense[k]?.display?.name),
+      alive,
+    }),
   );
   t.decoyAlive.forEach((alive, k) =>
     opts.push({
       target: { kind: 'special', index: pdCount + k },
-      label: `DECOY${String(k + 1)}`,
+      label: namedLabel(`DECOY${String(k + 1)}`, t.ship.decoys[k]?.display?.name),
       alive,
     }),
   );

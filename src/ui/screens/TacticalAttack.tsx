@@ -26,6 +26,8 @@ import type { BodyId, CalledShotTarget } from '../../sim/index.js';
 
 import { FleetRoster, ShipInspector, fleetLabel, groupByFleet } from '../components/roster/index.js';
 import type { RosterEntry } from '../components/roster/index.js';
+import { FleetGlyph } from '../components/index.js';
+import type { FleetId } from '../components/index.js';
 import { useApp } from '../appContext.js';
 import { useMatch } from '../matchContext.js';
 
@@ -38,11 +40,13 @@ import { Viewport } from './tacticalAttack/Viewport.js';
 import type { AoePreview } from './tacticalAttack/Viewport.js';
 import { WeaponBench } from './tacticalAttack/WeaponBench.js';
 import {
+  activeShooterOf,
   aoeOverlapsFriendly,
   assignmentGate,
   fireContext,
   friendlyShips,
   lastResolvedLogRows,
+  liveFireSlots,
   positionOf as positionOfInView,
   rangePreviewFor,
   shipRangePreview,
@@ -61,6 +65,11 @@ const ROLE_BADGE: Readonly<Record<FireContextRole, { readonly label: string; rea
   targeted: { label: 'TARGETED', cls: 'chip chip-amber' },
   'aoe-friendly': { label: '⚠ IN AoE', cls: 'chip chip-red' },
 };
+
+/** Narrow a fleet id to the 0..4 `FleetId` the `FleetGlyph` badge accepts, or
+ *  `null` for anything outside the five-fleet ceiling (Decision 2). */
+const fleetIdOrNull = (id: number): FleetId | null =>
+  id === 0 || id === 1 || id === 2 || id === 3 || id === 4 ? id : null;
 
 const roleChip = (role: FireContextRole): ComponentChildren => {
   const meta = ROLE_BADGE[role];
@@ -89,11 +98,20 @@ export function TacticalAttack() {
    *  drives the tactical viewport range shell. Cleared when the player leaves
    *  the plan phase or the shooter goes away. */
   const selectedSlot = useSignal<FireSlot | null>(null);
-  /** playtest-feedback-05 SESSION-04 CP2 (FB3, D-IMMERSIVE-GRID-COLLAPSE) —
-   *  the "full-field" toggle. When true, the scoped `.ta-shell.is-immersive`
-   *  block collapses `.ta-layout` to a single column and hides the roster,
-   *  the plan-scroll, and the CommitBar so the Viewport fills the bounded
-   *  fixed frame. Grid-collapse only, NOT `position: fixed` (stays inside
+  /** SESSION-03 (D-TA-RAIL-SHOOTER) — the active shooter whose live slots drive
+   *  the right fire rail, distinct from `selectedId` (focus / inspection). Set
+   *  only when the player selects a LIVING OWN-FLEET ship (roster or canvas);
+   *  focusing an enemy leaves it untouched, so the rail keeps the last valid
+   *  shooter. `activeShooterOf` validates it each render and falls back to the
+   *  lowest-bodyId living player ship (default on entry, self-heal on death).
+   *  Assignments are staged in the fleet-wide `assignments` map keyed by
+   *  (shooter, slot), so switching shooters never discards another ship's plan. */
+  const activeShooterId = useSignal<BodyId | null>(null);
+  /** FB3 · D-IMMERSIVE-GRID-COLLAPSE — the "full-field" toggle. When true, the
+   *  scoped `.ta-shell.is-immersive` block collapses `.ta-work` to a single
+   *  column and hides the roster (`.ta-col-l`), the fire rail (`.ta-col-fire`),
+   *  and the center-only combat log so the Viewport fills the bounded fixed
+   *  frame. Grid-collapse only, NOT `position: fixed` (stays inside
    *  `.app-main.is-fixed-frame`; the browser Fullscreen API can layer over
    *  this later if the owner wants OS-level fullscreen — the pf-05 State
    *  Update flags the semantics as an Open Question). Auto-resets on
@@ -131,11 +149,10 @@ export function TacticalAttack() {
   }
 
   // attack-resolve: the outcome is already final — the viewport animates the
-  // beat and, on done (or immediately under reduced motion), advances.
-  // playtest-feedback-02 · S04 CP2: share the fixed-frame `.ta-shell` +
-  // `.ta-col-r` structure so the viewport pins under the frame; CP4 mounts
-  // the CombatLogPanel inside `.ta-col-r-strip` so the log follows the
-  // shots as they resolve.
+  // beat and, on done (or immediately under reduced motion), advances. It
+  // reuses the center column solo (`.ta-col-c.ta-col-c-solo`): the viewport
+  // pins under the fixed frame and the CombatLogPanel follows the shots as
+  // they resolve, without the plan-time roster / fire rail.
   if (phase === 'attack-resolve') {
     // playtest-feedback-04 FB3 / D-LOG-LAST-RESOLVED: surface the newest
     // resolved turn. During `attack-resolve` of turn N, the trace has NOT yet
@@ -223,10 +240,6 @@ export function TacticalAttack() {
     assignments.value = next;
   };
 
-  const onSelect = (bodyId: BodyId) => {
-    selectedId.value = bodyId;
-  };
-
   if (view === null) {
     // Entering the phase before the view is populated — render just the
     // viewport shell; the plan UI appears on the next tick.
@@ -252,9 +265,35 @@ export function TacticalAttack() {
     );
   }
 
+  // Selecting a LIVING own-fleet ship promotes it to the active shooter (the
+  // rail follows); focusing an enemy or a wreck only moves inspection/focus and
+  // leaves the last valid shooter in the rail (D-TA-RAIL-SHOOTER).
+  const setActiveIfFriendly = (bodyId: BodyId) => {
+    const ship = shipViewOf(view, bodyId);
+    if (ship !== undefined && ship.fleetId === selfFleetId && ship.hull > 0) {
+      activeShooterId.value = bodyId;
+    }
+  };
+
+  const onSelect = (bodyId: BodyId) => {
+    selectedId.value = bodyId;
+    setActiveIfFriendly(bodyId);
+  };
+
   const shooters = friendlyShips(view, selfFleetId);
   const staged = [...assignments.value.values()];
   const gate = assignmentGate(staged, shooters);
+
+  // The one shooter the right rail renders (D-TA-RAIL-SHOOTER). The header
+  // reads its identity + live/assigned slot counts; the fleet-wide `gate` (all
+  // player ships) still drives the commit total.
+  const activeShooter = activeShooterOf(shooters, activeShooterId.value);
+  const activeFleetId = activeShooter !== null ? fleetIdOrNull(activeShooter.fleetId) : null;
+  const activeSlots = activeShooter !== null ? liveFireSlots(activeShooter) : [];
+  const activeAssigned =
+    activeShooter !== null
+      ? staged.filter((a) => a.shooterId === activeShooter.bodyId).length
+      : 0;
 
   // §4.6 — every missile assignment whose blast clips a friendly, named.
   const warnings: FriendlyFireWarning[] = [];
@@ -401,7 +440,10 @@ export function TacticalAttack() {
             selectedId={selectedId.value}
             positionOf={positionForFocus}
             onPickBody={(id) => {
-              if (id !== null) selectedId.value = id;
+              if (id !== null) {
+                selectedId.value = id;
+                setActiveIfFriendly(id);
+              }
             }}
             focusLabel={focusLabel}
             fullscreen={fullscreen.value}
@@ -418,16 +460,41 @@ export function TacticalAttack() {
         </main>
 
         <aside class="ta-col-fire" data-testid="ta-col-fire" aria-label="Fire assignment">
-          {/* CP2 wires the active-shooter identity into this header; CP1 seats
-              the plan orientation + post-movement targeting note the mock's
-              right-rail header carries (mocks/tactical-attack.html:544-554). */}
+          {/* The active-shooter identity header (mocks/tactical-attack.html:
+              544-554): fleet glyph + build name, chassis name · class · live
+              fire-slot count, the assigned/total chip for THIS shooter, and the
+              post-movement targeting note. Fleet-wide commit lives in the
+              footer. */}
           <header class="ta-fire-hd">
-            <div class="mono-xs c-cyan ta-fire-hint" data-testid="fire-flow-hint">
-              SELECT A WEAPON → PICK A TARGET → COMMIT FIRE · OR HOLD ALL AND COMMIT
-            </div>
-            <div class="mono-xs c-dim ta-fire-targeting">
-              TARGETING FROM POST-MOVEMENT POSITIONS.
-            </div>
+            {activeShooter !== null ? (
+              <>
+                <div class="ta-fire-id">
+                  {activeFleetId !== null ? <FleetGlyph fleetId={activeFleetId} /> : null}
+                  <div class="grow" style="min-width:0">
+                    <div
+                      class="t-h2 truncate ta-fire-name"
+                      data-testid="fire-shooter-name"
+                    >
+                      {activeShooter.name}
+                    </div>
+                    <div class="mono-xs c-dim ta-fire-sub">
+                      {`${activeShooter.ship.chassis?.name ?? activeShooter.chassisClass.toUpperCase()} · ${activeShooter.chassisClass.replace('-', ' ').toUpperCase()} · ${String(activeSlots.length)} FIRE SLOTS`}
+                    </div>
+                  </div>
+                  <span
+                    class={`chip${activeAssigned === activeSlots.length && activeSlots.length > 0 ? ' chip-cyan' : ''}`}
+                    data-testid="fire-shooter-count"
+                  >
+                    {`${String(activeAssigned)} / ${String(activeSlots.length)}`}
+                  </span>
+                </div>
+                <div class="mono-xs c-dim ta-fire-targeting">
+                  TARGETING FROM POST-MOVEMENT POSITIONS.
+                </div>
+              </>
+            ) : (
+              <div class="mono-xs c-dim">NO SHIPS LEFT TO FIRE.</div>
+            )}
           </header>
 
           <div class="ta-fire-scroll" data-testid="ta-fire-scroll">
@@ -436,6 +503,7 @@ export function TacticalAttack() {
             <WeaponBench
               view={view}
               selfFleetId={selfFleetId}
+              shooter={activeShooter}
               assignments={assignments.value}
               onAssign={onAssign}
               hitChanceFor={match.hitChanceFor}
@@ -533,8 +601,10 @@ const TA_STYLES = `
   .ta-fire-hd { flex: none; padding: var(--s2) var(--s3);
                 border-bottom: 1px solid var(--line);
                 background: linear-gradient(180deg, rgba(34,227,255,.06), transparent);
-                display: flex; flex-direction: column; gap: 4px; }
-  .ta-fire-hint { letter-spacing: .1em; }
+                display: flex; flex-direction: column; gap: 6px; }
+  .ta-fire-id { display: flex; align-items: center; gap: var(--s2); }
+  .ta-fire-name { font-size: 13px; }
+  .ta-fire-sub { letter-spacing: .06em; }
   .ta-fire-targeting { letter-spacing: .14em; }
   .ta-fire-scroll { flex: 1 1 auto; min-height: 120px;
                     overflow-y: auto; overflow-x: hidden;
@@ -545,25 +615,17 @@ const TA_STYLES = `
      any inherited flex grow / shrink. */
   .ta-col-fire > .panel-ft { flex: none; }
 
-  /* playtest-feedback-05 SESSION-04 CP3 — ship-by-ship bench parity with the
-     endorsed mock (mocks/tactical-attack.html screenshot 7). Every rule is
-     scoped inside TA_STYLES so no shared stylesheet edit touches other
-     screens; class names namespace-prefix with \`ta-\` to avoid collisions.
-     The mock's \`.acard\` treatment lives here as \`.ta-card\` with a colour-
-     coded left border driven by state modifiers (\`is-set\` cyan for assigned,
-     \`is-msl\` red for missile racks, \`is-oor\` dashed red for out-of-range).
-     Hit chance renders both the % text (\`.ta-hit-num\`) and a Meter bar
-     (\`.ta-hit-meter\`) — the two agree because \`hitChanceBarFill\` mirrors
-     \`hitChanceTone\` thresholds exactly. No to-hit math lives in the CSS. */
-  .ta-ship-group { padding: var(--s3); display: flex; flex-direction: column;
-                   gap: var(--s2); }
-  .ta-ship-hd { display: flex; align-items: center; gap: var(--s2); }
-  .ta-ship-name { font-weight: 700; color: var(--ink-hi); letter-spacing: .06em;
-                  font-size: 13px; }
-  .ta-ship-class { letter-spacing: .14em; }
+  /* Fire-card treatment (mocks/tactical-attack.html:560-712). Every rule is
+     scoped inside TA_STYLES so no shared stylesheet edit touches other screens;
+     class names namespace-prefix with \`ta-\` to avoid collisions. The mock's
+     \`.acard\` treatment lives here as \`.ta-card\` with a colour-coded left
+     border driven by state modifiers (\`is-set\` cyan for assigned, \`is-msl\`
+     red for missile racks, \`is-oor\` dashed red for out-of-range). Hit chance
+     renders both the % text (\`.ta-hit-num\`) and a Meter bar (\`.ta-hit-meter\`)
+     — the two agree because \`hitChanceBarFill\` mirrors \`hitChanceTone\`
+     thresholds exactly. No to-hit math lives in the CSS. */
   .ta-ship-empty { margin-top: 6px; }
-  .ta-ship-cards { display: flex; flex-direction: column; gap: var(--s2);
-                   margin-top: var(--s2); }
+  .ta-ship-cards { display: flex; flex-direction: column; gap: var(--s2); }
 
   .ta-card { border: 1px solid var(--line);
              border-left: 2px solid var(--line-hot);
