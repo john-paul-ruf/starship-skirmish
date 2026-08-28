@@ -62,6 +62,15 @@ import {
   type PlanDraft,
   type RosterShip,
 } from './tacticalMove/model.js';
+// playtest-feedback-03 SESSION-02 CP2 — the persistent combat log strip.
+// Cross-screen reads (SESSION-01's lease is now FINAL; do NOT extract or
+// re-export): the panel component, the `ResolutionTrace → LogRow[]` selector,
+// and the ship-name lookup already live in their canonical sibling paths.
+// Mirrors the established pattern in `TacticalAttack.tsx` (which reads
+// `postMatch/model` cross-screen for the same log surface).
+import { CombatLogPanel } from './tacticalAttack/CombatLogPanel.js';
+import { liveLogRows } from './tacticalAttack/model.js';
+import { nameByBodyId } from './postMatch/model.js';
 import type { Body, BodyId, Vec3 } from '../../sim/index.js';
 
 export function TacticalMove() {
@@ -234,6 +243,21 @@ export function TacticalMove() {
     match.commitMovement(toMovementPlans(draftList, budgetOf, burnOpts));
   };
 
+  // ---- Live combat log strip (playtest-feedback-03 SESSION-02 CP2) ---------
+  //
+  // The current turn's already-resolved rows, surfaced verbatim from the
+  // trace via `liveLogRows`. Present in BOTH `movement-plan` AND
+  // `movement-resolve` — the log follows the player across the turn instead
+  // of vanishing after ATTACK RESOLVE lands. Blind-commit intact: `trace`
+  // accumulates only after a beat resolves; opponent plans never appear.
+  // Names come from the immutable initial rosters (matches TacticalAttack and
+  // the post-match combat log), so a ship destroyed earlier still reads by
+  // its authored name.
+  const currentTurn = match.turn.value;
+  const logRows = liveLogRows(match.trace.value, currentTurn);
+  const names = nameByBodyId(match.initialFleets);
+  const nameOf = (id: BodyId): string => names.get(id) ?? `BODY ${String(id)}`;
+
   return (
     <section class="tm-shell" data-testid="screen-tactical-move">
       <TacticalMoveStyles />
@@ -346,6 +370,20 @@ export function TacticalMove() {
             )}
           </div>
 
+          {/* Combat log strip — present in BOTH `movement-plan` and
+              `movement-resolve` (playtest-feedback-03 SESSION-02 CP2). The
+              panel owns its own bounded scroll (`max-height:132px` on `.log`);
+              here it sits as a `flex: none` sibling between the scrolling
+              plan body and the commit dock so the fixed-frame contract holds
+              (viewport + plotter never get pushed out of the 100vh frame). */}
+          <div class="tm-log-slot">
+            <CombatLogPanel
+              rows={logRows}
+              nameOf={nameOf}
+              turnLabel={`TURN ${String(currentTurn)}`}
+            />
+          </div>
+
           {isPlan ? (
             <CommitBar
               gate={gate}
@@ -413,6 +451,12 @@ const TM_STYLES = `
 
   .tm-plan-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
                   display: flex; flex-direction: column; gap: var(--s3); padding: var(--s3); }
+
+  /* Combat log strip slot (playtest-feedback-03 SESSION-02 CP2). Sits below the
+     scrolling .tm-plan-body and above the CommitBar; \`flex: none\` so it never
+     steals from the plotter/viewport. Panel's own \`.log\` body owns the strip's
+     internal scroll (max-height 132px, appended in components.css §12). */
+  .tm-log-slot { flex: none; padding: 0 var(--s3) var(--s3); }
 
   .tm-plotter { display: flex; flex-direction: column; gap: var(--s3); }
   .tm-plotter-hd { display: flex; align-items: baseline; gap: var(--s2); }
