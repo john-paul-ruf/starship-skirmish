@@ -330,7 +330,15 @@ export function TacticalMove() {
 
         {/* ---- RIGHT: inspector + marks-interval + arc plotter + commit dock ---- */}
         <aside class="tm-plan panel" aria-label="Movement plan">
-          <div class="tm-plan-body">
+          {/* playtest-feedback-05 SESSION-03 CP1 (FB1, D-TM-ONE-SCROLL): every
+              plan-time element between the pinned viewport and the pinned
+              CommitBar lives in ONE scroll container — mirrors the Attack
+              screen's `.ta-bench-scroll` (pf-04 SESSION-01). Was two
+              independent scrollbars (this body + the combat log's own
+              internal `max-height:132px` region, `.log` in CombatLogPanel);
+              now they nest inside a single primary scroll via the
+              `.tm-plan-scroll .log` override below. */}
+          <div class="tm-plan-scroll">
             <ShipInspector ship={selShipView} velocity={selVelocity} />
 
             {isPlan ? (
@@ -372,20 +380,11 @@ export function TacticalMove() {
                 </p>
               </div>
             )}
-          </div>
 
-          {/* Combat log strip — present in BOTH `movement-plan` and
-              `movement-resolve` (playtest-feedback-03 SESSION-02 CP2). The
-              panel owns its own bounded scroll (`max-height:132px` on `.log`);
-              here it sits as a `flex: none` sibling between the scrolling
-              plan body and the commit dock so the fixed-frame contract holds
-              (viewport + plotter never get pushed out of the 100vh frame). */}
-          <div class="tm-log-slot">
-            <CombatLogPanel
-              rows={logRows}
-              nameOf={nameOf}
-              turnLabel={logTurnLabel}
-            />
+            {/* Combat log strip — present in BOTH `movement-plan` and
+                `movement-resolve` (playtest-feedback-03 SESSION-02 CP2). Now
+                folded into the single right-panel scroll (SESSION-03 CP1). */}
+            <CombatLogPanel rows={logRows} nameOf={nameOf} turnLabel={logTurnLabel} />
           </div>
 
           {isPlan ? (
@@ -453,14 +452,21 @@ const TM_STYLES = `
   .tm-cam-hud-buttons { display: inline-flex; gap: 4px; flex-wrap: wrap; }
   .tm-cam-hud-hint { letter-spacing: .1em; }
 
-  .tm-plan-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
-                  display: flex; flex-direction: column; gap: var(--s3); padding: var(--s3); }
-
-  /* Combat log strip slot (playtest-feedback-03 SESSION-02 CP2). Sits below the
-     scrolling .tm-plan-body and above the CommitBar; \`flex: none\` so it never
-     steals from the plotter/viewport. Panel's own \`.log\` body owns the strip's
-     internal scroll (max-height 132px, appended in components.css §12). */
-  .tm-log-slot { flex: none; padding: 0 var(--s3) var(--s3); }
+  /* playtest-feedback-05 SESSION-03 CP1 (D-TM-ONE-SCROLL): the single
+     right-panel scroll region — inspector, marks-interval, arc plotter (or
+     the read-only/resolving note), and the combat log strip all live here.
+     Only ONE scrollbar surfaces in the right column, matching the left
+     roster's one scroll and the Attack screen's \`.ta-bench-scroll\`
+     precedent (pf-04 SESSION-01). */
+  .tm-plan-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
+                     display: flex; flex-direction: column; gap: var(--s3); padding: var(--s3); }
+  /* The combat log strip's own \`.log\` body ships a nested bounded scroll as
+     an INLINE style (\`CombatLogPanel.tsx\`, SESSION-04's lease — cross-screen
+     read, not editable here). An inline style outranks any class selector
+     regardless of specificity, so \`!important\` is the only way to fold it
+     into the one right-panel scroll; scoped to \`.tm-plan-scroll .log\` only,
+     never a blanket \`.log\` rule. */
+  .tm-plan-scroll .log { max-height: none !important; overflow: visible !important; }
 
   .tm-plotter { display: flex; flex-direction: column; gap: var(--s3); }
   .tm-plotter-hd { display: flex; align-items: baseline; gap: var(--s2); }
