@@ -16,6 +16,7 @@ import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import type {
   AttackBeatRecord,
+  BodyId,
   CombatLogEntry,
   CombatLogResult,
   DestructionEvent,
@@ -246,6 +247,41 @@ export const attachTracePlayer = (view: TacticalView): TracePlayer => {
       flashes.clear();
     };
 
+    // CP2 — Missile tracers. The AttackBeatRecord's launchedMissileIds carries no
+    // shooter/target correlation (readonly BodyId[] only, and missile launches emit
+    // no log entry), so "missiles in motion" during the ATTACK beat cannot be drawn
+    // from that record. What CAN be drawn is missile FLIGHT during the movement beat,
+    // where every keyframe already carries missile bodies (position + velocity). Each
+    // missile gets a bright additive head sprite AND a short velocity-aligned tail
+    // line — the ➤ hazard glyph beneath keeps the "tracking missile" cue; the tracer
+    // adds the "projectile is FLYING" cue the hazard glyph alone can't convey.
+    const missileIds = new Set<BodyId>();
+    for (const frame of keyframes) {
+      for (const b of frame) if (b.kind === 'missile') missileIds.add(b.id);
+    }
+    const tracers = new Map<BodyId, MissileTracerFx>();
+    const tracerGroup = new Group();
+    const orderedMissileIds = Array.from(missileIds).sort((a, b) => a - b);
+    for (const id of orderedMissileIds) {
+      const tracer = makeMissileTracer();
+      tracers.set(id, tracer);
+      tracerGroup.add(tracer.head);
+      tracerGroup.add(tracer.tail);
+    }
+    if (tracerGroup.children.length > 0) scene.add(tracerGroup);
+
+    const disposeTracers = (): void => {
+      scene.remove(tracerGroup);
+      for (const tracer of tracers.values()) tracer.dispose();
+      tracers.clear();
+      tracerGroup.clear();
+    };
+
+    const cleanupAll = (): void => {
+      disposeFlashes();
+      disposeTracers();
+    };
+
     // S01: record one trail point per NEW keyframe transition so a skip and a full
     // play leave the trail in the same state (mirroring the FR-19 outcome-invariance).
     let lastKeyframeIdx = -1;
@@ -272,7 +308,8 @@ export const attachTracePlayer = (view: TacticalView): TracePlayer => {
       cancelRaf: opts.cancelRaf ?? cancelDefault,
       renderAt: (tNorm) => {
         const easedT = easeInOutQuad(tNorm);
-        pushFrame(lerpBodyAt(keyframes, easedT));
+        const bodies = lerpBodyAt(keyframes, easedT);
+        pushFrame(bodies);
         const n = keyframes.length;
         if (n >= 2) {
           const currentIdx = Math.min(Math.floor(easedT * (n - 1)), n - 1);
@@ -281,9 +318,19 @@ export const attachTracePlayer = (view: TacticalView): TracePlayer => {
         // Fade flashes out over the beat; strongest at the start, gone by the end.
         const flashAlpha = 1 - tNorm;
         for (const child of flashes.children) (child as Sprite).material.opacity = flashAlpha;
+        // Drive per-missile tracers off the same interpolated body list — position on
+        // the missile head, tail streamed BACK along the velocity vector. Missiles not
+        // present this frame (removed / never spawned yet) stay hidden.
+        for (const tracer of tracers.values()) tracer.hide();
+        for (const b of bodies) {
+          if (b.kind !== 'missile') continue;
+          const tracer = tracers.get(b.id);
+          if (tracer === undefined) continue;
+          tracer.updateAt(b.position, b.velocity, b.alpha);
+        }
         view.scene.render();
       },
-      cleanup: disposeFlashes,
+      cleanup: cleanupAll,
       ...(opts.onDone !== undefined ? { onDone: opts.onDone } : {}),
     });
   };
@@ -509,6 +556,88 @@ const makeBeam = (view: TacticalView, entry: CombatLogEntry): BeamFx | null => {
       material.dispose();
       muzzleMat.dispose();
       headMat.dispose();
+    },
+  };
+};
+
+// ---- Missile tracer (movement beat CP2) --------------------------------------
+
+/** Warm-white missile tracer head — additive so it blooms bright against the ➤ glyph. */
+const MISSILE_TRACER_COLOR = 0xffdca8;
+/** Additional-scale multiplier on the head sprite (world units). Nominally 6 wu — a
+ *  legibility choice, not a physical size; the sprite is billboarded and additive. */
+const MISSILE_HEAD_SCALE = 6;
+/** Line width for the velocity-aligned tail. Fat-line reads well against the dark scene. */
+const MISSILE_TAIL_LINEWIDTH = 2.2;
+/** Tail length as `velocity * MISSILE_TAIL_K` (velocity in world-units/sim-sec).
+ *  Yields a visible ~short streak at typical missile speeds without swamping the head. */
+const MISSILE_TAIL_K = 0.12;
+
+/** Per-missile tracer FX bundle: a bright head + a velocity-aligned tail. */
+interface MissileTracerFx {
+  readonly head: Sprite;
+  readonly tail: Line2;
+  /** Reposition + fade at an interpolated instant. `alpha` is `LerpedBody.alpha`. */
+  updateAt(position: Vec3, velocity: Vec3, alpha: number): void;
+  /** Hide both head and tail — used before per-frame updates so absent missiles stay dark. */
+  hide(): void;
+  dispose(): void;
+}
+
+const makeMissileTracer = (): MissileTracerFx => {
+  const headMat = new SpriteMaterial({
+    color: new Color(MISSILE_TRACER_COLOR),
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: AdditiveBlending,
+  });
+  const head = new Sprite(headMat);
+  head.scale.setScalar(MISSILE_HEAD_SCALE);
+  head.visible = false;
+
+  const tailGeom = new LineGeometry();
+  tailGeom.setPositions([0, 0, 0, 0, 0, 0]);
+  const tailMat = new LineMaterial({
+    color: MISSILE_TRACER_COLOR,
+    linewidth: MISSILE_TAIL_LINEWIDTH,
+    transparent: true,
+    opacity: 0,
+    depthTest: true,
+  });
+  const tail = new Line2(tailGeom, tailMat);
+  tail.visible = false;
+
+  return {
+    head,
+    tail,
+    updateAt: (position, velocity, alpha) => {
+      const effAlpha = clamp01(alpha);
+      if (effAlpha <= 0.001) {
+        head.visible = false;
+        tail.visible = false;
+        return;
+      }
+      head.position.set(position.x, position.y, position.z);
+      headMat.opacity = effAlpha;
+      head.visible = true;
+      // Tail: from (position - k · velocity) → position. A stationary missile draws a
+      // zero-length segment, which renders as nothing — no visual glitch.
+      const tx = position.x - velocity.x * MISSILE_TAIL_K;
+      const ty = position.y - velocity.y * MISSILE_TAIL_K;
+      const tz = position.z - velocity.z * MISSILE_TAIL_K;
+      tailGeom.setPositions([tx, ty, tz, position.x, position.y, position.z]);
+      tailMat.opacity = effAlpha * 0.7;
+      tail.visible = true;
+    },
+    hide: () => {
+      head.visible = false;
+      tail.visible = false;
+    },
+    dispose: () => {
+      headMat.dispose();
+      tailGeom.dispose();
+      tailMat.dispose();
     },
   };
 };

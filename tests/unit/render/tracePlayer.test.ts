@@ -132,6 +132,15 @@ const debris = (id: number, x: number): Body => ({
   radius: 2,
 });
 
+const missile = (id: number, x: number, vx: number): Body => ({
+  id,
+  kind: 'missile',
+  position: { x, y: 0, z: 0 },
+  velocity: { x: vx, y: 0, z: 0 },
+  mass: 1,
+  radius: 1,
+});
+
 const record = (): MovementBeatRecord => ({
   subStepCount: 3,
   keyframes: [
@@ -645,5 +654,111 @@ describe('playAttack state machine', () => {
     });
     sched.runToEnd(20);
     expect(onDone).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---- CP2: missile tracers in the movement beat -------------------------------
+
+describe('missile tracers in playMovement (CP2)', () => {
+  // A record whose bodies include a live missile flying along +x. The tracer is a
+  // pure add-on: it doesn't change the ship / hazard / trail contract (missiles
+  // still route to hazards for the ➤ glyph), so the assertions here are that (a) the
+  // beat resolves + fires onDone once, and (b) missile bodies still reach the hazard
+  // sync — the render-visible additions (Group scene-add / additive materials) are
+  // three.js internals that can't be inspected without a WebGL context.
+  const missileRecord = (): MovementBeatRecord => ({
+    subStepCount: 2,
+    keyframes: [
+      [ship(1, 0), missile(9, 0, 50)],
+      [ship(1, 10), missile(9, 100, 50)],
+      [ship(1, 20), missile(9, 200, 50)],
+    ],
+    contacts: [],
+    log: [],
+    destroyed: [],
+    removedHazardIds: [],
+  });
+
+  it('missiles route to the hazard buffer AND the beat completes cleanly', () => {
+    const sched = new FakeScheduler();
+    const fake = makeFakeView();
+    const onDone = vi.fn();
+    attachTracePlayer(fake.view).playMovement(missileRecord(), {
+      durationMs: 100,
+      clock: sched.clock,
+      raf: sched.raf,
+      cancelRaf: sched.cancel,
+      onDone,
+    });
+    sched.runToEnd(20);
+
+    expect(onDone).toHaveBeenCalledTimes(1);
+    // Hazard sync ran (missile routed through it exactly like before CP2).
+    expect(fake.hazardSyncs.length).toBeGreaterThan(0);
+    // Ship still lands on the final keyframe — CP2 did not disturb the ship path.
+    expect(fake.positions.get(1)).toEqual({ x: 20, y: 0, z: 0 });
+    // Missile is NOT a ship — must not appear in the ship position map.
+    expect(fake.positions.has(9)).toBe(false);
+  });
+
+  it('skip() lands the same visible-final state as a full play (FR-19)', () => {
+    // Same-shape assertion as the CP1 attack outcome-invariance lock: two independent
+    // playbacks (full-run vs skip) must terminate in identical playback state — onDone
+    // fires once, raf loop stopped, ship on the final keyframe. The tracer FX are
+    // transient (torn down in cleanup) so they can never diverge the sim outcome.
+    const runFull = () => {
+      const sched = new FakeScheduler();
+      const fake = makeFakeView();
+      const onDone = vi.fn();
+      attachTracePlayer(fake.view).playMovement(missileRecord(), {
+        durationMs: 100,
+        clock: sched.clock,
+        raf: sched.raf,
+        cancelRaf: sched.cancel,
+        onDone,
+      });
+      sched.runToEnd(20);
+      return { onDone, sched, fake };
+    };
+    const runSkip = () => {
+      const sched = new FakeScheduler();
+      const fake = makeFakeView();
+      const onDone = vi.fn();
+      attachTracePlayer(fake.view)
+        .playMovement(missileRecord(), {
+          durationMs: 100,
+          clock: sched.clock,
+          raf: sched.raf,
+          cancelRaf: sched.cancel,
+          onDone,
+        })
+        .skip();
+      return { onDone, sched, fake };
+    };
+    const full = runFull();
+    const skip = runSkip();
+    expect(full.onDone).toHaveBeenCalledTimes(1);
+    expect(skip.onDone).toHaveBeenCalledTimes(1);
+    expect(full.sched.hasPending()).toBe(false);
+    expect(skip.sched.hasPending()).toBe(false);
+    // Ship's final position must match across both paths (deterministic endpoint).
+    expect(full.fake.positions.get(1)).toEqual(skip.fake.positions.get(1));
+  });
+
+  it('a record with no missiles adds no tracer overhead (regression guard)', () => {
+    // The pre-CP2 codepath: ships only, no missiles anywhere. Beat still completes.
+    const sched = new FakeScheduler();
+    const fake = makeFakeView();
+    const onDone = vi.fn();
+    attachTracePlayer(fake.view).playMovement(record(), {
+      durationMs: 100,
+      clock: sched.clock,
+      raf: sched.raf,
+      cancelRaf: sched.cancel,
+      onDone,
+    });
+    sched.runToEnd(20);
+    expect(onDone).toHaveBeenCalledTimes(1);
+    expect(fake.positions.get(1)).toEqual({ x: 30, y: 0, z: 0 });
   });
 });
