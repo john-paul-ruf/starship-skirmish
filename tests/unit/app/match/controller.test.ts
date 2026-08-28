@@ -19,12 +19,13 @@ import {
   previewPath,
   runMovementBeat,
   seedOf,
+  type MatchState,
   type MovementPlan,
 } from '../../../../src/sim/index.js';
 import { of } from '../../../../src/sim/mathx/vec3.js';
 import type { Route } from '../../../../src/ui/appContext.js';
 import { generateBotFleet } from '../../../../src/ai/index.js';
-import { assembleMatchConfig } from '../../../../src/app/match/config.js';
+import { assembleMatchConfig, PLAYER_FLEET_ID } from '../../../../src/app/match/config.js';
 import { createMatchController } from '../../../../src/app/match/controller.js';
 
 // A macrotask boundary flushes the driver's chained microtasks between steps.
@@ -223,6 +224,130 @@ describe('createMatchController — previewArc accepts a segmented arc (D-SHARED
 // or `BlindMatchView`. This test doesn't need to re-prove that invariant
 // (it's structural, not runtime), only that the seam does not divert the
 // segmented plan on the way to the resolver.
+// ---- Player-fleet elimination — DEFEAT at the app layer (S03 CP1) ---------
+//
+// The playtest bug: with ≥ 2 opposing fleets, `checkVictory` returns null
+// (Custom Rule 5 — the sim's three-branch check has no "player wipe" branch
+// when other fleets are still standing), so the player who lost their last
+// ship was forced to spectate the surviving bots. The controller now checks
+// player elimination at turn end and ends the match as DEFEAT (concede-
+// symmetric) — Custom Rule 5 stays intact by construction because the sim's
+// `checkVictory` is byte-untouched.
+//
+// The state signal is exposed as `ReadonlySignal<MatchState>`; the underlying
+// `@preact/signals` handle is mutable (writes are a compile-time constraint,
+// not a runtime one). We cast to inject a scripted `MatchState` at a specific
+// beat boundary — cheaper than authoring commanders that reliably wipe a
+// fleet in a single turn and equally load-bearing on the controller seam.
+describe('createMatchController — player-fleet elimination ends the match', () => {
+  /** Remove every ship (+ body + fleetOf entry) belonging to `fleetId`. */
+  const wipeFleet = (s: MatchState, fleetId: number): MatchState => {
+    const nextShips = new Map(s.ships);
+    const nextBodies = new Map(s.bodies);
+    const nextFleetOf = new Map(s.fleetOf);
+    for (const [id, fid] of s.fleetOf) {
+      if (fid === fleetId) {
+        nextShips.delete(id);
+        nextBodies.delete(id);
+        nextFleetOf.delete(id);
+      }
+    }
+    return { ...s, ships: nextShips, bodies: nextBodies, fleetOf: nextFleetOf };
+  };
+
+  it('turn-end: player wiped while two bot fleets survive → victory for the lowest enemy id', async () => {
+    // Three-fleet setup: `checkVictory` on a player wipe returns null (≥ 2
+    // standing) — the exact case the pre-S03 controller stranded the player on.
+    const player = generateBotFleet(catalog, BUDGET, 'ace', 11);
+    const config = assembleMatchConfig(
+      catalog,
+      catalog.tuning,
+      BUDGET,
+      seedOf(0xdead, 0xbeef),
+      player,
+      [
+        { tier: 'veteran', rngKey: 0x101 },
+        { tier: 'veteran', rngKey: 0x202 },
+      ],
+    );
+    const { services, routes } = captureRoutes();
+    const controller = createMatchController(services, config, ['veteran', 'veteran']);
+    const stateSignal = controller.state as unknown as { value: MatchState };
+
+    await flush();
+    expect(controller.phase.value).toBe('movement-plan');
+
+    controller.commitMovement([]);
+    await flush();
+    controller.resolveAnimationDone();
+    await flush();
+    expect(controller.phase.value).toBe('attack-plan');
+
+    controller.commitAttack([]);
+    await flush();
+    expect(controller.phase.value).toBe('attack-resolve');
+
+    // Inject a wiped-player state right before the turn-end sync block —
+    // `applyTurnEnd` + `checkVictory` + fallback all read from this state.
+    stateSignal.value = wipeFleet(stateSignal.value, PLAYER_FLEET_ID);
+
+    controller.resolveAnimationDone();
+    await flush();
+    expect(controller.phase.value).toBe('complete');
+    expect(routes.at(-1)).toEqual({ name: 'post-match' });
+    // Lowest surviving enemy fleet is roster id 1 (bot fleets take 1..N).
+    // `decidedTurn = state.turn - 1` after `applyTurnEnd` bumps the counter
+    // from 1 → 2, so turn 1 is the decided turn.
+    expect(controller.outcome.value).toEqual({
+      kind: 'victory',
+      fleetId: PLAYER_FLEET_ID + 1,
+      turns: 1,
+    });
+    // Trace outcome is stamped for the post-match summary.
+    expect(controller.trace.value.outcome).toEqual(controller.outcome.value);
+  });
+
+  it('turn-end: player and last enemy both wiped → mutual-destruction (existing three-branch case)', async () => {
+    // Two-fleet setup: `checkVictory` on a total wipe already returns
+    // `mutual-destruction`; the fallback must not stomp it. Regression guard
+    // for Custom Rule 5's second branch.
+    const player = generateBotFleet(catalog, BUDGET, 'ace', 22);
+    const config = assembleMatchConfig(
+      catalog,
+      catalog.tuning,
+      BUDGET,
+      seedOf(0xcafe, 0xba5e),
+      player,
+      [{ tier: 'veteran', rngKey: 0x303 }],
+    );
+    const { services } = captureRoutes();
+    const controller = createMatchController(services, config, ['veteran']);
+    const stateSignal = controller.state as unknown as { value: MatchState };
+
+    await flush();
+    controller.commitMovement([]);
+    await flush();
+    controller.resolveAnimationDone();
+    await flush();
+    controller.commitAttack([]);
+    await flush();
+    expect(controller.phase.value).toBe('attack-resolve');
+
+    // Wipe BOTH fleets — zero fleets standing → `checkVictory` returns
+    // `mutual-destruction` (not `null`), so the fallback branch is skipped.
+    let s = stateSignal.value;
+    s = wipeFleet(s, PLAYER_FLEET_ID);
+    s = wipeFleet(s, PLAYER_FLEET_ID + 1);
+    stateSignal.value = s;
+
+    controller.resolveAnimationDone();
+    await flush();
+    expect(controller.phase.value).toBe('complete');
+    expect(controller.outcome.value?.kind).toBe('mutual-destruction');
+    expect(controller.trace.value.outcome?.kind).toBe('mutual-destruction');
+  });
+});
+
 describe('createMatchController — commitMovement carries segments to runMovementBeat', () => {
   it('a segmented player plan drives the ship to the finite-thrust position', async () => {
     const player = generateBotFleet(catalog, BUDGET, 'ace', 13);

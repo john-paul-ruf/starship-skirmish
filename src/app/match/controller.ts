@@ -146,6 +146,48 @@ export const createMatchController = (
       animationResolve = resolve;
     });
 
+  // ---- Player-fleet elimination (S03 — D-DEFEAT-APP-LAYER) ---------------
+  // A player-fleet wipe is DEFEAT at the app layer (concede-symmetric), NOT
+  // via `checkVictory` — Custom Rule 5 keeps the sim's victory check three-
+  // branch. The fallback fires when `checkVictory` says "continue" (≥ 2 bot
+  // fleets standing) but the player has no ships; without it, the player
+  // would be forced to watch the surviving bots finish the match.
+  //
+  // Nominal victor for a player wipe = the lowest-id surviving enemy fleet
+  // (mirrors `victory.ts`'s standing tally); zero surviving enemies collapses
+  // to `mutual-destruction`. The renderer maps `victory { fleetId != player }`
+  // to the DEFEAT headline on the post-match screen.
+
+  /** True when no ship in `s.ships` belongs to the player fleet. */
+  const playerEliminated = (s: MatchState): boolean => {
+    for (const id of s.ships.keys()) {
+      if (s.fleetOf.get(id) === playerFleetId) return false;
+    }
+    return true;
+  };
+
+  /** The lowest-id surviving enemy fleet (the nominal victor for a player wipe). */
+  const survivingEnemyFleet = (s: MatchState): number | null => {
+    const enemies: number[] = [];
+    for (const id of s.ships.keys()) {
+      const fid = s.fleetOf.get(id);
+      if (fid !== undefined && fid !== playerFleetId && !enemies.includes(fid)) {
+        enemies.push(fid);
+      }
+    }
+    enemies.sort((a, b) => a - b);
+    return enemies[0] ?? null;
+  };
+
+  /** The outcome to record when the player is eliminated. Victory for the
+   *  lowest surviving enemy fleet, or mutual-destruction if none stand. */
+  const defeatOutcome = (decidedTurn: number): MatchOutcome => {
+    const enemy = survivingEnemyFleet(state.value);
+    return enemy !== null
+      ? { kind: 'victory', fleetId: enemy, turns: decidedTurn }
+      : { kind: 'mutual-destruction', turns: decidedTurn };
+  };
+
   // BLIND COMMIT lives here: each commander plans against a FRESH view; the
   // returned plans exist only as the local the caller `await`s.
   const collectMovementPlans = async (s: MatchState): Promise<MovementPlan[]> => {
@@ -191,6 +233,9 @@ export const createMatchController = (
     if (finished) return;
 
     // ── TURN END + victory (Custom Rule 5 — three branches only) ────────────
+    // `checkVictory` remains three-branch; the app-layer fallback below fires
+    // ONLY when the sim says "continue" but the player has been wiped (a case
+    // Custom Rule 5 cannot express because it would need a fourth branch).
     state.value = applyTurnEnd(state.value);
     const decidedTurn = state.value.turn - 1;
     trace.value = withTurn(trace.value, {
@@ -198,7 +243,10 @@ export const createMatchController = (
       movement: mv.record,
       attack: at.record,
     });
-    const outc = outcomeOf(checkVictory(state.value), decidedTurn);
+    let outc = outcomeOf(checkVictory(state.value), decidedTurn);
+    if (outc === null && playerEliminated(state.value)) {
+      outc = defeatOutcome(decidedTurn);
+    }
     if (outc !== null) {
       finished = true;
       outcome.value = outc;
