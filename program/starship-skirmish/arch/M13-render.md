@@ -288,3 +288,44 @@ Threshold sized so the low-alpha boundary shell / haze / inner-core layers stay
 below the bloom cutoff and never accumulate into unwanted glow; only the
 additive `Points` trails and (SESSION-02) beam materials cross the cutoff into
 the bloom mip.
+
+<!-- SESSION-02 · playtest-feedback-05 · M13 render delta -->
+
+### M13 Render — new internal module `explosionFx`
+
+**Added:** `src/render/explosionFx.ts` — one reusable animated-blast primitive
+consumed by `TracePlayer.playMovement` (detonating deaths + contacts) and
+`TracePlayer.playAttack` (detonating deaths). Replaces the pre-session static
+`makeAoeRing` (attack finale) and the bare `CONTACT_FLASH_COLOR` sprite
+(movement contacts). No sim / trace / rules edit — the render layer now
+visualises the AoE the sim already emits on `MovementBeatRecord.destroyed` /
+`.contacts` and `AttackBeatRecord.destroyed`.
+
+**Public surface (module-internal to M13 — NOT re-exported from
+`src/render/index.ts`):**
+- `makeBlast(center, opts): BlastFx` — factory.
+- `BlastFx { object, renderAt(localT), dispose() }` — the running handle.
+- `BlastOpts { radius, intensity?, color? }` — per-blast tuning.
+- Pure shape helpers (unit-testable without WebGL): `blastRingRadius`,
+  `blastRingOpacity`, `blastCoreOpacity`, plus constants
+  `DEFAULT_BLAST_COLOR`, `RING_SEGMENTS`, `CORE_PEAK_T`.
+
+**Imports:** `three`, `./interp` (`clamp01`), and `sim` **types only**
+(`Vec3` via `import type`). `render → sim types-only` boundary intact
+(architecture §4, FR-33).
+
+**Removed from `src/render/TracePlayer.ts`** (dead after CP2/CP3):
+- `makeAoeRing` (static `Line2` ring, superseded by `makeBlast`).
+- `buildLine` helper (only consumer was `makeAoeRing`).
+- `AOE_RING_COLOR`, `RING_SEGMENTS`, `CONTACT_FLASH_COLOR` constants
+  (also unused after replacement; the blast primitive owns its own defaults).
+
+**Determinism / purity:** wall-clock does NOT enter `explosionFx.ts` (caller
+supplies `localT`); no `Math.random`. `renderAt(1)` leaves the blast terminal
+(opacity ~0), so reduced-motion / `skip()` (which land on
+`createPlayback.finish → renderAt(1)`) never freeze a half-expanded shockwave
+on the final frame — FR-19 outcome invariance preserved.
+
+**Not touched:** `src/render/index.ts` barrel, `sim/**`, `sim/trace/**`,
+`sim/rules/**`.
+
