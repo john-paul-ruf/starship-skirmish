@@ -16,19 +16,21 @@ import {
   enemyShips,
   fireContext,
   fireSlotTotal,
+  fireSolutionsFor,
   friendlyShips,
   GENERATOR_HINT,
   hitChanceBarFill,
   hitChanceTone,
   liveFireSlots,
-  rangePreviewFor,
+  longestLiveWeaponRange,
+  projectPoint,
+  projectSegment,
+  rangePreviewsFor,
   shieldReadout,
-  shipRangePreview,
   slotKey,
   toAttackPlans,
   weaponOutOfRange,
   type Assignment,
-  type FireSlot,
 } from '../../../../src/ui/screens/tacticalAttack/model.js';
 import type {
   BlindMatchView,
@@ -585,21 +587,29 @@ describe('aoeRingProjection', () => {
   });
 });
 
-// ---- Range preview + hit-chance tone (S07) --------------------------------
+// ---- Range envelopes + fire solutions (SESSION-03) ------------------------
 
-describe('rangePreviewFor', () => {
-  const weapon = (over: Partial<SimWeapon> = {}): SimWeapon => ({
-    range: 240,
-    damage: 12,
-    shotsPerTurn: 1,
-    accuracy: 0.6,
-    ...over,
-  });
+const wpn = (over: Partial<SimWeapon> = {}): SimWeapon => ({
+  range: 240,
+  damage: 12,
+  shotsPerTurn: 1,
+  accuracy: 0.6,
+  ...over,
+});
+
+describe('rangePreviewsFor', () => {
   const shooter = shipView({
     bodyId: 1,
     fleetId: 0,
-    ship: simShip({ weapons: [weapon({ range: 240 }), weapon({ range: 120 })] }),
-    weaponAlive: [true, true],
+    hull: 100,
+    ship: simShip({
+      weapons: [
+        wpn({ range: 260, display: { id: 'w1', name: 'PHASE BEAM' } }),
+        wpn({ range: 180 }), // no display → index-fallback label
+        wpn({ range: 90, display: { id: 'w3', name: 'FLAK BATTERY' } }),
+      ],
+    }),
+    weaponAlive: [true, false, true], // W2 dead → excluded
     missileAlive: [true],
     missileAmmo: [2],
   });
@@ -608,93 +618,157 @@ describe('rangePreviewFor', () => {
     [body(1, at(-40, 0, 12)), body(3, at(200))],
   );
 
-  it('returns the shooter position and the selected weapon range', () => {
-    const slot: FireSlot = { shooterId: 1, kind: 'weapon', index: 0 };
-    const preview = rangePreviewFor(view, slot);
-    expect(preview).not.toBeNull();
-    expect(preview?.center).toEqual({ x: -40, y: 0, z: 12 });
-    expect(preview?.radius).toBe(240);
+  it('returns every LIVE weapon envelope in stable slot order (missiles + dead excluded)', () => {
+    const previews = rangePreviewsFor(view, 1, null);
+    expect(previews.map((p) => p.slot.index)).toEqual([0, 2]); // W1, W3 only
+    expect(previews.map((p) => p.radius)).toEqual([260, 90]);
+    expect(previews.every((p) => p.center.x === -40 && p.center.z === 12)).toBe(true);
   });
 
-  it('uses the weapon at the slot index, not W1', () => {
-    const preview = rangePreviewFor(view, { shooterId: 1, kind: 'weapon', index: 1 });
-    expect(preview?.radius).toBe(120);
+  it('labels each envelope with the authored name + radius, index fallback otherwise', () => {
+    const previews = rangePreviewsFor(view, 1, null);
+    expect(previews[0]?.label).toBe('PHASE BEAM 260');
+    expect(previews[1]?.label).toBe('FLAK BATTERY 90');
   });
 
-  it('returns null for a null selection', () => {
-    expect(rangePreviewFor(view, null)).toBeNull();
+  it('marks only the active weapon slot active', () => {
+    const previews = rangePreviewsFor(view, 1, { shooterId: 1, kind: 'weapon', index: 2 });
+    expect(previews.find((p) => p.slot.index === 2)?.active).toBe(true);
+    expect(previews.find((p) => p.slot.index === 0)?.active).toBe(false);
   });
 
-  it('returns null for a missile slot (no line-of-sight range)', () => {
-    expect(rangePreviewFor(view, { shooterId: 1, kind: 'missile', index: 0 })).toBeNull();
+  it('a missile active slot marks NO envelope active (missiles have no ring)', () => {
+    const previews = rangePreviewsFor(view, 1, { shooterId: 1, kind: 'missile', index: 0 });
+    expect(previews.some((p) => p.active)).toBe(false);
   });
 
-  it('returns null when the shooter is not in the view (destroyed / stale selection)', () => {
-    expect(rangePreviewFor(view, { shooterId: 99, kind: 'weapon', index: 0 })).toBeNull();
-  });
-
-  it('returns null when the weapon index is out of range', () => {
-    expect(rangePreviewFor(view, { shooterId: 1, kind: 'weapon', index: 9 })).toBeNull();
-  });
-
-  it('returns null when the shooter view exists but its body has no position', () => {
-    const viewNoBody = viewOf([shooter], []); // ships present, bodies empty
-    expect(
-      rangePreviewFor(viewNoBody, { shooterId: 1, kind: 'weapon', index: 0 }),
-    ).toBeNull();
+  it('returns [] for a null shooter, a missing shooter, or a shooter with no body position', () => {
+    expect(rangePreviewsFor(view, null, null)).toEqual([]);
+    expect(rangePreviewsFor(view, 99, null)).toEqual([]);
+    expect(rangePreviewsFor(viewOf([shooter], []), 1, null)).toEqual([]);
   });
 });
 
-describe('shipRangePreview', () => {
-  const weapon = (over: Partial<SimWeapon> = {}): SimWeapon => ({
-    range: 240,
-    damage: 12,
-    shotsPerTurn: 1,
-    accuracy: 0.6,
-    ...over,
-  });
+describe('longestLiveWeaponRange', () => {
   const shooter = shipView({
     bodyId: 1,
     fleetId: 0,
     hull: 100,
-    ship: simShip({ weapons: [weapon({ range: 120 }), weapon({ range: 260 }), weapon({ range: 90 })] }),
-    weaponAlive: [true, false, true],
+    ship: simShip({ weapons: [wpn({ range: 120 }), wpn({ range: 260 }), wpn({ range: 90 })] }),
+    weaponAlive: [true, false, true], // W2 (260) dead → excluded, max live is 120
   });
-  const view = viewOf(
-    [shooter, shipView({ bodyId: 9, fleetId: 0, hull: 0, ship: simShip({ weapons: [weapon()] }), weaponAlive: [true] })],
-    [body(1, at(-10, 0, 5)), body(9, at(50))],
-  );
+  const view = viewOf([shooter], [body(1, at(0))]);
 
-  it("returns the ship's post-movement position and its longest-range LIVE weapon", () => {
-    // W1 (range 120) and W3 (range 90) are live; W2 (range 260, the largest
-    // overall) is dead and must be excluded — max among LIVE weapons is 120.
-    const preview = shipRangePreview(view, 1);
-    expect(preview).not.toBeNull();
-    expect(preview?.center).toEqual({ x: -10, y: 0, z: 5 });
-    expect(preview?.radius).toBe(120);
+  it('returns the longest LIVE weapon range', () => {
+    expect(longestLiveWeaponRange(view, 1)).toBe(120);
   });
 
-  it('returns null for a null selection', () => {
-    expect(shipRangePreview(view, null)).toBeNull();
+  it('returns null for null / unknown / dead / weaponless ships', () => {
+    expect(longestLiveWeaponRange(view, null)).toBeNull();
+    expect(longestLiveWeaponRange(view, 999)).toBeNull();
+    const dead = viewOf([shipView({ bodyId: 2, hull: 0 })], [body(2, at(0))]);
+    expect(longestLiveWeaponRange(dead, 2)).toBeNull();
+    const noWeapons = viewOf(
+      [shipView({ bodyId: 3, hull: 50, weaponAlive: [false, false] })],
+      [body(3, at(0))],
+    );
+    expect(longestLiveWeaponRange(noWeapons, 3)).toBeNull();
+  });
+});
+
+describe('fireSolutionsFor', () => {
+  const shooter = shipView({
+    bodyId: 1,
+    fleetId: 0,
+    hull: 100,
+    ship: simShip({
+      weapons: [wpn({ range: 260 }), wpn({ range: 100 })],
+      missiles: [
+        {
+          ammo: 2,
+          damage: 40,
+          aoeRadius: 60,
+          boostVelocity: 140,
+          trackingTurnRate: 1,
+          bodyMass: 5,
+          bodyRadius: 1,
+          display: { id: 'm1', name: 'TALON' },
+        },
+      ],
+    }),
+    weaponAlive: [true, true],
+    missileAlive: [true],
+    missileAmmo: [2],
+  });
+  const target = shipView({ bodyId: 3, fleetId: 1 });
+  const view = viewOf([shooter, target], [body(1, at(0)), body(3, at(200))]);
+  // A spy hitChanceFor that records its args and returns a fixed final.
+  const calls: Array<[number, number, number]> = [];
+  const hitChanceFor = (s: number, t: number, w: number) => {
+    calls.push([s, t, w]);
+    return { base: 0.68, rangeFactor: 1, velocityFactor: 1, evasionFactor: 1, final: 0.57 };
+  };
+
+  it('weapon in range carries the controller final verbatim (no recompute)', () => {
+    calls.length = 0;
+    const sols = fireSolutionsFor(view, [{ shooterId: 1, targetId: 3, weaponIndex: 0 }], hitChanceFor);
+    expect(sols).toHaveLength(1);
+    expect(sols[0]?.status).toBe('in-range');
+    expect(sols[0]?.finalChance).toBe(0.57);
+    expect(sols[0]?.distance).toBe(200);
+    expect(sols[0]?.range).toBe(260);
+    expect(sols[0]?.label).toBe('W1');
+    // The % came THROUGH hitChanceFor for exactly this (shooter, target, weapon).
+    expect(calls).toEqual([[1, 3, 0]]);
   });
 
-  it('returns null for an unknown/missing ship id', () => {
-    expect(shipRangePreview(view, 999)).toBeNull();
+  it('weapon out of range is explicit — no finalChance, hitChanceFor untouched', () => {
+    calls.length = 0;
+    // W2 range 100, target at 200 → out of range.
+    const sols = fireSolutionsFor(view, [{ shooterId: 1, targetId: 3, weaponIndex: 1 }], hitChanceFor);
+    expect(sols[0]?.status).toBe('out-of-range');
+    expect(sols[0]?.finalChance).toBeUndefined();
+    expect(sols[0]?.range).toBe(100);
+    expect(calls).toEqual([]); // never asks for a % on a refused shot
   });
 
-  it('returns null for a dead ship (hull <= 0)', () => {
-    expect(shipRangePreview(view, 9)).toBeNull();
+  it('a missile is a launch — authored rack label, no fake to-hit', () => {
+    const sols = fireSolutionsFor(view, [{ shooterId: 1, targetId: 3, missileIndex: 0 }], hitChanceFor);
+    expect(sols[0]?.kind).toBe('missile');
+    expect(sols[0]?.status).toBe('launch');
+    expect(sols[0]?.finalChance).toBeUndefined();
+    expect(sols[0]?.range).toBeUndefined();
+    expect(sols[0]?.label).toBe('M1 · TALON');
   });
 
-  it('returns null for a ship with no live weapon', () => {
-    const noWeapons = shipView({ bodyId: 5, fleetId: 0, hull: 50, weaponAlive: [false, false] });
-    const v = viewOf([noWeapons], [body(5, at(1))]);
-    expect(shipRangePreview(v, 5)).toBeNull();
+  it('drops unresolvable assignments (missing shooter / target position / slot)', () => {
+    expect(fireSolutionsFor(view, [{ shooterId: 99, targetId: 3, weaponIndex: 0 }], hitChanceFor)).toEqual([]);
+    const noTargetBody = viewOf([shooter, target], [body(1, at(0))]); // target body absent
+    expect(fireSolutionsFor(noTargetBody, [{ shooterId: 1, targetId: 3, weaponIndex: 0 }], hitChanceFor)).toEqual([]);
+    expect(fireSolutionsFor(view, [{ shooterId: 1, targetId: 3, weaponIndex: 9 }], hitChanceFor)).toEqual([]);
+  });
+});
+
+describe('projectPoint / projectSegment', () => {
+  // Top-down fake: world (x, z) → pixels (400+x, 300+z); y ignored.
+  const w2s = (p: readonly [number, number, number]) => ({ x: 400 + p[0], y: 300 + p[2] });
+  const behind = () => null;
+
+  it('projectPoint maps a world point to pixels, null behind camera', () => {
+    expect(projectPoint(w2s, { x: 100, y: 0, z: 50 })).toEqual({ x: 500, y: 350 });
+    expect(projectPoint(behind, { x: 0, y: 0, z: 0 })).toBeNull();
   });
 
-  it('returns null when the ship view exists but its body has no position', () => {
-    const viewNoBody = viewOf([shooter], []);
-    expect(shipRangePreview(viewNoBody, 1)).toBeNull();
+  it('projectSegment returns endpoints + midpoint', () => {
+    const seg = projectSegment(w2s, { x: 0, y: 0, z: 0 }, { x: 200, y: 0, z: 100 });
+    expect(seg).toEqual({ x1: 400, y1: 300, x2: 600, y2: 400, mx: 500, my: 350 });
+  });
+
+  it('projectSegment hides the whole line when EITHER endpoint is behind the camera', () => {
+    const centerOnly = (p: readonly [number, number, number]) =>
+      p[0] === 0 ? { x: 400, y: 300 } : null;
+    expect(projectSegment(centerOnly, { x: 0, y: 0, z: 0 }, { x: 200, y: 0, z: 0 })).toBeNull();
+    expect(projectSegment(behind, { x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 })).toBeNull();
   });
 });
 

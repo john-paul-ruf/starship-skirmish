@@ -1,27 +1,28 @@
-// M14 UI — Tactical Attack viewport (skirmish-tactical-parity S04 CP1+CP2).
+// M14 UI — Tactical Attack viewport (tactical-attack-mock-parity SESSION-03).
 //
-// Hosts the three.js tactical canvas and plays the attack beat. Render is
-// reached by a DYNAMIC import (D-RENDER-DYNAMIC, arch §11) so the rest of the
-// app never pulls three.js; the value import lives in an effect, the type
-// imports below are erased. Responsibilities:
+// Hosts the three.js tactical canvas, plays the attack beat, and hosts the plan-
+// time field overlay. Render is reached by a DYNAMIC import (D-RENDER-DYNAMIC,
+// arch §11) so the rest of the app never pulls three.js; the value import lives
+// in an effect, the type imports below are erased. Responsibilities:
 //   • createTacticalView(canvas, arenaRadius) then setState(state) on every
 //     post-movement state change (render mutates nothing — FR-33);
 //   • wire canvas click → `pick(x,y)` → `onPickBody(id)` and set the camera's
 //     focus source over the screen's current selection so `F` slides onto the
-//     roster's chosen ship (S04 CP1) — the render seams from S01;
-//   • project the AoE preview through `view.worldToScreen(blastCenter)` and
-//     draw an SVG ring over the canvas (S04 CP2) — `null` projection HIDES the
-//     ring; the friendly-fire banner remains the authoritative geometry (§4.6);
+//     roster's chosen ship — the render seams from S01;
+//   • reconcile ONE `RangeShell` per live weapon envelope of the active shooter
+//     against a keyed map (create on new key, update centre/radius, dispose
+//     stale) so the mock's concentric rings appear without per-frame recreation;
+//   • each frame, project the firing solutions, range labels, selected callout,
+//     and AoE ring into CSS pixels and feed `FieldOverlay` — a `null` projection
+//     HIDES the element rather than drawing a stale artifact; the friendly-fire
+//     banner remains the authoritative AoE geometry (§4.6);
 //   • on `attack-resolve`, attachTracePlayer(view).playAttack(beat) → when the
 //     animation finishes, call `onResolveDone` so the controller advances;
 //   • reduced motion (or render unavailable) skips straight to the final frame
 //     and fires `onResolveDone` — the match never stalls on missing WebGL.
 //
-// playtest-feedback-03 SESSION-01 CP2: the outer `.viewport` div carries no
-// inline min-height of its own — sizing is the HOSTING SCREEN's call in every
-// phase (plan / resolve / boot), since only the screen knows how much room
-// the sibling panels need at a given phase. See `TacticalAttack.tsx`'s scoped
-// styles for the per-phase floor.
+// The outer `.viewport` div carries no inline min-height of its own — sizing is
+// the HOSTING SCREEN's call in every phase (plan / resolve / boot).
 
 import { useEffect, useRef } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
@@ -31,7 +32,21 @@ import type { RangeShell, TacticalView, TracePlayer } from '../../../render/inde
 import type { MatchPhase } from '../../matchContext.js';
 
 import { CameraHud } from './CameraHud.js';
-import { aoeRingProjection, type AoeRingProjection, type RangePreview } from './model.js';
+import {
+  FieldOverlay,
+  type FieldCallout,
+  type FieldLegendFleet,
+  type FieldRangeLabel,
+  type FieldSolutionMark,
+} from './FieldOverlay.js';
+import {
+  aoeRingProjection,
+  projectPoint,
+  projectSegment,
+  type AoeRingProjection,
+  type FireSolution,
+  type RangePreview,
+} from './model.js';
 
 export interface AoePreview {
   readonly label: string;
@@ -40,6 +55,26 @@ export interface AoePreview {
   readonly center: Vec3;
 }
 
+/** The plan-time overlay geometry, all projected to CSS pixels (recomputed each
+ *  frame as the camera orbits). `null` fields are hidden. */
+interface OverlayProjection {
+  readonly solutions: readonly FieldSolutionMark[];
+  readonly rangeLabels: readonly FieldRangeLabel[];
+  readonly selected: FieldCallout | null;
+  readonly aoeRing: AoeRingProjection | null;
+  readonly aoeCallout: FieldCallout | null;
+  readonly aoeFriendlies: readonly FieldCallout[];
+}
+
+const EMPTY_OVERLAY: OverlayProjection = {
+  solutions: [],
+  rangeLabels: [],
+  selected: null,
+  aoeRing: null,
+  aoeCallout: null,
+  aoeFriendlies: [],
+};
+
 export interface ViewportProps {
   readonly state: MatchState;
   readonly phase: MatchPhase;
@@ -47,31 +82,36 @@ export interface ViewportProps {
   readonly reducedMotion: boolean;
   readonly onResolveDone: () => void;
   readonly aoePreview: AoePreview | null;
-  /** Range shell geometry (SESSION-07) — non-null draws a translucent shell at
-   *  `center` sized to `radius`; null hides it. Never computes a to-hit number
-   *  (arch §13.3 — hit chance stays single-sourced through `hitChanceFor`). */
-  readonly rangePreview: RangePreview | null;
-  /** The roster's current selection — drives the F-key focus source (S04 CP1). */
+  /** Friendly world positions inside the previewed missile's blast — projected
+   *  to `⚠ FRIENDLY IN AoE` callouts. */
+  readonly aoeFriendlies: readonly Vec3[];
+  /** All live weapon envelopes for the active shooter (D-TA-WIRE-RANGE). The
+   *  viewport draws one wire `RangeShell` per `key`; the overlay labels each. */
+  readonly rangePreviews: readonly RangePreview[];
+  /** The player's staged firing solutions (blind commit — never opponent plans);
+   *  projected to lines + midpoint pills. */
+  readonly fireSolutions: readonly FireSolution[];
+  /** Per-fleet living-ship counts for the body-class legend. */
+  readonly legendFleets: readonly FieldLegendFleet[];
+  /** Current turn (post-movement) — the overlay's `TURN {n}` HUD. */
+  readonly turn: number;
+  /** The roster's current selection — drives the F-key focus source + callout. */
   readonly selectedId: BodyId | null;
-  /** Position lookup for the selected body — pure sim read, no render leakage. */
+  /** Position lookup for a body — pure sim read, no render leakage. */
   readonly positionOf: (id: BodyId) => Vec3 | null;
   /** Canvas click → `pick` → this callback (roster + inspector follow the pick). */
   readonly onPickBody: (id: BodyId | null) => void;
-  /** Label the camera-HUD shows next to FOCUS — the selected ship's name or `—`. */
+  /** Label the camera-HUD + selected callout show — the selected ship's name or `—`. */
   readonly focusLabel: string;
-  /** playtest-feedback-05 SESSION-04 CP2 — current immersive-mode state; the
-   *  CameraHud button reports this via `aria-pressed` and swaps its glyph +
-   *  label between FULL FIELD (off) and RESTORE (on). */
+  /** Current immersive-mode state; the CameraHud reports it via `aria-pressed`. */
   readonly fullscreen: boolean;
-  /** Flip the immersive-mode toggle. The state signal lives on the hosting
-   *  screen (auto-resets on unmount); the Viewport only forwards the click. */
+  /** Flip the immersive-mode toggle. */
   readonly onToggleFullscreen: () => void;
 }
 
-/** D-ATK-RESOLVE-MIN-HOLD (playtest-feedback-03 SESSION-01) — the minimum time
- *  `attack-resolve` stays on screen before handing off, so a zero-fire (or
- *  reduced-motion) turn still reads as a resolved beat instead of an instant
- *  bounce back to movement. */
+/** D-ATK-RESOLVE-MIN-HOLD — the minimum time `attack-resolve` stays on screen
+ *  before handing off, so a zero-fire (or reduced-motion) turn still reads as a
+ *  resolved beat instead of an instant bounce back to movement. */
 const MIN_RESOLVE_MS = 1200;
 
 /** Read the canvas-local (x, y) of a pointer event so `pick(x,y)` gets pixel
@@ -79,6 +119,23 @@ const MIN_RESOLVE_MS = 1200;
 const canvasCoords = (canvas: HTMLCanvasElement, e: MouseEvent): { x: number; y: number } => {
   const rect = canvas.getBoundingClientRect();
   return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+};
+
+/** A cheap change signature over the projected overlay so the RAF only writes
+ *  the signal (and re-renders the overlay) when the projection actually moves —
+ *  avoids thrashing Preact 60 times a second on a still camera. Coords rounded
+ *  to whole pixels (sub-pixel jitter is invisible). */
+const overlaySignature = (o: OverlayProjection): string => {
+  const seg = o.solutions
+    .map((m) => `${m.solution.key}:${Math.round(m.seg.x1)},${Math.round(m.seg.y1)},${Math.round(m.seg.x2)},${Math.round(m.seg.y2)}`)
+    .join('|');
+  const lab = o.rangeLabels
+    .map((l) => `${l.key}:${Math.round(l.point.x)},${Math.round(l.point.y)},${l.active ? 1 : 0}`)
+    .join('|');
+  const sel = o.selected === null ? '-' : `${Math.round(o.selected.point.x)},${Math.round(o.selected.point.y)},${o.selected.text}`;
+  const ring = o.aoeRing === null ? '-' : `${Math.round(o.aoeRing.cx)},${Math.round(o.aoeRing.cy)},${Math.round(o.aoeRing.r)}`;
+  const fr = o.aoeFriendlies.map((c) => `${c.key}:${Math.round(c.point.x)},${Math.round(c.point.y)}`).join('|');
+  return `${seg}#${lab}#${sel}#${ring}#${fr}`;
 };
 
 export function Viewport(props: ViewportProps) {
@@ -89,7 +146,11 @@ export function Viewport(props: ViewportProps) {
     reducedMotion,
     onResolveDone,
     aoePreview,
-    rangePreview,
+    aoeFriendlies,
+    rangePreviews,
+    fireSolutions,
+    legendFleets,
+    turn,
     selectedId,
     positionOf,
     onPickBody,
@@ -100,18 +161,33 @@ export function Viewport(props: ViewportProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewRef = useRef<TacticalView | null>(null);
   const playerRef = useRef<TracePlayer | null>(null);
-  const rangeShellRef = useRef<RangeShell | null>(null);
+  /** One wire range shell per live weapon envelope, keyed by preview key. */
+  const rangeShellsRef = useRef<Map<string, RangeShell>>(new Map());
   /** 'pending' until the dynamic import settles; 'ready' | 'failed' after. */
   const status = useSignal<'pending' | 'ready' | 'failed'>('pending');
-  /** Ring geometry driven by RAF while an AoE preview is live (CP2). Signal so
-   *  the DOM re-renders when the camera orbits; not part of controller state. */
-  const ring = useSignal<AoeRingProjection | null>(null);
+  /** Projected overlay geometry, driven by the RAF loop. */
+  const overlay = useSignal<OverlayProjection>(EMPTY_OVERLAY);
 
   // Latest reactive inputs the async mount + RAF loops read through a ref —
-  // avoids stale closures in the camera focus source + ring reprojection
-  // without spinning up an effect per input.
-  const latest = useRef({ selectedId, positionOf, aoePreview, rangePreview });
-  latest.current = { selectedId, positionOf, aoePreview, rangePreview };
+  // avoids stale closures without an effect per input.
+  const latest = useRef({
+    selectedId,
+    positionOf,
+    aoePreview,
+    aoeFriendlies,
+    rangePreviews,
+    fireSolutions,
+    focusLabel,
+  });
+  latest.current = {
+    selectedId,
+    positionOf,
+    aoePreview,
+    aoeFriendlies,
+    rangePreviews,
+    fireSolutions,
+    focusLabel,
+  };
 
   // Mount: create the view + trace player from the dynamically-imported render
   // layer. Disposed on unmount. A `cancelled` guard covers an unmount that races
@@ -131,70 +207,132 @@ export function Viewport(props: ViewportProps) {
         view.setState(state);
         viewRef.current = view;
         playerRef.current = render.attachTracePlayer(view);
-        // SESSION-07 range shell — hidden until a weapon slot supplies geometry.
-        // Attached to the scene once so the RAF loop below just mutates its
-        // radius / centre / visibility (cheap; no per-selection add/remove).
-        // Best-effort: a stubbed render module (unit-adjacent e2e that omits
-        // `createRangeShell` or exposes a bare `scene: {}`) skips the shell
-        // silently — the WeaponBench text stays authoritative, the rest of
-        // the viewport wires up as before.
-        try {
-          const factory = (render as { createRangeShell?: typeof import('../../../render/index.js').createRangeShell }).createRangeShell;
-          const sceneRoot = view.scene?.context?.scene;
-          if (typeof factory === 'function' && sceneRoot !== undefined) {
-            const rangeShell = factory(0);
-            rangeShell.setVisible(false);
-            sceneRoot.add(rangeShell.mesh);
-            rangeShellRef.current = rangeShell;
-          }
-        } catch {
-          // Shell attach failed — proceed without it; bench text is authoritative.
-          rangeShellRef.current?.dispose();
-          rangeShellRef.current = null;
-        }
+        // Range-shell factory + scene root (best-effort — a stubbed render
+        // module without them just skips the 3D rings; the overlay labels stay).
+        const factory = (render as { createRangeShell?: typeof import('../../../render/index.js').createRangeShell }).createRangeShell;
+        const sceneRoot = view.scene?.context?.scene;
+        const shells = rangeShellsRef.current;
         // Override the render's default focus source (last-picked) so the F key
-        // slides to the ROSTER'S selection — CP1 wiring per the S01 followUp.
+        // slides to the ROSTER'S selection.
         view.camera.setFocusSource(() => {
           const id = latest.current.selectedId;
           if (id === null) return null;
           const p = latest.current.positionOf(id);
           return p === null ? null : [p.x, p.y, p.z];
         });
-        // CP2 ring + SESSION-07 range shell: reproject every frame so both
-        // overlays stay glued to the world as the camera orbits. Compare
-        // against the last value before writing to the signal — else every
-        // RAF thrashes Preact's re-render pass. The shell mutates its mesh
-        // directly (no signal, no DOM churn).
-        const reprojectRing = (): void => {
-          const preview = latest.current.aoePreview;
-          const prev = ring.value;
-          const next =
-            preview === null
-              ? null
-              : aoeRingProjection(view.worldToScreen, preview.center, preview.radius);
-          const same =
-            (prev === null && next === null) ||
-            (prev !== null &&
-              next !== null &&
-              prev.cx === next.cx &&
-              prev.cy === next.cy &&
-              prev.r === next.r);
-          if (!same) ring.value = next;
-          const range = latest.current.rangePreview;
-          const shell = rangeShellRef.current;
-          if (shell !== null) {
-            if (range === null) {
-              shell.setVisible(false);
-            } else {
-              shell.setCenter(range.center.x, range.center.y, range.center.z);
-              shell.setRadius(range.radius);
-              shell.setVisible(true);
+
+        let lastSig = '';
+        // Reconcile the range-shell map against the active shooter's envelopes.
+        const reconcileShells = (previews: readonly RangePreview[]): void => {
+          if (typeof factory !== 'function' || sceneRoot === undefined) return;
+          const seen = new Set<string>();
+          for (const p of previews) {
+            seen.add(p.key);
+            let shell = shells.get(p.key);
+            if (shell === undefined) {
+              shell = factory(p.radius);
+              sceneRoot.add(shell.mesh);
+              shells.set(p.key, shell);
+            }
+            shell.setCenter(p.center.x, p.center.y, p.center.z);
+            shell.setRadius(p.radius);
+            shell.setVisible(true);
+          }
+          for (const [key, shell] of shells) {
+            if (!seen.has(key)) {
+              try {
+                sceneRoot.remove(shell.mesh);
+              } catch {
+                // Scene teardown ordering can put the scene beyond reach.
+              }
+              shell.dispose();
+              shells.delete(key);
             }
           }
-          if (hasRaf) ringRaf = requestAnimationFrame(reprojectRing);
         };
-        if (hasRaf) ringRaf = requestAnimationFrame(reprojectRing);
-        else reprojectRing();
+
+        // Project the plan overlay each frame so lines/rings/labels stay glued
+        // to the world as the camera orbits. Only write the signal when the
+        // projection actually changes (see `overlaySignature`).
+        const reproject = (): void => {
+          const l = latest.current;
+          const w2s = view.worldToScreen;
+
+          reconcileShells(l.rangePreviews);
+
+          const solutions: FieldSolutionMark[] = [];
+          for (const s of l.fireSolutions) {
+            const seg = projectSegment(w2s, s.source, s.target);
+            if (seg !== null) solutions.push({ solution: s, seg });
+          }
+
+          const rangeLabels: FieldRangeLabel[] = [];
+          for (const p of l.rangePreviews) {
+            const ring = aoeRingProjection(w2s, p.center, p.radius);
+            if (ring === null) continue;
+            rangeLabels.push({
+              key: p.key,
+              text: p.label,
+              active: p.active,
+              point: { x: ring.cx, y: ring.cy - ring.r },
+            });
+          }
+
+          let selected: FieldCallout | null = null;
+          if (l.selectedId !== null) {
+            const pos = l.positionOf(l.selectedId);
+            if (pos !== null) {
+              const pt = projectPoint(w2s, pos);
+              if (pt !== null) {
+                selected = { key: 'sel', text: `◈ ${l.focusLabel}`, tone: 'cyan', point: pt };
+              }
+            }
+          }
+
+          let aoeRing: AoeRingProjection | null = null;
+          let aoeCallout: FieldCallout | null = null;
+          if (l.aoePreview !== null) {
+            aoeRing = aoeRingProjection(w2s, l.aoePreview.center, l.aoePreview.radius);
+            if (aoeRing !== null) {
+              aoeCallout = {
+                key: 'aoe',
+                text: `◉ ${l.aoePreview.label} · r${String(Math.round(l.aoePreview.radius))}`,
+                tone: 'red',
+                point: { x: aoeRing.cx, y: aoeRing.cy - aoeRing.r - 10 },
+              };
+            }
+          }
+
+          const aoeFriendliesProj: FieldCallout[] = [];
+          l.aoeFriendlies.forEach((pos, i) => {
+            const pt = projectPoint(w2s, pos);
+            if (pt !== null) {
+              aoeFriendliesProj.push({
+                key: `frn${String(i)}`,
+                text: '⚠ FRIENDLY IN AoE',
+                tone: 'amber',
+                point: { x: pt.x, y: pt.y + 20 },
+              });
+            }
+          });
+
+          const next: OverlayProjection = {
+            solutions,
+            rangeLabels,
+            selected,
+            aoeRing,
+            aoeCallout,
+            aoeFriendlies: aoeFriendliesProj,
+          };
+          const sig = overlaySignature(next);
+          if (sig !== lastSig) {
+            lastSig = sig;
+            overlay.value = next;
+          }
+          if (hasRaf) ringRaf = requestAnimationFrame(reproject);
+        };
+        if (hasRaf) ringRaf = requestAnimationFrame(reproject);
+        else reproject();
         status.value = 'ready';
       } catch {
         if (!cancelled) status.value = 'failed';
@@ -206,20 +344,20 @@ export function Viewport(props: ViewportProps) {
       if (ringRaf !== 0 && typeof cancelAnimationFrame === 'function') {
         cancelAnimationFrame(ringRaf);
       }
-      const shell = rangeShellRef.current;
+      const shells = rangeShellsRef.current;
       const view = viewRef.current;
-      if (shell !== null) {
+      for (const shell of shells.values()) {
         try {
           view?.scene?.context?.scene?.remove(shell.mesh);
         } catch {
-          // Scene teardown ordering can put the scene beyond reach; the
-          // dispose() below still releases the shell's own resources.
+          // Scene teardown ordering can put the scene beyond reach; dispose()
+          // below still releases the shell's own resources.
         }
         shell.dispose();
       }
+      shells.clear();
       playerRef.current?.dispose();
       viewRef.current?.dispose();
-      rangeShellRef.current = null;
       playerRef.current = null;
       viewRef.current = null;
     };
@@ -233,12 +371,8 @@ export function Viewport(props: ViewportProps) {
   }, [state]);
 
   // Resolve: play the attack beat, then advance — held for a minimum readable
-  // duration first (D-ATK-RESOLVE-MIN-HOLD, playtest-feedback-03 SESSION-01
-  // CP3) so `attack-resolve` never flashes past, even under reduced motion or
-  // an empty beat (all HOLD / everything out of range). Reduced motion (or a
-  // render layer that never came up) still skips the ANIMATION but now waits
-  // out the same floor before handing off; a real playback holds until
-  // whichever is LATER — its own `onDone` or the floor.
+  // duration first (D-ATK-RESOLVE-MIN-HOLD) so `attack-resolve` never flashes
+  // past, even under reduced motion or an empty beat.
   useEffect(() => {
     if (phase !== 'attack-resolve' || attackBeat === null) return;
     let done = false;
@@ -294,7 +428,8 @@ export function Viewport(props: ViewportProps) {
     view.focusBody(id);
   };
 
-  const currentRing = ring.value;
+  const isPlan = phase === 'attack-plan';
+  const ov = overlay.value;
 
   return (
     <div class="viewport" style="position:relative" data-testid="attack-viewport">
@@ -304,40 +439,21 @@ export function Viewport(props: ViewportProps) {
         style="display:block;width:100%;height:100%;cursor:crosshair"
       />
 
-      {aoePreview !== null && phase === 'attack-plan' && currentRing !== null ? (
-        <svg
-          data-testid="aoe-ring"
-          data-ring-cx={String(currentRing.cx)}
-          data-ring-cy={String(currentRing.cy)}
-          data-ring-r={String(currentRing.r)}
-          aria-hidden="true"
-          style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;overflow:visible"
-        >
-          <circle
-            cx={currentRing.cx}
-            cy={currentRing.cy}
-            r={currentRing.r}
-            fill="none"
-            stroke="var(--red)"
-            stroke-width="1.5"
-            stroke-dasharray="6 4"
-            opacity="0.85"
-          />
-        </svg>
+      {isPlan ? (
+        <FieldOverlay
+          solutions={ov.solutions}
+          rangeLabels={ov.rangeLabels}
+          selected={ov.selected}
+          aoeRing={ov.aoeRing}
+          aoeCallout={ov.aoeCallout}
+          aoeFriendlies={ov.aoeFriendlies}
+          legendFleets={legendFleets}
+          turn={turn}
+          arenaRadius={state.arena.radius}
+        />
       ) : null}
 
-      {aoePreview !== null && phase === 'attack-plan' ? (
-        <div
-          data-testid="aoe-preview"
-          style="position:absolute;left:12px;top:12px;padding:6px 10px;border:1px solid var(--red);background:rgba(5,7,10,.82);border-radius:var(--r)"
-        >
-          <span class="mono-xs c-red" style="letter-spacing:.14em">
-            {`◉ MISSILE AoE PREVIEW · ${aoePreview.label} · r${String(Math.round(aoePreview.radius))}`}
-          </span>
-        </div>
-      ) : null}
-
-      {phase === 'attack-plan' ? (
+      {isPlan ? (
         <CameraHud
           onReset={onReset}
           onFocus={onFocus}

@@ -17,6 +17,7 @@ import type {
   BlindShipView,
   BodyId,
   CalledShotTarget,
+  HitChanceBreakdown,
   ResolutionTrace,
   Vec3,
 } from '../../../sim/index.js';
@@ -382,57 +383,79 @@ export const aoeRingProjection = (
   return { cx: c.x, cy: c.y, r };
 };
 
-// ---- Range preview + hit-chance tone (S07) --------------------------------
+// ---- Range envelopes + fire solutions (SESSION-03) ------------------------
 
-/** Shooter world position + a weapon's engagement radius — the `RangeShell` feed. */
+/**
+ * One live weapon range envelope for the active shooter (D-TA-WIRE-RANGE). The
+ * viewport reconciles exactly one `RangeShell` per `key`; the field overlay
+ * renders one label per envelope. `active` marks the fire slot the player is
+ * currently interacting with — highlighted through the DOM label/tone, never
+ * gameplay meaning in opacity alone. Missile racks are NOT envelopes (no line-
+ * of-sight range); their AoE ring is a separate overlay (§4.6). Computes NO
+ * to-hit number (arch §13.3).
+ */
 export interface RangePreview {
+  readonly key: string;
+  readonly slot: FireSlot;
+  /** Authored weapon name + numeric radius, e.g. `PHASE BEAM 260`. */
+  readonly label: string;
   readonly center: Vec3;
   readonly radius: number;
+  readonly active: boolean;
 }
 
 /**
- * Geometry the tactical viewport hands to the `RangeShell` while a weapon slot
- * is selected: the shooter's post-movement position and the weapon's
- * `SimWeapon.range` (world units). Missile racks return `null` — a missile has
- * no line-of-sight range envelope; its AoE ring is a separate overlay (§4.6).
- * A dead shooter / missing shooter view / unknown slot index returns `null` so
- * the shell hides on any degenerate input rather than drawing a stale envelope.
- * Computes NO to-hit number — hit chance stays single-sourced through
- * `hitChanceFor` (arch §13.3).
+ * Every live weapon envelope for `shooterId`, in stable slot order. Each label
+ * is the authored component name (SESSION-01 display identity) plus the numeric
+ * radius, with an index fallback for legacy fixtures. `activeSlot` marks the
+ * matching envelope `active`. Missile racks are excluded (no range envelope). A
+ * missing shooter / body position yields an empty list — the overlay hides
+ * rather than drawing a stale envelope. Computes NO to-hit number.
  */
-export const rangePreviewFor = (
+export const rangePreviewsFor = (
   view: BlindMatchView,
-  slot: FireSlot | null,
-): RangePreview | null => {
-  if (slot === null || slot.kind !== 'weapon') return null;
-  const shooter = shipViewOf(view, slot.shooterId);
-  if (shooter === undefined) return null;
-  const center = positionOf(view, slot.shooterId);
-  if (center === undefined) return null;
-  const weapon = shooter.ship.weapons[slot.index];
-  if (weapon === undefined) return null;
-  return { center, radius: weapon.range };
+  shooterId: BodyId | null,
+  activeSlot: FireSlot | null,
+): readonly RangePreview[] => {
+  if (shooterId === null) return [];
+  const shooter = shipViewOf(view, shooterId);
+  if (shooter === undefined) return [];
+  const center = positionOf(view, shooterId);
+  if (center === undefined) return [];
+  const previews: RangePreview[] = [];
+  shooter.weaponAlive.forEach((alive, i) => {
+    if (!alive) return;
+    const weapon = shooter.ship.weapons[i];
+    if (weapon === undefined) return;
+    const name = weapon.display?.name ?? `W${String(i + 1)}`;
+    previews.push({
+      key: `${String(shooterId)}:w${String(i)}`,
+      slot: { shooterId, kind: 'weapon', index: i },
+      label: `${name} ${String(Math.round(weapon.range))}`,
+      center,
+      radius: weapon.range,
+      active:
+        activeSlot !== null &&
+        activeSlot.kind === 'weapon' &&
+        activeSlot.shooterId === shooterId &&
+        activeSlot.index === i,
+    });
+  });
+  return previews;
 };
 
 /**
- * Default engagement shell for a selected ship: its longest-range LIVE weapon
- * (world units), centered on its post-movement position. Null for a missing,
- * dead, or unselected ship, or a ship with no live weapon (missile-only or all
- * weapons destroyed — a missile rack has no line-of-sight range envelope,
- * mirroring `rangePreviewFor`). Computes NO to-hit number — hit chance stays
- * single-sourced through `hitChanceFor` (arch §13.3). This is the ship-level
- * default the screen shows before any weapon slot is focused; a focused slot's
- * `rangePreviewFor` takes precedence (playtest-feedback-03 SESSION-01).
+ * The longest live-weapon range of a ship (world units), or `null` for a
+ * missing / dead / weaponless ship. Feeds the left-column engagement readout —
+ * a single number, no geometry. Computes NO to-hit number.
  */
-export const shipRangePreview = (
+export const longestLiveWeaponRange = (
   view: BlindMatchView,
   shipId: BodyId | null,
-): RangePreview | null => {
+): number | null => {
   if (shipId === null) return null;
   const ship = shipViewOf(view, shipId);
   if (ship === undefined || ship.hull <= 0) return null;
-  const center = positionOf(view, shipId);
-  if (center === undefined) return null;
   let maxRange: number | undefined;
   ship.weaponAlive.forEach((alive, i) => {
     if (!alive) return;
@@ -441,7 +464,135 @@ export const shipRangePreview = (
       maxRange = range;
     }
   });
-  return maxRange === undefined ? null : { center, radius: maxRange };
+  return maxRange ?? null;
+};
+
+/**
+ * One staged fire assignment projected to a plan-time firing solution — the
+ * cyan / red line + midpoint pill the field overlay draws. Derived ONLY from the
+ * local player's staged assignments and the controller's published hit-chance
+ * function; opponent pending plans are structurally unreachable here (blind
+ * commit). Carries NO to-hit number of its own — a weapon's `finalChance` is
+ * `hitChanceFor(...).final` verbatim (arch §13.3); a missile carries none.
+ */
+export interface FireSolution {
+  readonly key: string;
+  readonly kind: 'weapon' | 'missile';
+  readonly status: 'in-range' | 'out-of-range' | 'launch';
+  readonly source: Vec3;
+  readonly target: Vec3;
+  /** Short pill label: `W1` for a weapon, `M1 · TALON` for a missile launch. */
+  readonly label: string;
+  /** Published final hit chance (0..1) for an in-range weapon only. */
+  readonly finalChance?: number;
+  readonly distance: number;
+  /** Weapon engagement radius (world units); absent for a missile launch. */
+  readonly range?: number;
+}
+
+/**
+ * Fire solutions for the player's staged assignments — one per resolvable
+ * assignment (shooter, target, both positioned). Weapon in range →
+ * `finalChance = hitChanceFor(...).final`; weapon past `weapon.range` →
+ * `out-of-range` with no misleading percent; missile → `launch` with the
+ * authored rack name and no fake to-hit. Unresolvable assignments (missing
+ * shooter / target / position / slot) are dropped. `hitChanceFor` is the sole
+ * hit-chance source — never recomputed here — and only the local player's
+ * assignments are ever inspected.
+ */
+export const fireSolutionsFor = (
+  view: BlindMatchView,
+  assignments: readonly Assignment[],
+  hitChanceFor: (
+    shooterId: BodyId,
+    targetId: BodyId,
+    weaponIndex: number,
+  ) => HitChanceBreakdown,
+): readonly FireSolution[] => {
+  const solutions: FireSolution[] = [];
+  for (const a of assignments) {
+    const shooter = shipViewOf(view, a.shooterId);
+    if (shooter === undefined) continue;
+    const source = positionOf(view, a.shooterId);
+    const target = positionOf(view, a.targetId);
+    if (source === undefined || target === undefined) continue;
+    const dist = distance(source, target);
+    if (a.weaponIndex !== undefined) {
+      const weapon = shooter.ship.weapons[a.weaponIndex];
+      if (weapon === undefined) continue;
+      const outOfRange = dist > weapon.range;
+      solutions.push({
+        key: `${String(a.shooterId)}:w${String(a.weaponIndex)}`,
+        kind: 'weapon',
+        status: outOfRange ? 'out-of-range' : 'in-range',
+        source,
+        target,
+        label: `W${String(a.weaponIndex + 1)}`,
+        ...(outOfRange
+          ? {}
+          : { finalChance: hitChanceFor(a.shooterId, a.targetId, a.weaponIndex).final }),
+        distance: dist,
+        range: weapon.range,
+      });
+    } else if (a.missileIndex !== undefined) {
+      const rack = shooter.ship.missiles[a.missileIndex];
+      const name = rack?.display?.name ?? `RACK M${String(a.missileIndex + 1)}`;
+      solutions.push({
+        key: `${String(a.shooterId)}:m${String(a.missileIndex)}`,
+        kind: 'missile',
+        status: 'launch',
+        source,
+        target,
+        label: `M${String(a.missileIndex + 1)} · ${name}`,
+        distance: dist,
+      });
+    }
+  }
+  return solutions;
+};
+
+// ---- World→screen projection helpers (SESSION-03) -------------------------
+
+/** A projected point in CSS-pixel space. */
+export interface ScreenPoint {
+  readonly x: number;
+  readonly y: number;
+}
+
+/** A projected line segment plus its midpoint, all in CSS-pixel space. */
+export interface ScreenSegment {
+  readonly x1: number;
+  readonly y1: number;
+  readonly x2: number;
+  readonly y2: number;
+  readonly mx: number;
+  readonly my: number;
+}
+
+type WorldToScreen = (
+  pos: readonly [number, number, number],
+) => { readonly x: number; readonly y: number } | null;
+
+/** Project one world point; `null` when behind the camera (hide, never draw stale). */
+export const projectPoint = (worldToScreen: WorldToScreen, p: Vec3): ScreenPoint | null => {
+  const s = worldToScreen([p.x, p.y, p.z]);
+  return s === null ? null : { x: s.x, y: s.y };
+};
+
+/**
+ * Project a world segment to a pixel line + midpoint. `null` when EITHER
+ * endpoint is behind the camera — the overlay hides the whole line rather than
+ * drawing a half-projected artifact.
+ */
+export const projectSegment = (
+  worldToScreen: WorldToScreen,
+  a: Vec3,
+  b: Vec3,
+): ScreenSegment | null => {
+  const p = projectPoint(worldToScreen, a);
+  const q = projectPoint(worldToScreen, b);
+  if (p === null || q === null) return null;
+  return { x1: p.x, y1: p.y, x2: q.x, y2: q.y, mx: (p.x + q.x) / 2, my: (p.y + q.y) / 2 };
 };
 
 /**

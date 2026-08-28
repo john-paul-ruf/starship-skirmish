@@ -22,11 +22,11 @@ import { useSignal } from '@preact/signals';
 import { useEffect } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 
-import type { BodyId, CalledShotTarget } from '../../sim/index.js';
+import type { BodyId, CalledShotTarget, Vec3 } from '../../sim/index.js';
 
 import { FleetRoster, ShipInspector, fleetLabel, groupByFleet } from '../components/roster/index.js';
 import type { RosterEntry } from '../components/roster/index.js';
-import { FleetGlyph } from '../components/index.js';
+import { FleetGlyph, FLEET_META } from '../components/index.js';
 import type { FleetId } from '../components/index.js';
 import { useApp } from '../appContext.js';
 import { useMatch } from '../matchContext.js';
@@ -44,12 +44,13 @@ import {
   aoeOverlapsFriendly,
   assignmentGate,
   fireContext,
+  fireSolutionsFor,
   friendlyShips,
   lastResolvedLogRows,
   liveFireSlots,
+  longestLiveWeaponRange,
   positionOf as positionOfInView,
-  rangePreviewFor,
-  shipRangePreview,
+  rangePreviewsFor,
   shipViewOf,
   slotKey,
   toAttackPlans,
@@ -178,7 +179,11 @@ export function TacticalAttack() {
             reducedMotion={app.reducedMotion.value}
             onResolveDone={() => match.resolveAnimationDone()}
             aoePreview={null}
-            rangePreview={null}
+            aoeFriendlies={[]}
+            rangePreviews={[]}
+            fireSolutions={[]}
+            legendFleets={[]}
+            turn={match.turn.value}
             selectedId={null}
             positionOf={() => null}
             onPickBody={() => undefined}
@@ -253,7 +258,11 @@ export function TacticalAttack() {
           reducedMotion={app.reducedMotion.value}
           onResolveDone={() => match.resolveAnimationDone()}
           aoePreview={null}
-          rangePreview={null}
+          aoeFriendlies={[]}
+          rangePreviews={[]}
+          fireSolutions={[]}
+          legendFleets={[]}
+          turn={match.turn.value}
           selectedId={null}
           positionOf={() => null}
           onPickBody={() => undefined}
@@ -309,9 +318,12 @@ export function TacticalAttack() {
 
   // Informational AoE ring for the first staged missile: the label + the blast
   // center in world coords (Viewport projects it via `worldToScreen`, hides on
-  // null). The banner carries the authoritative geometry — this ring never
-  // gates commit and never contradicts `aoeOverlapsFriendly`.
+  // null), plus the world positions of any friendlies inside that blast (the
+  // overlay draws `⚠ FRIENDLY IN AoE` on each). The banner carries the
+  // authoritative geometry — this ring never gates commit and never contradicts
+  // `aoeOverlapsFriendly`.
   let aoePreview: AoePreview | null = null;
+  let aoeFriendlies: Vec3[] = [];
   for (const a of staged) {
     if (a.missileIndex === undefined) continue;
     const shooter = shipViewOf(view, a.shooterId);
@@ -324,21 +336,52 @@ export function TacticalAttack() {
       radius: rack.aoeRadius,
       center,
     };
+    const overlap = aoeOverlapsFriendly(a, view);
+    if (overlap !== null) {
+      aoeFriendlies = overlap.hits
+        .map((h) => positionOfInView(view, h.friendly.bodyId))
+        .filter((p): p is Vec3 => p !== undefined);
+    }
     break;
   }
 
-  // SESSION-07 — range shell geometry for whichever weapon slot the player is
-  // currently interacting with (WeaponBench emits focus events to update it).
-  // The shell hides on any degenerate input (shooter destroyed, missile slot,
-  // etc.) via `rangePreviewFor`'s null path — the bench text stays authoritative.
-  // playtest-feedback-03 SESSION-01 — before any slot is focused, default to
-  // the selected ship's longest-range live weapon (`shipRangePreview`) so the
-  // range shell appears the moment a ship is selected, no slot focus required
-  // (D-ATK-ORIENTATION). A focused slot always overrides the ship-level default.
-  const rangePreview =
-    selectedSlot.value !== null
-      ? rangePreviewFor(view, selectedSlot.value)
-      : shipRangePreview(view, selectedId.value);
+  // D-TA-WIRE-RANGE — every live weapon envelope of the ACTIVE SHOOTER (the ship
+  // whose rail is open). The viewport draws one wire ring per envelope; the
+  // overlay labels each with the authored weapon name + radius and brightens the
+  // slot the player is interacting with. No to-hit number here (arch §13.3).
+  const rangePreviews = rangePreviewsFor(
+    view,
+    activeShooter !== null ? activeShooter.bodyId : null,
+    selectedSlot.value,
+  );
+
+  // D-TA-LIVE-OVERLAYS — the player's staged firing solutions (blind commit:
+  // only the local assignments are ever inspected). Weapon percentages come
+  // straight from the controller's `hitChanceFor`; the overlay never recomputes.
+  const fireSolutions = fireSolutionsFor(view, staged, match.hitChanceFor);
+
+  // Living-ship counts per fleet — the field legend's dynamic rows.
+  const legendFleets = (() => {
+    const counts = new Map<number, number>();
+    for (const s of view.ships) {
+      if (s.hull > 0) counts.set(s.fleetId, (counts.get(s.fleetId) ?? 0) + 1);
+    }
+    return [...counts.keys()]
+      .sort((a, b) => a - b)
+      .map((fleetId) => {
+        const fid = fleetIdOrNull(fleetId);
+        return {
+          fleetId,
+          glyph: fid !== null ? FLEET_META[fid].glyph : '◆',
+          label: fleetLabel(fleetId),
+          count: counts.get(fleetId) ?? 0,
+        };
+      });
+  })();
+
+  // Left-column engagement readout follows the SELECTED ship (inspection),
+  // which may differ from the active shooter (D-TA-RAIL-SHOOTER).
+  const selectedRange = longestLiveWeaponRange(view, selectedId.value);
 
   const groups = groupByFleet(view.ships, selfFleetId);
   const roleMap = fireContext(staged, view);
@@ -417,8 +460,8 @@ export function TacticalAttack() {
           </div>
           <ShipInspector ship={selected} velocity={selectedVelocity} />
           <div class="mono-xs c-dim ta-range-readout" data-testid="ship-range-readout">
-            {rangePreview !== null
-              ? `ENGAGEMENT RANGE ${String(Math.round(rangePreview.radius))}u`
+            {selectedRange !== null
+              ? `ENGAGEMENT RANGE ${String(Math.round(selectedRange))}u`
               : selected !== null
                 ? 'NO LIVE WEAPON RANGE'
                 : 'SELECT A SHIP TO SEE ITS RANGE'}
@@ -436,7 +479,11 @@ export function TacticalAttack() {
             reducedMotion={app.reducedMotion.value}
             onResolveDone={() => match.resolveAnimationDone()}
             aoePreview={aoePreview}
-            rangePreview={rangePreview}
+            aoeFriendlies={aoeFriendlies}
+            rangePreviews={rangePreviews}
+            fireSolutions={fireSolutions}
+            legendFleets={legendFleets}
+            turn={view.turn}
             selectedId={selectedId.value}
             positionOf={positionForFocus}
             onPickBody={(id) => {
