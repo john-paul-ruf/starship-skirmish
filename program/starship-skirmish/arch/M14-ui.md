@@ -481,12 +481,13 @@ Dependency direction unchanged: `ui` reads `sim` types only via `matchContext`
 `screens/tacticalMove → screens/postMatch`) mirrors the existing
 `screens/tacticalAttack → screens/postMatch` seam and stays within M14.
 
-<!-- SESSION-01 · playtest-feedback-04 · M14 tactical-attack delta (incl. M16 hitChanceFor note — Roshi to redistribute) -->
-# SESSION-01 — arch delta
+<!-- SESSION-01 · playtest-feedback-04 · M14 tactical-attack delta -->
+## M14 UI — tactical-attack model · public-selector additions (SESSION-01 · playtest-feedback-04)
 
-## M14 — UI · tactical-attack model (`src/ui/screens/tacticalAttack/model.ts`)
-
-Two new pure selectors added to the public surface:
+Two new pure selectors added to `src/ui/screens/tacticalAttack/model.ts`'s
+public surface. Both are node-testable (no `.tsx` reach); both preserve the
+`ui ↛ sim/physics|sim/rules` boundary — sim types only, via existing
+`../postMatch/model.js` re-exports.
 
 ### `weaponOutOfRange(view, shooterId, weaponIndex, targetId): boolean`
 
@@ -496,10 +497,16 @@ resolver in `sim/rules/attack.ts` refuses that shot outright
 OUT OF RANGE instead of the (now-honest) 0% published by `hitChanceFor`.
 
 - A range **comparison** (`mathx.distance` vs `weapon.range`), NOT a to-hit
-  number — arch §13.3 single-source rule intact (a gate, not a second formula).
+  number — architecture §13.3 single-source rule intact (a gate, not a
+  second formula; formula still lives once in `sim/rules` per D-HITCHANCE
+  in `arch/M09-rules.md`).
 - Missile slots → `false` (no line-of-sight envelope; AoE is a separate channel).
 - Missing shooter view / missing body / unknown weapon index → `false`.
 - Strict `>` — mirrors the resolver: distance === weapon.range still fires.
+
+Paired app-side gate: see `arch/M16-app.md` SESSION-01 · playtest-feedback-04
+— the same out-of-range refusal now also appears in `hitChanceFor`'s
+`{ final: 0 }`, so the bench's OUT OF RANGE and the `%` reader agree.
 
 ### `lastResolvedLogRows(trace): { rows: readonly LogRow[]; turn: number | null }`
 
@@ -518,11 +525,33 @@ SESSION-02 on the Move screen — this signature is that session's contract.
   `liveLogRows`) reads empty the whole time. Surface what actually
   happened, not what is still being planned.
 
-## M16 — App · match controller (`src/app/match/controller.ts`)
+**Supersedes** the `liveLogRows(trace, currentTurn)` selector introduced by
+playtest-feedback-02 · SESSION-04 (earlier in this file). `liveLogRows` is
+LEFT exported at S01's request as an atomic swap point for SESSION-02, then
+consumed there — it is now dead in `src/**` but still referenced by two
+test files (`tests/unit/ui/tacticalAttack/combatLog.test.ts` and the
+cross-screen `tests/unit/ui/inMatchLayout.test.ts`). A prune is a follow-up
+lease, not landed here.
 
-`hitChanceFor` now mirrors the resolver's out-of-range refusal in addition
-to the pre-existing `targetEvasion` composition — a shot ordered past
-`weapon.range` returns `{ base: weapon.accuracy, rangeFactor: 0,
-velocityFactor: 0, evasionFactor: 0, final: 0 }` instead of a HIT_FLOOR-
-clamped 5%. In-range HIT_FLOOR behaviour is unchanged (a genuine 5% for
-low-odds shots still applies).
+### D-INFOTIP-TOPLAYER — InfoTip escape-clip (SESSION-03 · playtest-feedback-04)
+
+Design-decision reconciliation for the SESSION-06 · playtest-feedback-01
+InfoTip fragment earlier in this file. **`InfoTipProps` and the `InfoTip`
+signature are unchanged** — this is a CSS-internal fix inside
+`src/ui/styles/components.css` §19 that all current and future consumers
+inherit at once, so no new arch fragment was declared. Noted here only so
+future readers of §19 don't try to reconcile the SESSION-06 "additive-only,
+no existing rule is edited" claim (true at S06 landing) against the current
+source.
+
+- `.tip-pop` is now `position: fixed` — escapes any ancestor `overflow`
+  clip (the Shipyard's `.col-scroll` was the trigger case). `z-index: 40`
+  is unchanged; still below the modal-scrim (100) / modal (101) layer.
+- Adjacency uses CSS Anchor Positioning: `anchor-name: --tip-anchor` on
+  `.tip-dot`, `position-anchor: --tip-anchor` on `.tip-pop`,
+  `anchor-scope: --tip-anchor` on `.tip` so per-page duplicate `.tip-dot`
+  elements don't race to the first one in tree order.
+- Position-try-fallbacks provide auto-flip near viewport edges; degraded
+  browsers without anchor-positioning support fall through to a legible
+  static position (never hidden — NFR-A11y intent preserved).
+- Vnode shape unchanged. Hooks-free. Component tests untouched.

@@ -220,3 +220,53 @@ kickoff deferred one microtask so startMatch sets activeMatch before the first n
   needs `maxAccel` propagated (or `ui`/test scaffolds it) to see genuine
   curved arcs at runtime. **→ Forge granularity feedback: grant a session the
   `resolveFleet.ts` / `config.ts` line, or add a dedicated propagation session.**
+
+<!-- SESSION-01 · playtest-feedback-04 · M16 controller · hitChanceFor out-of-range gate -->
+## M16 App — `hitChanceFor` out-of-range gate (SESSION-01 · playtest-feedback-04)
+
+Behaviour mirror on the `MatchController.hitChanceFor` seam in
+`src/app/match/controller.ts` — NOT a new formula. A shot ordered past
+`weapon.range` now returns:
+
+```ts
+{ base: weapon.accuracy, rangeFactor: 0, velocityFactor: 0, evasionFactor: 0, final: 0 }
+```
+
+instead of the pre-existing HIT_FLOOR-clamped 5%. The resolver in
+`sim/rules/attack.ts` already refuses that shot outright
+(`if (range > weapon.range) continue;`), so the seam is being made honest,
+not authoritative.
+
+### Load-bearing invariants
+
+- **D-HITCHANCE-SEAM intact** (see `arch/M14-ui.md` SESSION-01 tactical-skirmish
+  fragment): the UI still consumes `hitChanceFor` via
+  `MatchController.hitChanceFor(shooter,target,weaponIndex)` and never
+  recomputes.
+- **D-HITCHANCE / architecture §13.3 single-source rule intact** (see
+  `arch/M09-rules.md` D-HITCHANCE): the to-hit **formula** still lives once in
+  `src/sim/rules/damage.ts` (`hitChance` + `RANGE_EXP` / `VELOCITY_REF` /
+  `HIT_FLOOR` / `HIT_CEIL`). The controller-side gate is a **range comparison**
+  that decides whether to invoke the formula, not a competing formula.
+- **In-range HIT_FLOOR behaviour unchanged.** A genuinely-hard in-range shot
+  still clamps to 5% — the change only stops the floor from lying about shots
+  the resolver will never fire.
+- **Blind commit (FR-17) untouched.** The gate reads the shooter's own view;
+  no opponent-plan surface reached, no `MatchState` mutation.
+
+### Paired UI-side selector
+
+`arch/M14-ui.md` SESSION-01 · playtest-feedback-04 adds
+`weaponOutOfRange(view, shooterId, weaponIndex, targetId): boolean` — a
+sibling range comparison the WeaponBench reads to render an explicit
+**OUT OF RANGE** state (rather than a `0%` cell). Both gates use the same
+`mathx.distance` vs `weapon.range` comparison and the same strict `>` so
+the bench's OUT OF RANGE and `hitChanceFor`'s `final: 0` are unified
+end-to-end.
+
+### No public-API change
+
+The `HitChanceBreakdown` shape (`base, rangeFactor, velocityFactor,
+evasionFactor, final`) and the `MatchController.hitChanceFor` signature are
+untouched. Downstream (WeaponBench + any future consumer) reads the same
+type.

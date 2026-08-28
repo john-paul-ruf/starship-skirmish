@@ -267,3 +267,189 @@ recommends; a human folds them in by hand once the count justifies it. Vow
    prior proposal and cites which.
 3. `FORGE.md`, `MU.md`, `ENSO.md`, `JIKIJITSU.md` — byte-identical, not
    touched.
+
+---
+
+## 2026-08-28 — Cycle 3 — `playtest-feedback-04`
+
+**Envelope in:** Final Report at
+`program/starship-skirmish/prompts/playtest-feedback-04/FINAL-REPORT.md`; 3/3
+sessions `done` (S01–S03) across two waves (S01 ∥ S03, then S02 rolling into
+S01's freed slot alongside S03); 9 Mu checkpoint commits (S01 4/4, S02 2/2,
+S03 3/3); 1 Jikijitsu arch commit (`89427c3`, `arch/M14-ui.md` with a
+mid-run marker Jikijitsu explicitly flagged for Roshi to redistribute);
+post-merge unit **1457 pass / 1 fail** — the fail is the feature-caused
+`tests/unit/ui/inMatchLayout.test.ts:186-188` regex-lock on the OLD
+`liveLogRows` literal, which is outside every session's `Owns`; app-side
+typecheck clean, lint clean, build clean, e2e S01 11/11 + S02 new spec
+pass (3 pre-existing chromium "Set to Coast" timeouts reproduced on
+baseline). Same pre-existing encyclopedia `TS6142` (`tsconfig.node.json` +
+`--jsx`) still red at HEAD — now cycle 3 of independent observation.
+Zero lease violations, zero checkpoint shortfalls, zero wave-plan
+corrections.
+
+### Reconciled this run
+
+- **`arch/M14-ui.md`** — The SESSION-01 · playtest-feedback-04 fragment
+  that Jikijitsu appended mid-run was a mixed-module delta: `## M14 — UI ·
+  tactical-attack model` and `## M16 — App · match controller` under one
+  M14 marker, with the marker itself flagging
+  `(incl. M16 hitChanceFor note — Roshi to redistribute)`. Split per
+  Jikijitsu's ask: the M14 selectors (`weaponOutOfRange` +
+  `lastResolvedLogRows`) stay in `arch/M14-ui.md` under a clean
+  `SESSION-01 · playtest-feedback-04 · M14 tactical-attack delta` marker;
+  the M16 `hitChanceFor` gate note moves to `arch/M16-app.md` under its own
+  `SESSION-01 · playtest-feedback-04 · M16 controller · hitChanceFor
+  out-of-range gate` marker. Prose grounded in `89427c3`, the S01 handoff
+  in `STATE.md`, and Final Report §Architecture impact — content unchanged
+  by the move; only the file boundary is corrected. Added a
+  cross-reference in each direction so a reader hitting one finds the other
+  without hunting.
+- **`arch/M14-ui.md`** — Added a `lastResolvedLogRows` "**Supersedes**"
+  note pointing back to the `liveLogRows` selector introduced by
+  playtest-feedback-02 · SESSION-04 earlier in the same file. Two selectors
+  now live in the file with overlapping intent; the new one supersedes the
+  old, and Mu handoffs confirm the old is dead in `src/**` but still test-
+  referenced — reader now sees which is current without re-deriving from
+  the two fragments' bodies.
+- **`arch/M14-ui.md`** — Added a **D-INFOTIP-TOPLAYER** reconciliation
+  note under the SESSION-01 · playtest-feedback-04 M14 fragment. The Final
+  Report explicitly waived a full arch fragment for the S03 InfoTip fix
+  ("`InfoTip` public API unchanged; no arch fragment needed"), and I
+  honoured that. But the SESSION-06 · playtest-feedback-01 InfoTip fragment
+  earlier in the same file describes §19 CSS as "additive-only, no existing
+  rule is edited" — true at S06 landing, no longer true now that S03
+  materially edited `.tip` / `.tip-dot` / `.tip-pop` (position: fixed +
+  CSS anchor positioning). A reader today would trip on that. Grounded the
+  reconciliation in current source at
+  `src/ui/styles/components.css:990-1046` and commits `65dddc6`,
+  `3146a95`, `bbb84eb`. No new design decision invented; captured only
+  what S03 already committed under the D-INFOTIP-TOPLAYER name in its
+  handoff.
+
+### Not reconciled — deliberately
+
+- **`arch/M14-ui.md` — SESSION-06 · playtest-feedback-01 fragment body**
+  itself is NOT rewritten. Its "additive-only, no existing rule is edited"
+  claim was accurate at its landing; retroactively editing it would rewrite
+  history worse than the drift it fixed. The forward-pointing
+  D-INFOTIP-TOPLAYER note in the new SESSION-01 · playtest-feedback-04
+  fragment is the right resolution — records both the S06 state and its
+  S03 supersession without falsifying either.
+- **`arch/M14-ui.md` per-session block structure** — kept intact for the
+  fourth consecutive cycle. Fragments still compose additively; no
+  contradiction across bodies (only the one just resolved via forward
+  pointer). File is now ~570 lines and remains readable in session-timeline
+  order. A top-of-file synopsis stays a Vow-2 bolt-on candidate; revisit if
+  a future cycle finds readers repeatedly compose deltas wrong.
+- **Module Registry `M14` Key Files** — still reads `screens/*,
+  components/*, tokens.css`. This feature added no new files (all edits
+  landed in existing paths). No registry drift signal this cycle.
+- **Module Registry `M13` "Key Files (planned)"** — the drift cycle 1
+  flagged and cycle 2 held on is now cycle 3 of stable-not-growing. This
+  feature did no `render/` work, so the drift did not recur; the `(planned)`
+  hedge still reads honestly. Not promoting from a plan-time snapshot to an
+  as-built list on the strength of no active reader mis-step.
+- **`FORGE-CONFIG.md` Conventions / Custom Rules** — no additions. The
+  "3 cycles is signal" threshold (Vow 4) is not met for anything that would
+  be shaped as a convention. The one 3/3 item this cycle (encyclopedia
+  typecheck baseline) is owner scheduling, not a convention or custom rule,
+  and belongs escalated in the log rather than folded into `FORGE-CONFIG.md`.
+
+### Registry updated
+
+**No.** No new module, no path scope change, no `catalog/**` edit, no
+change to any `Owns` list this cycle.
+
+### Conventions added to `FORGE-CONFIG.md`
+
+**None** this cycle (Vow 4: repetition across ≥3 cycles is the threshold).
+
+### Proposed for the framework — with cycle count
+
+*(These go here, NOT into `FORGE.md`/`MU.md`/`ENSO.md`/`JIKIJITSU.md`. Roshi
+recommends; a human folds them in by hand once the count justifies it. Vow
+3.)*
+
+- **[cycles: 3/3+ — CROSSES PROMOTE THRESHOLD] Owner hygiene —
+  encyclopedia typecheck baseline.** Cycle 1 noted
+  `tests/unit/ui/encyclopedia/export.test.ts:31` (TS6142; `BackupBanner.tsx`
+  imported under a `tsconfig.node` graph with `--jsx` unset) was red at
+  HEAD. Cycle 2 confirmed. Cycle 3 confirms again — S01 and S03 both
+  independently triaged it under Surprises before writing a line, S02's
+  Mu inherited the same red baseline. **Three cycles of independent Mu
+  triage of the same one-line-fix defect argues for scheduling.** This is
+  NOT framework-shaped (not a convention, not a custom rule), so it is not
+  folded into `FORGE-CONFIG.md`. Recommendation to the owner / Forge: land
+  a micro-feature that adds `"jsx": "preserve"` to `tsconfig.node.json` (or
+  narrows its `include` to exclude `.tsx`-importing test files), give it a
+  single-checkpoint session under M01, and stop paying the triage tax on
+  every future Mu. The Final Report already lists this as follow-up #2
+  ("[pre-existing, blocks green typecheck] 1-line M01 fix").
+- **[cycles: 2/3+] Shared/unowned test files that lock literal
+  cross-screen source strings.** Cycle 2 flagged the near-miss:
+  `tests/unit/ui/inMatchLayout.test.ts` regex-locked `.ta-bench-scroll` in
+  `TacticalAttack.tsx`; playtest-feedback-03 · S01 dodged it via a legacy-
+  alias trick. Cycle 3 turned it into a full burn: the same test file
+  regex-locks the OLD `liveLogRows` literal in `TacticalMove.tsx`;
+  playtest-feedback-04 · S02's mandated swap to `lastResolvedLogRows` had
+  no equivalent legacy-alias escape, so `npm run test:unit` shipped 1-red
+  with no session empowered to fix it (file is in NEITHER S01's nor S02's
+  `Owns`). This is a lease-granularity gap, not a Mu error — Final Report
+  §Granularity feedback frames it identically. Suggested framework
+  addition (Forge, once at 3/3+): `FORGE-CONFIG.md` Convention along the
+  lines of "when a test file asserts literal source strings that only two
+  or more session-owned files can produce, that test file MUST be added
+  to the `Owns` of the session most likely to change what it asserts —
+  or, better, the assertion refactored to observe rendered output not
+  source text." Alternative: teach Forge decomposition to auto-scan
+  candidate `Owns` for regex/string locks touching files that will be
+  edited, and either widen the lease or split the test file. Two cycles
+  now; one more instance flips it to promote.
+- **[cycles: 2/3+ · RECEDED — likely resolved by prior toolchain work]
+  Verification-gate reachability (`test:e2e` no-dev-server).** Cycles 1–2
+  observed `test:e2e` structurally unreachable in the Mu sandbox. Cycle 3
+  shows e2e RAN — S01 11/11 (2 new pass), S02 new spec pass, S03 no e2e —
+  because `playwright.config.ts` now carries the `webServer` block that
+  `arch/M16-app.md` SESSION-03 (finite-thrust-movement, cycle earlier)
+  documents. What broke twice appears fixed by that infra landing. Not
+  incremented this cycle; noting as **receded** rather than "held" because
+  a concrete fix landed and observable behaviour matches it. If cycle 4
+  sees another sandbox-e2e failure, restart the tally at 1/3+.
+- **[cycles: 1/3+ · held] Forge granularity — "stuck / can't proceed"
+  playtest notes may hide latent bugs.** Cycle 2 introduced this. Cycle 3
+  had no "stuck / can't proceed" flavoured feedback — the four items were
+  discoverability (FB1 lie), UX pain (FB2 scrollbars), missing surface
+  (FB3 log), and visual clip (FB4 tooltip). Pattern did not recur; held at
+  1/3+.
+- **[cycles: 1/3+ · held] Sim-record extensions before their render
+  consumer.** Cycle 3 did no `sim/trace` or `render` work in one wave;
+  coupling could not recur. Held.
+- **[RETIRED · was 1/3+] `MU.md` — sanctioned recipe for pre-existing-
+  error triage.** Cycle 1 flagged Mu stash use to triage pre-existing
+  typecheck errors. Cycles 2 AND 3 show zero stash use — Mu now triages
+  the encyclopedia TS6142 by lease-scoped inspection and Surprises
+  reporting alone (S01, S03 handoffs both demonstrate the pattern). Two
+  cycles without a recurrence retires the proposal; if it ever returns,
+  restart at 1/3+.
+
+### Verification (Roshi's output is prose)
+
+1. Every claim traces to git or the attached record. The mixed-module
+   fragment claim is verifiable at `89427c3` (`git log -1 --stat --
+   program/starship-skirmish/arch/M14-ui.md`) and the marker text itself.
+   The InfoTip supersession claim traces to
+   `src/ui/styles/components.css:990-1046` (current) and commits
+   `65dddc6` / `3146a95` / `bbb84eb`. The "1457 pass / 1 fail" number is
+   verbatim from Final Report §Verification. The 3-cycle encyclopedia
+   TS6142 baseline is cycle 1 ROSHI-LOG "Owner hygiene" bullet, cycle 2
+   same bullet, cycle 3 S01 + S03 Surprises + Final Report Residual gap.
+2. Re-read after writing: the two new `arch/M14-ui.md` reconciliations
+   (M16 subsection removal + D-INFOTIP-TOPLAYER note) do not contradict
+   each other or anything above them in the same file — the
+   D-INFOTIP-TOPLAYER note points forward from the SESSION-06 fragment
+   without amending it; the `weaponOutOfRange` fragment paired with the
+   `hitChanceFor` note in `arch/M16-app.md` reads consistently across the
+   two files via reciprocal cross-references.
+3. `FORGE.md`, `MU.md`, `ENSO.md`, `JIKIJITSU.md` — byte-identical, not
+   touched.
