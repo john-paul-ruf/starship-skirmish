@@ -97,6 +97,11 @@ export const resolveShip = (
           damage: weapon.stats.damage,
           shotsPerTurn: weapon.stats.shotsPerTurn,
           accuracy: weapon.stats.accuracy,
+          // Catalog-authored display identity, carried across the sim seam so
+          // M14 can render `PULSE ARRAY` / `FUSION LANCE` instead of the generic
+          // `WEAPON` fallback (SESSION-01, feature `tactical-attack-mock-parity`).
+          // Display-only: never enters rules, digest, or RNG (see SimWeapon).
+          display: { id: weapon.id, name: weapon.name },
         });
         break;
       }
@@ -110,6 +115,7 @@ export const resolveShip = (
           trackingTurnRate: rack.stats.trackingTurnRate,
           bodyMass: rack.stats.bodyMass,
           bodyRadius: rack.stats.bodyRadius,
+          display: { id: rack.id, name: rack.name },
         });
         break;
       }
@@ -121,6 +127,7 @@ export const resolveShip = (
               interceptRange: special.stats.interceptRange,
               interceptChance: special.stats.interceptChance,
               interceptsPerTurn: special.stats.interceptsPerTurn,
+              display: { id: special.id, name: special.name },
             });
             break;
           case 'decoy-launcher':
@@ -128,6 +135,7 @@ export const resolveShip = (
               charges: special.stats.charges,
               evasionBonus: special.stats.evasionBonus,
               durationTurns: special.stats.durationTurns,
+              display: { id: special.id, name: special.name },
             });
             break;
           // armor-plating, thrust-booster, damage-control are passive — folded
@@ -154,6 +162,11 @@ export const resolveShip = (
   return {
     buildId: build.id,
     name: build.name,
+    // Catalog-authored chassis identity, carried across the sim seam so M14 can
+    // render `HAMMERHEAD` / `MERIDIAN` instead of only the class label
+    // (SESSION-01, feature `tactical-attack-mock-parity`). Display-only: never
+    // enters rules, digest, or RNG (see SimShip.chassis / SimDisplayIdentity).
+    chassis: { id: chassis.id, name: chassis.name },
     // Structurally identical string-literal union — plain assignment across the
     // catalog/sim seam is legal (see file header note).
     chassisClass: chassis.classId,

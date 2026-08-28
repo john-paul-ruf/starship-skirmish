@@ -43,6 +43,10 @@ describe('resolveShip — field-by-field mapping from a known cruiser fit', () =
     expect(ship.buildId).toBe('id-1');
     expect(ship.name).toBe('Test Hammerhead');
     expect(ship.chassisClass).toBe('cruiser');
+    // SESSION-01 (tactical-attack-mock-parity): production resolution ALWAYS
+    // populates display identity from the authored catalog, so M14 can render
+    // the chassis name instead of only the class label.
+    expect(ship.chassis).toEqual({ id: 'cru-hammerhead', name: 'Hammerhead' });
     expect(ship.radius).toBe(32); // Hammerhead hullRadius
     expect(ship.mass).toBe(78);
     expect(ship.maxHull).toBe(190);
@@ -91,17 +95,40 @@ describe('resolveShip — field-by-field mapping from a known cruiser fit', () =
     // Damage control → 8 hull repair per turn.
     expect(ship.hullRepairPerTurn).toBe(8);
 
-    // Weapons array — 3 rows, in slot order.
+    // SESSION-01 (tactical-attack-mock-parity): chassis identity carried across
+    // the sim seam by production resolution — behavior-free, display-only.
+    expect(ship.chassis).toEqual({ id: 'cru-hammerhead', name: 'Hammerhead' });
+
+    // Weapons array — 3 rows, in slot order. Numeric stats plus the resolver's
+    // display-identity promise (SESSION-01) — id + authored name straight from
+    // the catalog, in the same slot order the resolver iterates.
     expect(ship.weapons).toEqual([
-      { range: 900, damage: 6, shotsPerTurn: 3, accuracy: 0.7 },  // pulse-array
-      { range: 1600, damage: 40, shotsPerTurn: 1, accuracy: 0.78 }, // fusion-lance
-      { range: 600, damage: 5, shotsPerTurn: 5, accuracy: 0.55 },  // scatter-gun
+      {
+        range: 900, damage: 6, shotsPerTurn: 3, accuracy: 0.7,
+        display: { id: 'wpn-pulse-array', name: 'Pulse Array' },
+      },
+      {
+        range: 1600, damage: 40, shotsPerTurn: 1, accuracy: 0.78,
+        display: { id: 'wpn-fusion-lance', name: 'Fusion Lance' },
+      },
+      {
+        range: 600, damage: 5, shotsPerTurn: 5, accuracy: 0.55,
+        display: { id: 'wpn-scatter-gun', name: 'Scatter Gun' },
+      },
     ]);
 
     // Missiles — 2 racks, in slot order.
     expect(ship.missiles).toEqual([
-      { ammo: 4, damage: 14, aoeRadius: 30, boostVelocity: 240, trackingTurnRate: 0.34, bodyMass: 1, bodyRadius: 4 },
-      { ammo: 6, damage: 18, aoeRadius: 60, boostVelocity: 220, trackingTurnRate: 0.3, bodyMass: 1, bodyRadius: 5 },
+      {
+        ammo: 4, damage: 14, aoeRadius: 30, boostVelocity: 240,
+        trackingTurnRate: 0.34, bodyMass: 1, bodyRadius: 4,
+        display: { id: 'mis-tack-launcher', name: 'Tack Launcher' },
+      },
+      {
+        ammo: 6, damage: 18, aoeRadius: 60, boostVelocity: 220,
+        trackingTurnRate: 0.3, bodyMass: 1, bodyRadius: 5,
+        display: { id: 'mis-hornet-rack', name: 'Hornet Rack' },
+      },
     ]);
 
     // No point-defense / decoys on this fit.
@@ -118,7 +145,10 @@ describe('resolveShip — field-by-field mapping from a known cruiser fit', () =
     if (!v.ok) throw new Error('expected ok');
     const ship = resolveShip(catalog, v.value);
     expect(ship.decoys).toHaveLength(1);
-    expect(ship.decoys[0]).toEqual({ charges: 3, evasionBonus: 0.25, durationTurns: 1 });
+    expect(ship.decoys[0]).toEqual({
+      charges: 3, evasionBonus: 0.25, durationTurns: 1,
+      display: { id: 'spc-decoy-launcher', name: 'Decoy Launcher' },
+    });
     // baseEvasion stays the chassis value — the decoy bonus is a rule, not a stat.
     expect(ship.baseEvasion).toBeCloseTo(0.42, 10);
   });
@@ -135,6 +165,7 @@ describe('resolveShip — field-by-field mapping from a known cruiser fit', () =
       interceptRange: 400,
       interceptChance: 0.55,
       interceptsPerTurn: 3,
+      display: { id: 'spc-point-defense', name: 'Point Defense' },
     });
   });
 
