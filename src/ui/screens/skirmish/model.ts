@@ -22,7 +22,7 @@ import type { Catalog } from '../../../catalog/index.js';
 import type { Build } from '../../../domain/index.js';
 import { pointCost, resolveArena, validateFit } from '../../../domain/index.js';
 import type { IndexEntry, LibraryRepo } from '../../../persist/index.js';
-import { TIER_CONFIG, type BotTier } from '../../../ai/index.js';
+import { TIER_CONFIG, generateBotFleet, type BotTier } from '../../../ai/index.js';
 import type { BotSpec, MatchSetup } from '../../matchContext.js';
 
 // ---- Setup state ----------------------------------------------------------
@@ -157,6 +157,39 @@ export const draftAffordable = (
   state: SetupState,
   catalog: Catalog,
 ): boolean => entry.currentCost <= remainingPoints(state, catalog);
+
+// ---- Standard Fleet (draft source) ----------------------------------------
+//
+// A prebuilt roster the player can draft from — the answer to "an empty
+// Encyclopedia leaves the player with nothing to field". The fleet is
+// GENERATED (not a curated data file) by feeding a FIXED `rngKey` into
+// `generateBotFleet`: legal by construction (FR-4 / FR-31), budget-scaled for
+// free, and identical across visits (so the player picks from a consistent
+// roster). No new catalog data, no ordinal-lock surface, no bot stat edge —
+// the SAME `generateBotFleet` bots use (Custom Rule 4 / FR-30).
+//
+// Save-to-Encyclopedia (SkirmishSetup) mints a fresh identity so the copy is
+// independently editable — see the screen's `onSaveStandard`.
+
+/** Which pool the draft source panel is showing. */
+export type DraftSource = 'library' | 'standard';
+
+/**
+ * A stable, prebuilt "standard fleet" for the current budget. Generated (not a
+ * curated data file) so it is legal by construction (FR-31) and budget-scaled
+ * for free. The key is FIXED, so the same budget always yields the same ships —
+ * the player picks from a consistent roster across visits.
+ */
+const STANDARD_FLEET_KEY = 0x5741; // stable; any fixed value — do NOT derive from time/random
+export const standardFleet = (catalog: Catalog, budget: number): readonly Build[] =>
+  generateBotFleet(catalog, budget, 'veteran', STANDARD_FLEET_KEY);
+
+/** Whether a standard-fleet build fits the remaining budget (drives ＋ Add). */
+export const standardAffordable = (
+  build: Build,
+  state: SetupState,
+  catalog: Catalog,
+): boolean => pointCost(catalog, build) <= remainingPoints(state, catalog);
 
 // ---- Opposition -----------------------------------------------------------
 

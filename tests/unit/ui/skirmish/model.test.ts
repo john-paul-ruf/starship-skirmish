@@ -16,7 +16,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import { loadCatalog } from '../../../../src/catalog/index.js';
 import type { Catalog } from '../../../../src/catalog/index.js';
-import { emptyBuild, pointCost, type Build, type BuildMeta } from '../../../../src/domain/index.js';
+import { emptyBuild, pointCost, validateFit, type Build, type BuildMeta } from '../../../../src/domain/index.js';
 import { generateBotFleet } from '../../../../src/ai/index.js';
 import type { IndexEntry, LibraryRepo } from '../../../../src/persist/index.js';
 
@@ -41,6 +41,8 @@ import {
   setBotCount,
   setBotTier,
   setBudget,
+  standardAffordable,
+  standardFleet,
   tierBrief,
   toMatchSetup,
   type SetupState,
@@ -154,6 +156,35 @@ describe('setBudget — only legal budgets are accepted (S04 CP1)', () => {
   it('ignores an illegal budget', () => {
     const state = initialSetupState(catalog);
     expect(setBudget(state, catalog, 137)).toBe(state);
+  });
+});
+
+describe('standardFleet — generated prebuilt roster (playtest-feedback S01)', () => {
+  it('is deterministic — same budget yields the same fleet across calls', () => {
+    const a = standardFleet(catalog, 100);
+    const b = standardFleet(catalog, 100);
+    expect(a).toEqual(b);
+  });
+
+  it('yields at least one build at a legal budget', () => {
+    expect(standardFleet(catalog, 100).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('every build passes validateFit against the current catalog', () => {
+    for (const build of standardFleet(catalog, 100)) {
+      const result = validateFit(catalog, build);
+      expect(result.ok).toBe(true);
+    }
+  });
+
+  it('standardAffordable tracks the remaining budget', () => {
+    const [first] = standardFleet(catalog, 100);
+    expect(first).toBeDefined();
+    const cost = pointCost(catalog, first!);
+    const fitsState = { ...initialSetupState(catalog), budget: cost };
+    const tightState = { ...initialSetupState(catalog), budget: Math.max(0, cost - 1) };
+    expect(standardAffordable(first!, fitsState, catalog)).toBe(true);
+    expect(standardAffordable(first!, tightState, catalog)).toBe(false);
   });
 });
 
