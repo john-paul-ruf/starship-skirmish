@@ -90,12 +90,63 @@ describe('SESSION-03 — the attack-plan body is the literal three-column frame'
     expect(fire).toBeGreaterThan(center);
   });
 
-  it('the center column is a <main>, the two rails are <aside> landmarks', () => {
+  it('the center column is a <main>, the two rails are labelled <aside> landmarks', () => {
     expect(screenSrc).toMatch(/<main class="ta-col-c" data-testid="ta-col-c">/);
-    expect(screenSrc).toMatch(/<aside class="ta-col-l" data-testid="ta-col-l">/);
+    // Both rails are <aside> landmarks with accessible names (design §1.1).
+    expect(screenSrc).toMatch(/<aside class="ta-col-l" data-testid="ta-col-l" aria-label="[^"]+"/);
     expect(screenSrc).toMatch(
       /<aside class="ta-col-fire" data-testid="ta-col-fire" aria-label="Fire assignment">/,
     );
+  });
+});
+
+// ---- CP4 — resolve composition + accessible field overlay -----------------
+
+describe('SESSION-03 — attack-resolve reuses the center column solo (no plan rail)', () => {
+  it('the resolve branch composes Viewport + CombatLogPanel in `.ta-col-c-solo`', () => {
+    const solo = screenSrc.indexOf('ta-col-c ta-col-c-solo'); // the JSX class, not the comment
+    expect(solo).toBeGreaterThanOrEqual(0);
+    // The combat log follows the shots inside the same solo center column.
+    const log = screenSrc.indexOf('<CombatLogPanel', solo);
+    expect(log).toBeGreaterThan(solo);
+    // No fire rail is mounted in the resolve branch (the rail is plan-only).
+    const soloEnd = screenSrc.indexOf('</main>', solo);
+    expect(screenSrc.slice(solo, soloEnd)).not.toMatch(/<WeaponBench|ta-col-fire/);
+  });
+
+  it('the resolve center column grows the viewport with its own floor', () => {
+    expect(TA_STYLES).toMatch(/\.ta-col-c-solo\s*>\s*\.viewport\s*\{[^}]*min-height:\s*\d+/);
+  });
+});
+
+describe('SESSION-03 — the field overlay is accessible (decorative SVG hidden, pills are text)', () => {
+  const overlaySrc = readFileSync(
+    fileURLToPath(new URL('../../../../src/ui/screens/tacticalAttack/FieldOverlay.tsx', import.meta.url)),
+    'utf8',
+  );
+
+  it('the solution/AoE SVG is aria-hidden (decorative — the pills carry the text)', () => {
+    expect(overlaySrc).toMatch(/<svg[^>]*aria-hidden="true"/);
+  });
+
+  it('the whole overlay is pointer-events:none (never steals clicks from the canvas/roster)', () => {
+    expect(overlaySrc).toMatch(/pointer-events:none/);
+  });
+
+  it('out-of-range is conveyed by pill text + glyph, not colour alone', () => {
+    // `pillFor` spells out `⊘ OUT OF RANGE · d > r` — the muted line colour is
+    // never the sole signal.
+    expect(overlaySrc).toMatch(/OUT OF RANGE/);
+  });
+
+  it('friendly-in-AoE is a text callout (built in the viewport, rendered as a text node)', () => {
+    const viewportSrc = readFileSync(
+      fileURLToPath(new URL('../../../../src/ui/screens/tacticalAttack/Viewport.tsx', import.meta.url)),
+      'utf8',
+    );
+    expect(viewportSrc).toMatch(/FRIENDLY IN AoE/);
+    // FieldOverlay renders those callouts as text nodes with a testid.
+    expect(overlaySrc).toMatch(/data-testid="aoe-friendly-callout"/);
   });
 });
 

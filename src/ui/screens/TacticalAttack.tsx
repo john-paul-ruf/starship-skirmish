@@ -448,7 +448,7 @@ export function TacticalAttack() {
        * columns fill the fixed frame edge-to-edge exactly as the mock does.
        */}
       <div class="ta-work" data-testid="ta-work">
-        <aside class="ta-col-l" data-testid="ta-col-l">
+        <aside class="ta-col-l" data-testid="ta-col-l" aria-label="Fleet roster and ship inspector">
           <div class="ta-roster-scroll">
             <FleetRoster
               groups={groups}
