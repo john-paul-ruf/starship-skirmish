@@ -69,7 +69,7 @@ import {
 // Mirrors the established pattern in `TacticalAttack.tsx` (which reads
 // `postMatch/model` cross-screen for the same log surface).
 import { CombatLogPanel } from './tacticalAttack/CombatLogPanel.js';
-import { liveLogRows } from './tacticalAttack/model.js';
+import { lastResolvedLogRows } from './tacticalAttack/model.js';
 import { nameByBodyId } from './postMatch/model.js';
 import type { Body, BodyId, Vec3 } from '../../sim/index.js';
 
@@ -243,18 +243,22 @@ export function TacticalMove() {
     match.commitMovement(toMovementPlans(draftList, budgetOf, burnOpts));
   };
 
-  // ---- Live combat log strip (playtest-feedback-03 SESSION-02 CP2) ---------
+  // ---- Combat log strip (playtest-feedback-04 SESSION-02, D-LOG-LAST-RESOLVED) ---
   //
-  // The current turn's already-resolved rows, surfaced verbatim from the
-  // trace via `liveLogRows`. Present in BOTH `movement-plan` AND
-  // `movement-resolve` — the log follows the player across the turn instead
-  // of vanishing after ATTACK RESOLVE lands. Blind-commit intact: `trace`
-  // accumulates only after a beat resolves; opponent plans never appear.
-  // Names come from the immutable initial rosters (matches TacticalAttack and
-  // the post-match combat log), so a ship destroyed earlier still reads by
-  // its authored name.
-  const currentTurn = match.turn.value;
-  const logRows = liveLogRows(match.trace.value, currentTurn);
+  // Surfaces the newest FULLY-RESOLVED turn's combat via `lastResolvedLogRows`
+  // — "what just happened" while the player is planning the next move. The
+  // current turn's combat has not landed yet (blind commit + trace timing:
+  // `controller.driveTurn` appends to `trace` once, at turn-end, AFTER
+  // `attack-resolve`; `turn.value` bumps immediately after — while the player
+  // looks at turn N, the newest turn in the trace is N−1). On turn 1 there is
+  // no prior combat, so the panel shows its empty state under a `NO COMBAT
+  // YET` label — correct.
+  //
+  // Present in BOTH `movement-plan` AND `movement-resolve`. Names come from
+  // the immutable initial rosters (matches TacticalAttack and the post-match
+  // combat log), so a ship destroyed earlier still reads by its authored name.
+  const { rows: logRows, turn: logTurn } = lastResolvedLogRows(match.trace.value);
+  const logTurnLabel = logTurn === null ? 'NO COMBAT YET' : `TURN ${String(logTurn)}`;
   const names = nameByBodyId(match.initialFleets);
   const nameOf = (id: BodyId): string => names.get(id) ?? `BODY ${String(id)}`;
 
@@ -380,7 +384,7 @@ export function TacticalMove() {
             <CombatLogPanel
               rows={logRows}
               nameOf={nameOf}
-              turnLabel={`TURN ${String(currentTurn)}`}
+              turnLabel={logTurnLabel}
             />
           </div>
 
