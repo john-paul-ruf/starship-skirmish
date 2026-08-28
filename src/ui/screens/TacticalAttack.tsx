@@ -153,7 +153,7 @@ export function TacticalAttack() {
           <span class="t-h2 grow">ATTACK RESOLVE</span>
           <span class="chip chip-cyan">SNAPSHOT RESOLUTION</span>
         </header>
-        <div class="ta-col-r ta-col-r-resolve">
+        <main class="ta-col-c ta-col-c-solo" data-testid="ta-col-c">
           <Viewport
             state={state}
             phase={phase}
@@ -184,7 +184,7 @@ export function TacticalAttack() {
               NO FIRE THIS TURN — ALL SHOTS HELD OR OUT OF RANGE
             </div>
           ) : null}
-        </div>
+        </main>
       </section>
     );
   }
@@ -355,22 +355,18 @@ export function TacticalAttack() {
   return (
     <section class={shellClass} data-testid="screen-tactical-attack">
       <TacticalAttackStyles />
-      <header class="ta-header panel-hd">
-        <span class="t-h2 grow">ATTACK PLAN</span>
-        <span class="chip" title="Decision 7 — no clock exists anywhere in the turn loop">
-          NO TIMER
-        </span>
-        <span class="chip chip-amber" data-testid="blind-commit-label">
-          OPPONENT PLANS ARE NOT OBSERVABLE
-        </span>
-      </header>
 
-      <div class="mono-xs c-dim ta-subhead">
-        TARGETING FROM POST-MOVEMENT POSITIONS · FULL STATE FOR ALL FLEETS · NO FOG OF WAR.
-      </div>
-
-      <div class="ta-layout">
-        <div class="ta-col-l" data-testid="ta-col-l">
+      {/*
+       * SESSION-03 (tactical-attack-mock-parity) — the literal three-column
+       * frame from mocks/tactical-attack.html:18-22: a 288px all-fleet roster
+       * (left), a fluid tactical stage carrying the center-only combat log
+       * (center), and a 344px fire-assignment rail (right). No page-wide plan
+       * header or bottom pane: the match phase / turn chrome lives in the
+       * persistent MatchChrome above and (CP3) in the viewport HUD, so the
+       * columns fill the fixed frame edge-to-edge exactly as the mock does.
+       */}
+      <div class="ta-work" data-testid="ta-work">
+        <aside class="ta-col-l" data-testid="ta-col-l">
           <div class="ta-roster-scroll">
             <FleetRoster
               groups={groups}
@@ -391,9 +387,9 @@ export function TacticalAttack() {
           <div class="mono-xs c-dim ta-col-l-ft">
             {`FLEET: ${fleetLabel(selfFleetId)} · ALL FLEETS VISIBLE`}
           </div>
-        </div>
+        </aside>
 
-        <div class="ta-col-r">
+        <main class="ta-col-c" data-testid="ta-col-c">
           <Viewport
             state={state}
             phase={phase}
@@ -412,26 +408,29 @@ export function TacticalAttack() {
             onToggleFullscreen={onToggleFullscreen}
           />
 
-          {/*
-           * playtest-feedback-04 FB2 (D-ATK-ONE-SCROLL): every plan-time
-           * element between the pinned viewport and the pinned CommitBar
-           * lives in ONE scroll container. Was three independent scroll
-           * regions in the right column (`.ta-col-r` safety, the old
-           * `.ta-bench-scroll` wrapping only the bench, and the log's
-           * internal `max-height:132px`); now they nest inside a single
-           * primary scroll. playtest-feedback-05 SESSION-04 CP4 renamed the
-           * class `.ta-bench-scroll` → `.ta-plan-scroll` to match what it
-           * actually wraps (hint→banner→bench→log). The rename was unblocked
-           * when SESSION-01 lifted the external literal-lock on the old
-           * name out of `inMatchLayout.test.ts`. The bench-never-collapses
-           * guarantee (FB1 regression from pf-03) still carries via this
-           * wrapper's `min-height`.
-           */}
-          <div class="ta-plan-scroll" data-testid="ta-plan-scroll">
-            <div class="mono-xs c-cyan ta-orientation" data-testid="fire-flow-hint">
+          <CombatLogPanel
+            rows={resolved.rows}
+            nameOf={nameOf}
+            turnLabel={
+              resolved.turn !== null ? `TURN ${String(resolved.turn)}` : 'NO COMBAT YET'
+            }
+          />
+        </main>
+
+        <aside class="ta-col-fire" data-testid="ta-col-fire" aria-label="Fire assignment">
+          {/* CP2 wires the active-shooter identity into this header; CP1 seats
+              the plan orientation + post-movement targeting note the mock's
+              right-rail header carries (mocks/tactical-attack.html:544-554). */}
+          <header class="ta-fire-hd">
+            <div class="mono-xs c-cyan ta-fire-hint" data-testid="fire-flow-hint">
               SELECT A WEAPON → PICK A TARGET → COMMIT FIRE · OR HOLD ALL AND COMMIT
             </div>
+            <div class="mono-xs c-dim ta-fire-targeting">
+              TARGETING FROM POST-MOVEMENT POSITIONS.
+            </div>
+          </header>
 
+          <div class="ta-fire-scroll" data-testid="ta-fire-scroll">
             <FriendlyFireBanner warnings={warnings} />
 
             <WeaponBench
@@ -451,18 +450,10 @@ export function TacticalAttack() {
                 />
               )}
             />
-
-            <CombatLogPanel
-              rows={resolved.rows}
-              nameOf={nameOf}
-              turnLabel={
-                resolved.turn !== null ? `TURN ${String(resolved.turn)}` : 'NO COMBAT YET'
-              }
-            />
           </div>
 
           <CommitBar gate={gate} onCommit={onCommit} />
-        </div>
+        </aside>
       </div>
     </section>
   );
@@ -480,62 +471,79 @@ export function TacticalAttack() {
 
 const TA_STYLES = `
   .ta-shell { display: flex; flex-direction: column; flex: 1 1 auto;
-              height: 100%; min-height: 0;
-              gap: var(--s3); padding: var(--s3); }
+              height: 100%; min-height: 0; }
   .ta-shell-resolve { }
   /* Boot (view not yet populated): Viewport owns no inline min-height of its
-     own (playtest-feedback-03 SESSION-01 CP2 — sizing is the hosting screen's
-     call in every phase, not the component's). */
+     own — sizing is the hosting screen's call in every phase. */
+  .ta-shell-boot { padding: var(--s3); }
   .ta-shell-boot > .viewport { flex: 1 1 auto; min-height: 200px; }
+
+  /* Resolve header — the only full-width strip, and only in attack-resolve.
+     attack-plan carries no page header: MatchChrome (turn / seed / concede)
+     and the viewport HUD (CP3) own the phase chrome, so the columns fill the
+     fixed frame edge-to-edge exactly as the mock's headerless work area does. */
   .ta-header { flex: none; }
-  .ta-subhead { flex: none; }
 
-  .ta-layout { display: grid;
-               grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
-               gap: var(--s3);
-               flex: 1 1 auto; min-height: 0; }
+  /* ---- The literal three-column frame (mocks/tactical-attack.html:18-22) ----
+     A single grid: 288px roster · fluid stage · 344px fire rail. The rails are
+     bounded (never below 260 / 320, never past 288 / 344); the center absorbs
+     the remainder; every level carries min-width/min-height:0 so the inner
+     scroll regions — never the page — own overflow. The three tracks stay
+     side-by-side at every supported desktop width (≥1280): the fire rail is
+     NEVER stacked beneath the center (D-TA-THREE-COLUMN / D-TA-NO-BOTTOM-PLAN). */
+  .ta-work { display: grid;
+             grid-template-columns:
+               minmax(260px, 288px) minmax(0, 1fr) minmax(320px, 344px);
+             flex: 1 1 auto; min-width: 0; min-height: 0; }
 
+  /* LEFT — all-fleet roster (scrolls internally) + inspector + range readout. */
   .ta-col-l { display: flex; flex-direction: column; gap: var(--s3);
-              min-width: 0; min-height: 0; overflow: hidden; }
+              min-width: 0; min-height: 0; overflow: hidden;
+              padding: var(--s3);
+              border-right: 1px solid var(--line); background: var(--panel); }
   .ta-roster-scroll { flex: 1 1 auto; min-height: 0;
                       overflow-y: auto; overflow-x: hidden;
                       background: var(--panel); border: 1px solid var(--line);
                       border-radius: var(--r); }
+  .ta-range-readout { flex: none; letter-spacing: .06em; }
   .ta-col-l-ft { flex: none; letter-spacing: .14em; }
 
-  /* playtest-feedback-04 SESSION-01 CP4 (D-ATK-ONE-SCROLL): the right column
-     is now a fixed frame — Viewport pinned at the top, CommitBar pinned at
-     the bottom, and a SINGLE inner scroll region (\`.ta-plan-scroll\`) for
-     everything between. The pf-03 \`.ta-col-r { overflow-y: auto }\` safety net
-     is gone: with the inner region owning scroll, the column-level safety
-     was one of three stacked scrollbars the owner called a "nightmare". The
-     bench-never-collapses guarantee (FB1 regression) is preserved by the
-     inner wrapper's own \`min-height\` — the same floor, moved one level in. */
-  .ta-col-r { display: flex; flex-direction: column; gap: var(--s3);
-              min-width: 0; min-height: 0; overflow: hidden; }
-  /* Viewport pins under the frame: grows to fill available height, shrinks
-     down to a smaller-but-still-legible tactical minimum. */
-  .ta-col-r > .viewport { flex: 1 1 320px; min-height: 200px; }
-  /* Single primary scroll region for the plan-time surface — orientation
-     hint + friendly-fire banner + weapon bench + combat log all live in this
-     container. Only ONE scrollbar surfaces here even when the bench is long.
-     playtest-feedback-05 SESSION-04 CP4 renamed this class from the
-     originally semantically-narrow \`.ta-bench-scroll\` to \`.ta-plan-scroll\`
-     (matches what it actually wraps). The rename was unblocked when
-     SESSION-01 dropped the external literal-lock in
-     \`inMatchLayout.test.ts\`. */
-  .ta-plan-scroll { display: flex; flex-direction: column; gap: var(--s3);
-                    flex: 1 1 200px; min-height: 110px;
-                    overflow-y: auto; overflow-x: hidden; }
-  .ta-orientation { letter-spacing: .1em; }
-  /* The commit action never shrinks or scrolls out of view — it is short,
-     load-bearing, and must stay fully rendered at every viewport size. */
-  .ta-col-r > .panel-ft { flex: none; }
-
-  .ta-col-r-resolve { flex: 1 1 auto; min-height: 0; }
-  .ta-col-r-resolve > .viewport { flex: 1 1 auto; min-height: 340px; }
+  /* CENTER — the tactical stage: the viewport grows and the combat log is a
+     fixed, center-only strip matching the mock's ~168px footprint (FR-21). No
+     weapon bench or commit control ever lives here (D-TA-NO-BOTTOM-PLAN). */
+  .ta-col-c { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .ta-col-c > .viewport { flex: 1 1 auto; min-height: 200px; }
+  /* The combat log (CombatLogPanel renders \`.panel\`) is contained, never
+     grows into a page-bottom pane; its own body caps scroll at ~132px so the
+     strip holds the mock's ~168px total height. */
+  .ta-col-c > .panel { flex: none; }
+  /* Resolve reuses the center column solo (no side rails) with its own
+     breathing room and a taller viewport floor. */
+  .ta-col-c-solo { flex: 1 1 auto; gap: var(--s3); padding: var(--s3); }
+  .ta-col-c-solo > .viewport { min-height: 340px; }
   .ta-resolve-note { flex: none; }
   .ta-no-fire-note { flex: none; }
+
+  /* RIGHT — fire-assignment rail: fixed header + exactly ONE overflow-y:auto
+     assignment body + fixed commit footer. The commit button width follows
+     this 344px rail, never the center or the page (D-TA-NO-BOTTOM-PLAN). */
+  .ta-col-fire { display: flex; flex-direction: column;
+                 min-width: 0; min-height: 0; overflow: hidden;
+                 border-left: 1px solid var(--line); background: var(--panel); }
+  .ta-fire-hd { flex: none; padding: var(--s2) var(--s3);
+                border-bottom: 1px solid var(--line);
+                background: linear-gradient(180deg, rgba(34,227,255,.06), transparent);
+                display: flex; flex-direction: column; gap: 4px; }
+  .ta-fire-hint { letter-spacing: .1em; }
+  .ta-fire-targeting { letter-spacing: .14em; }
+  .ta-fire-scroll { flex: 1 1 auto; min-height: 120px;
+                    overflow-y: auto; overflow-x: hidden;
+                    display: flex; flex-direction: column; gap: var(--s3);
+                    padding: var(--s3); }
+  /* The commit action is a pinned, non-stretching footer — never a page-wide
+     bottom bar (FB2 "no bottom panel"). Direct-child selector so it wins over
+     any inherited flex grow / shrink. */
+  .ta-col-fire > .panel-ft { flex: none; }
 
   /* playtest-feedback-05 SESSION-04 CP3 — ship-by-ship bench parity with the
      endorsed mock (mocks/tactical-attack.html screenshot 7). Every rule is
@@ -580,19 +588,17 @@ const TA_STYLES = `
   .ta-hit-range { margin-top: 5px; }
   .ta-hit-hint { margin-top: 5px; }
 
-  /* playtest-feedback-05 SESSION-04 CP2 (FB3 · D-IMMERSIVE-GRID-COLLAPSE) —
-     "full-field" immersive mode. The scoped block collapses the two-column
-     grid to a single track and hides every plan-time affordance except the
-     Viewport. Grid-collapse, NOT \`position: fixed\`: the shell stays inside
-     the bounded \`.app-main.is-fixed-frame\`, so no browser Fullscreen API
-     dependency (testable, no flake). Esc / the CameraHud toggle restore the
-     grid. The header stays visible so the ATTACK PLAN / NO TIMER / BLIND
-     COMMIT chrome remains legible while the field fills — the player never
-     loses track of what phase they are in. */
-  .ta-shell.is-immersive .ta-layout { grid-template-columns: 1fr; }
+  /* FB3 · D-IMMERSIVE-GRID-COLLAPSE — "full-field" immersive mode. The scoped
+     block collapses the three-column grid to a single track and hides every
+     plan-time affordance except the Viewport: the left roster, the right fire
+     rail, and the center-only combat log all drop out so the tactical stage
+     fills the vacated space. Grid-collapse, NOT \`position: fixed\`: the shell
+     stays inside the bounded \`.app-main.is-fixed-frame\` (testable, no browser
+     Fullscreen API flake). Esc / the CameraHud toggle restore the grid. */
+  .ta-shell.is-immersive .ta-work { grid-template-columns: 1fr; }
   .ta-shell.is-immersive .ta-col-l { display: none; }
-  .ta-shell.is-immersive .ta-plan-scroll { display: none; }
-  .ta-shell.is-immersive .ta-col-r > .panel-ft { display: none; }
+  .ta-shell.is-immersive .ta-col-fire { display: none; }
+  .ta-shell.is-immersive .ta-col-c > .panel { display: none; }
 `;
 
 function TacticalAttackStyles() {

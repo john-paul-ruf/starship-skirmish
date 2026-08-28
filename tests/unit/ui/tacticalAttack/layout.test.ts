@@ -1,28 +1,29 @@
 // M14 UI — Tactical Attack **behavioural layout contract**
-// (playtest-feedback-05 SESSION-04).
+// (tactical-attack-mock-parity SESSION-03).
 //
-// Per-screen coverage that replaces what SESSION-01 dropped from the shared
-// `inMatchLayout.test.ts` (Roshi `[2/3+]`: shared-unowned literal locks). Kept
-// JSX-free by reading `TacticalAttack.tsx` as source text — the unit build
-// (`tsconfig.node`) refuses `.tsx` transitive imports; the shipyard tests and
-// the shell-frame test use the same file-read + regex pattern.
+// Per-screen coverage kept JSX-free by reading `TacticalAttack.tsx` as source
+// text — the unit build (`tsconfig.node`) refuses `.tsx` transitive imports, so
+// the shipyard tests and this suite use the same file-read + regex pattern.
 //
-// What this pins (CP1 — commit contained + pinned; single bench scroll;
-//                 CP2 — .is-immersive grid-collapse toggle):
-//   • `CommitBar` renders `.panel-ft`; the scoped `.ta-col-r > .panel-ft {
-//     flex: none }` keeps it a pinned, non-stretching child of the right
-//     column — not a page-level sibling that could span the whole page at the
-//     min viewport (the pf-04 "bottom-panel nightmare" owner note, FB2).
-//   • Structurally, `<CommitBar />` mounts inside `<div class="ta-col-r">` as
-//     a sibling of the Viewport and the plan-scroll wrapper, in that order.
-//   • Only ONE `overflow-y: auto` scroll region lives between the pinned
-//     Viewport and the pinned CommitBar (`.ta-plan-scroll` /
-//     `data-testid=ta-plan-scroll`). The right column itself hides overflow —
-//     no stacked scrollbars.
-//   • The bench-never-collapses `min-height` floor (pf-03 FB1 guarantee)
-//     survives on the plan-scroll wrapper.
+// IMPORTANT — these regex checks are a STATIC TRIPWIRE only. They pin the source
+// structure (which column each surface mounts in, the scoped grid tracks) so a
+// refactor cannot silently re-introduce the false "one giant second column"
+// composition SESSION-03 replaced. The REAL acceptance gate is browser geometry:
+// `tests/e2e/tacticalAttack.spec.ts` measures actual bounding boxes at 1920×1080
+// and 1280×720. A green source regex here is necessary, not sufficient.
 //
-// CP2 (immersive) and later checkpoints will grow this suite in-lease.
+// What this pins:
+//   • The literal three-column frame — `.ta-work` wraps, in source order, the
+//     left roster `.ta-col-l`, the center stage `.ta-col-c`, and the right fire
+//     rail `.ta-col-fire` (mocks/tactical-attack.html:18-22).
+//   • `CombatLogPanel` mounts inside the CENTER column only; `WeaponBench` +
+//     `FriendlyFireBanner` + `CommitBar` mount inside the RIGHT fire rail. There
+//     is no weapon/commit surface beneath the center field (D-TA-NO-BOTTOM-PLAN).
+//   • The scoped stylesheet lays out three side-by-side tracks at the supported
+//     desktop gate and NEVER stacks the fire rail below the center.
+//   • The fire rail is a fixed header + a single `overflow-y:auto` body
+//     (`.ta-fire-scroll`) + a pinned commit footer (`.panel-ft`, `flex: none`).
+//   • The `.is-immersive` grid-collapse toggle (grid-collapse, not Fullscreen API).
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -67,109 +68,146 @@ const TA_STYLES: string = ((): string => {
   return screenSrc.slice(open + 1, close);
 })();
 
-// ---- CP1 — commit contained + pinned -------------------------------------
+/** Index of the attack-plan three-column frame opener. All source-order
+ *  assertions anchor from here (the resolve branch reuses `.ta-col-c`, so a
+ *  bare `indexOf` on a column testid could land on the wrong branch). */
+const workOpen = screenSrc.indexOf('<div class="ta-work"');
 
-describe('CP1 — the commit bar is a contained, pinned child of .ta-col-r', () => {
-  it('CommitBar renders as `.panel-ft` (the shared pinned-footer class)', () => {
-    // Scoped `.ta-col-r > .panel-ft { flex: none }` only bites when the commit
-    // element carries `.panel-ft`. Locking the class is what makes the pin
-    // guarantee structural instead of accidental.
+// ---- The literal three-column frame --------------------------------------
+
+describe('SESSION-03 — the attack-plan body is the literal three-column frame', () => {
+  it('wraps the plan surface in a single `.ta-work` frame', () => {
+    expect(workOpen).toBeGreaterThanOrEqual(0);
+    expect(screenSrc).toMatch(/class="ta-work"\s+data-testid="ta-work"/);
+  });
+
+  it('mounts left roster → center stage → fire rail in that source order', () => {
+    const left = screenSrc.indexOf('data-testid="ta-col-l"', workOpen);
+    const center = screenSrc.indexOf('data-testid="ta-col-c"', workOpen);
+    const fire = screenSrc.indexOf('data-testid="ta-col-fire"', workOpen);
+    expect(left).toBeGreaterThan(workOpen);
+    expect(center).toBeGreaterThan(left);
+    expect(fire).toBeGreaterThan(center);
+  });
+
+  it('the center column is a <main>, the two rails are <aside> landmarks', () => {
+    expect(screenSrc).toMatch(/<main class="ta-col-c" data-testid="ta-col-c">/);
+    expect(screenSrc).toMatch(/<aside class="ta-col-l" data-testid="ta-col-l">/);
+    expect(screenSrc).toMatch(
+      /<aside class="ta-col-fire" data-testid="ta-col-fire" aria-label="Fire assignment">/,
+    );
+  });
+});
+
+describe('SESSION-03 — combat log is center-only; weapon bench + commit are fire-rail', () => {
+  it('CombatLogPanel mounts inside the CENTER column, before the fire rail', () => {
+    const center = screenSrc.indexOf('data-testid="ta-col-c"', workOpen);
+    const fire = screenSrc.indexOf('data-testid="ta-col-fire"', workOpen);
+    const log = screenSrc.indexOf('<CombatLogPanel', center);
+    expect(log).toBeGreaterThan(center);
+    expect(log).toBeLessThan(fire); // the log lives under center, NOT the rail
+  });
+
+  it('FriendlyFireBanner + WeaponBench live inside the single `.ta-fire-scroll` body', () => {
+    const scroll = screenSrc.indexOf('data-testid="ta-fire-scroll"', workOpen);
+    const banner = screenSrc.indexOf('<FriendlyFireBanner', scroll);
+    const bench = screenSrc.indexOf('<WeaponBench', scroll);
+    const commit = screenSrc.indexOf('<CommitBar', scroll);
+    expect(scroll).toBeGreaterThan(0);
+    expect(banner).toBeGreaterThan(scroll);
+    expect(bench).toBeGreaterThan(banner);
+    // The commit footer is AFTER the scroll body — a pinned sibling, not inside it.
+    expect(commit).toBeGreaterThan(bench);
+  });
+
+  it('CommitBar mounts inside the fire rail as its last child', () => {
+    const fire = screenSrc.indexOf('data-testid="ta-col-fire"', workOpen);
+    const commit = screenSrc.indexOf('<CommitBar', fire);
+    expect(commit).toBeGreaterThan(fire);
+  });
+});
+
+// ---- CommitBar is a contained, pinned fire-rail footer -------------------
+
+describe('SESSION-03 — the commit bar is a contained, pinned fire-rail footer', () => {
+  it('CommitBar renders `.panel-ft` and the `ta-fire-footer` marker', () => {
     expect(commitBarSrc).toMatch(/<div\s+class=(?:"|')[^"']*\bpanel-ft\b/);
+    expect(commitBarSrc).toMatch(/data-testid="ta-fire-footer"/);
   });
 
-  it('the .ta-col-r > .panel-ft rule pins CommitBar to `flex: none`', () => {
-    // The direct-child selector matters: it wins over any inherited flex
-    // shrink/grow the commit bar picks up as a flex child, so the button
-    // never stretches to page width. FB2 owner note: "no bottom panel."
-    expect(TA_STYLES).toMatch(/\.ta-col-r\s*>\s*\.panel-ft\s*\{[^}]*flex:\s*none/);
-  });
-
-  it('CommitBar is a sibling of the Viewport inside .ta-col-r (not a page-level bar)', () => {
-    // Structural placement: the plan branch mounts <CommitBar /> as the last
-    // child of `<div class="ta-col-r">`, right after the plan-scroll wrapper.
-    // A future refactor that hoisted commit up to `.ta-shell` (page-level)
-    // would fail this — that is exactly the "full-width bottom bar" the owner
-    // called a nightmare.
-    const colOpen = screenSrc.indexOf('<div class="ta-col-r">');
-    expect(colOpen).toBeGreaterThanOrEqual(0);
-    const commitTag = screenSrc.indexOf('<CommitBar', colOpen);
-    expect(commitTag).toBeGreaterThan(colOpen);
-    // And the plan-scroll wrapper opens BEFORE the CommitBar tag — the order
-    // is Viewport → plan-scroll → CommitBar, all inside .ta-col-r.
-    const planScroll = screenSrc.indexOf('data-testid="ta-plan-scroll"', colOpen);
-    expect(planScroll).toBeGreaterThan(colOpen);
-    expect(planScroll).toBeLessThan(commitTag);
+  it('the `.ta-col-fire > .panel-ft` rule pins the footer to `flex: none`', () => {
+    // Direct-child selector: it wins over any inherited flex grow/shrink so the
+    // button never stretches to page width. FB2 owner note: "no bottom panel."
+    expect(TA_STYLES).toMatch(/\.ta-col-fire\s*>\s*\.panel-ft\s*\{[^}]*flex:\s*none/);
   });
 
   it('CommitBar is not escaped out of the fixed frame with `position: fixed`', () => {
-    // The bounded `.app-main.is-fixed-frame` is what keeps the viewport
-    // predictable. A `position: fixed` on the commit would leak out of it and
-    // turn into a page-level bar again. The button carries a shared `.btn`
-    // class and no fixed positioning.
     expect(commitBarSrc).not.toMatch(/position:\s*fixed/);
-    // The scoped stylesheet must not fixed-position `.panel-ft` under `.ta-col-r`.
-    expect(TA_STYLES).not.toMatch(/\.ta-col-r\s*>\s*\.panel-ft\s*\{[^}]*position:\s*fixed/);
+    expect(TA_STYLES).not.toMatch(/\.ta-col-fire\s*>\s*\.panel-ft\s*\{[^}]*position:\s*fixed/);
   });
 });
 
-// ---- CP1 — single bench scroll -------------------------------------------
+// ---- Scoped grid: three side-by-side tracks, never stacked ----------------
 
-describe('CP1 — the plan surface has exactly one primary scroll region', () => {
-  it('.ta-plan-scroll is the single overflow-y:auto region', () => {
-    // A single wrapper owns scroll for hint→banner→bench→log (D-ATK-ONE-SCROLL
-    // from pf-04). The scoped block sets `overflow-y: auto` on this one
-    // selector — regression to stacked scrollbars (the pf-04 owner note) would
-    // reintroduce a second `overflow-y: auto`.
-    expect(TA_STYLES).toMatch(/\.ta-plan-scroll\s*\{[^}]*overflow-y:\s*auto/);
-    // And the plan-scroll data-testid ships on that same wrapper.
-    expect(screenSrc).toMatch(/class="ta-plan-scroll"\s+data-testid="ta-plan-scroll"/);
+describe('SESSION-03 — the scoped grid lays out three side-by-side tracks', () => {
+  it('.ta-work declares three grid tracks (roster · center · fire rail)', () => {
+    // Three `minmax(...)` tracks in the base rule — the fire rail is the third
+    // column, side-by-side, at every supported desktop width.
+    expect(TA_STYLES).toMatch(
+      /\.ta-work\s*\{[^}]*grid-template-columns:[^;]*minmax\([^)]*\)[^;]*minmax\([^)]*\)[^;]*minmax\([^)]*\)/,
+    );
   });
 
-  it('the right column itself hides overflow (delegates scroll to the inner wrapper)', () => {
-    // With `.ta-plan-scroll` owning scroll, the column-level safety-net that
-    // pf-03 needed is gone — and MUST stay gone: the pf-04 owner note called
-    // stacked scrollbars a "nightmare".
-    expect(TA_STYLES).toMatch(/\.ta-col-r\s*\{[^}]*overflow:\s*hidden/);
+  it('no rule stacks the fire rail below the center (no bare single-track collapse)', () => {
+    // The ONLY single-track `.ta-work` collapse is guarded by `.is-immersive`.
+    // There must be no responsive `@media` collapse and no `grid-column`/`order`
+    // trick that drops the fire rail beneath the field.
+    expect(TA_STYLES).not.toMatch(/@media/);
+    expect(TA_STYLES).not.toMatch(/\.ta-col-fire\s*\{[^}]*grid-column/);
+    expect(TA_STYLES).not.toMatch(/\.ta-col-fire\s*\{[^}]*order:/);
+  });
+
+  it('the center column contains the combat log strip (flex: none, ~168px)', () => {
+    expect(TA_STYLES).toMatch(/\.ta-col-c\s*>\s*\.panel\s*\{[^}]*flex:\s*none/);
+  });
+});
+
+// ---- Single fire-rail scroll region ---------------------------------------
+
+describe('SESSION-03 — the fire rail has exactly one primary scroll region', () => {
+  it('.ta-fire-scroll is the single overflow-y:auto assignment body', () => {
+    expect(TA_STYLES).toMatch(/\.ta-fire-scroll\s*\{[^}]*overflow-y:\s*auto/);
+    expect(screenSrc).toMatch(/class="ta-fire-scroll"\s+data-testid="ta-fire-scroll"/);
+  });
+
+  it('the fire rail itself hides overflow (delegates scroll to the inner body)', () => {
+    expect(TA_STYLES).toMatch(/\.ta-col-fire\s*\{[^}]*overflow:\s*hidden/);
   });
 
   it('the .ta-shell itself does not scroll — the app-main frame owns the boundary', () => {
-    // `.app-main.is-fixed-frame` bounds the shell; letting the shell scroll
-    // would let the whole plan surface (viewport included) scroll away. The
-    // shell only supplies flex + padding.
     expect(TA_STYLES).not.toMatch(/\.ta-shell\s*\{[^}]*overflow-y:\s*auto/);
   });
 
-  it('the bench wrapper preserves a min-height floor (bench-never-collapses, FB1 pf-03)', () => {
-    // The min-height is what stopped the bench from being crushed when the
-    // combat log filled up. Removing it would re-open the pf-03 regression.
-    expect(TA_STYLES).toMatch(/\.ta-plan-scroll\s*\{[^}]*min-height:\s*\d+/);
+  it('the fire-scroll body preserves a min-height floor (bench-never-collapses)', () => {
+    expect(TA_STYLES).toMatch(/\.ta-fire-scroll\s*\{[^}]*min-height:\s*\d+/);
   });
 });
 
-// ---- CP2 — immersive full-field toggle -----------------------------------
+// ---- Immersive full-field toggle -----------------------------------------
 
-describe('CP2 — .is-immersive collapses to the tactical stage inside the fixed frame', () => {
+describe('SESSION-03 — .is-immersive collapses to the tactical stage inside the fixed frame', () => {
   it('exposes a boolean toggle via a fullscreen signal, not a DOM Fullscreen API dependency', () => {
-    // Grid-collapse (testable, no browser-API flake). The screen creates a
-    // signal so component tests can drive state without touching
-    // requestFullscreen(). The pf-05 State-Update decision D-IMMERSIVE-GRID-
-    // COLLAPSE says the OS API can be layered later if the owner wants it.
     expect(screenSrc).toMatch(/const\s+fullscreen\s*=\s*useSignal\(false\)/);
   });
 
   it('applies .is-immersive to .ta-shell when fullscreen is true', () => {
-    // The scoped rules key off `.ta-shell.is-immersive` so a leak of the
-    // class onto another root would still be scoped to this screen. The class
-    // string is composed from `fullscreen.value`.
     expect(screenSrc).toMatch(/is-immersive/);
     expect(screenSrc).toMatch(/fullscreen\.value/);
   });
 
-  it('collapses .ta-layout to a single column when immersive', () => {
-    // grid-template-columns collapses to `1fr` (or single track). The Viewport
-    // grows into the vacated space; the roster + bench + commit are hidden.
+  it('collapses .ta-work to a single column when immersive', () => {
     expect(TA_STYLES).toMatch(
-      /\.ta-shell\.is-immersive\s+\.ta-layout\s*\{[^}]*grid-template-columns:\s*1fr/,
+      /\.ta-shell\.is-immersive\s+\.ta-work\s*\{[^}]*grid-template-columns:\s*1fr/,
     );
   });
 
@@ -179,34 +217,23 @@ describe('CP2 — .is-immersive collapses to the tactical stage inside the fixed
     );
   });
 
-  it('hides the plan-scroll wrapper .ta-plan-scroll when immersive', () => {
-    // Hiding the plan surface pulls hint/banner/bench/log out of view; the
-    // Viewport grows into their space.
+  it('hides the right fire rail .ta-col-fire when immersive', () => {
     expect(TA_STYLES).toMatch(
-      /\.ta-shell\.is-immersive\s+\.ta-plan-scroll\s*\{[^}]*display:\s*none/,
+      /\.ta-shell\.is-immersive\s+\.ta-col-fire\s*\{[^}]*display:\s*none/,
     );
   });
 
-  it('hides the pinned CommitBar (.panel-ft) when immersive', () => {
-    // Immersive is a look-at-the-field mode; assignment work resumes on
-    // restore. Keeping COMMIT visible during immersive would defeat the point
-    // (the button is not usable without seeing the bench above it).
+  it('hides the center-only combat log (.ta-col-c > .panel) when immersive', () => {
     expect(TA_STYLES).toMatch(
-      /\.ta-shell\.is-immersive\s+\.ta-col-r\s*>\s*\.panel-ft\s*\{[^}]*display:\s*none/,
+      /\.ta-shell\.is-immersive\s+\.ta-col-c\s*>\s*\.panel\s*\{[^}]*display:\s*none/,
     );
   });
 
   it('stays inside the fixed frame — no position:fixed escape from .app-main', () => {
-    // Grid-collapse only; the shell never lifts itself out of the bounded
-    // `.app-main.is-fixed-frame`. A regression to `position: fixed` would
-    // break the desktop gate + the layered chrome (topbar, match-chrome).
     expect(TA_STYLES).not.toMatch(/\.ta-shell\.is-immersive[^{]*\{[^}]*position:\s*fixed/);
   });
 
   it('CameraHud carries a maximize/restore control (text + aria-pressed, never colour-only)', () => {
-    // The FULL FIELD / RESTORE labels are text (design §1.1 never-color-alone)
-    // and the button reports its pressed state via aria-pressed so a screen
-    // reader hears the toggle. The two glyphs decorate; the labels carry.
     expect(cameraHudSrc).toMatch(/FULL FIELD/);
     expect(cameraHudSrc).toMatch(/RESTORE/);
     expect(cameraHudSrc).toMatch(/aria-pressed/);
@@ -214,9 +241,6 @@ describe('CP2 — .is-immersive collapses to the tactical stage inside the fixed
   });
 
   it('Escape exits immersive (window keydown handler wired only while active)', () => {
-    // useEffect adds a keydown listener; on Escape it flips the signal back
-    // to false. Wiring the listener only WHILE immersive keeps Esc free for
-    // modals and pickers on the assignment rows the rest of the time.
     expect(screenSrc).toMatch(/Escape/);
     expect(screenSrc).toMatch(/keydown/);
   });

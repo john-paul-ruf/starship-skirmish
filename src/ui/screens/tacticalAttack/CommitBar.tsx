@@ -8,6 +8,12 @@
 // A raw `<button class="btn btn-commit">` (not the shared `Button`): the commit
 // styling is a distinct shipped class and the button carries a `data-testid`
 // the shared component does not forward.
+//
+// SESSION-03 (tactical-attack-mock-parity): this is explicitly the RIGHT fire
+// rail's pinned footer — the root `.panel-ft` carries `data-testid=
+// "ta-fire-footer"`, and the scoped `.ta-col-fire > .panel-ft { flex: none }`
+// keeps it a non-stretching footer of the 344px rail, never a page-wide bottom
+// bar (D-TA-NO-BOTTOM-PLAN). Semantics + all-hold legality are unchanged.
 
 export interface CommitBarProps {
   readonly gate: import('./model.js').FireGate;
@@ -17,7 +23,7 @@ export interface CommitBarProps {
 export function CommitBar(props: CommitBarProps) {
   const { gate, onCommit } = props;
   return (
-    <div class="panel-ft">
+    <div class="panel-ft" data-testid="ta-fire-footer">
       <button
         type="button"
         class="btn btn-commit grow"
