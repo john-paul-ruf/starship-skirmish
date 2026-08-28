@@ -241,3 +241,44 @@ types-only + `three` freely; screens reach the factory through the same
 `await import('../../../render/index.js')` dynamic import that already carries
 `createTacticalView` / `attachTracePlayer`, so the entry bundle stays
 three-free (verified against `dist/assets/index-*.js`).
+
+<!-- SESSION-01 · playtest-feedback-02 · M13 render delta -->
+
+### playtest-feedback-02 SESSION-01 — arch delta (M13 render)
+
+**New module (internal, not barrel-exported).** `src/render/postfx.ts` — bloom
+post-processing pipeline. Owns `EffectComposer` + `RenderPass` +
+`UnrealBloomPass` + `OutputPass`; exposes `createBloomComposer(renderer, scene,
+quality)` plus pure `halfRes(w,h)` and `bloomParamsFor(quality)` helpers. Lives
+INSIDE `scene.ts` — `SceneContext.render(camera)` routes through the composer
+when `bloomParamsFor(quality).enabled`, else falls back to
+`renderer.render(scene, camera)` (byte-equivalent to the pre-CP1 path under
+`quality === 'reduced'`). No barrel export → `src/render/index.ts` unchanged →
+SESSION-02/03/04 concurrency preserved.
+
+**No public API change on `M13`.** `SceneContext` / `BoundaryShell` /
+`ShipInstances` / `TrailLayer` all keep the same exported shape. Internal
+additions:
+
+- `BoundaryShell.mesh` now has a low-alpha back-face `MeshBasicMaterial` child
+  (haze wash) that inherits its scale — `TacticalView.ts` (out of lease) still
+  only adds `boundary.mesh` and the wash comes along for free.
+- `ShipInstances` sync now also attaches a shared unit-radius `SphereGeometry`
+  child (× `SHIP_CORE_RADIUS_FACTOR = 0.35`) with a per-ship
+  `MeshBasicMaterial` core aura; `setOpacity` fades outline + core together so
+  playback fade behaviour is unchanged from the caller's perspective. New
+  exported constant `SHIP_CORE_OPACITY = 0.35` (not re-exported by the barrel).
+- `TrailLayer.push`/`tick`/`clear`/`dispose` signatures unchanged.
+  `attachTrail(view, opts)` accepts an optional new `opts.pointSize` (default
+  `DEFAULT_TRAIL_POINT_SIZE = 6`). Visual primitive swapped from `Line` +
+  `LineBasicMaterial` to `Points` + `PointsMaterial` (additive,
+  size-attenuated, vertex-color age fade). Per-ship buffers pre-sized to
+  `TRAIL_MAX_POINTS = 300` — no per-`push` reallocation. New exported
+  constants `DEFAULT_TRAIL_POINT_SIZE` and `TRAIL_MAX_POINTS` (not re-exported
+  by the barrel).
+
+**Bloom tuning:** high tier `strength = 0.9, radius = 0.5, threshold = 0.55`.
+Threshold sized so the low-alpha boundary shell / haze / inner-core layers stay
+below the bloom cutoff and never accumulate into unwanted glow; only the
+additive `Points` trails and (SESSION-02) beam materials cross the cutoff into
+the bloom mip.
