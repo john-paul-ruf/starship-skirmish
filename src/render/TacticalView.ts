@@ -16,7 +16,12 @@ import type { Body, BodyId, ChassisClass, MatchState } from '../sim/index.js';
 import { createBoundaryShell } from './boundary.js';
 import { createTacticalCamera, focusBodyFor, focusSourceFor, projectToViewport } from './camera.js';
 import { createHazardInstances, bodyKindToGlyph, type HazardInput, type HazardKind } from './hazards.js';
-import { createLabelOverlay, type LabelDatum } from './labels.js';
+import {
+  LABEL_PRIORITY,
+  createLabelOverlay,
+  fleetGlyphOf,
+  type LabelDatum,
+} from './labels.js';
 import { createPickBuffer, type PickInput } from './pick.js';
 import { createSceneContext, type StalkInput } from './scene.js';
 import type { PickResult, SceneHandles, TacticalView } from './types.js';
@@ -98,10 +103,17 @@ export const createTacticalView = (
         const chassisClass: ChassisClass = combat?.ship.chassisClass ?? 'fighter';
         const fleet = fleetColorOf(state.fleetOf.get(id) ?? 0);
         shipInputs.push({ id, chassisClass, fleet, position: [x, y, z], radius: body.radius });
+        // Text mirrors mocks/tactical-attack.html `.mk-lbl` — glyph + build name; CP2
+        // expands hazard/missile emission, this checkpoint just satisfies the new
+        // required `kind`/`priority` fields so the tree typechecks.
+        const name = combat?.ship.name ?? '';
         nextLabels.push({
           id,
-          text: `${combat?.ship.name ?? ''} · ${chassisClass}`,
+          kind: 'ship',
+          text: `${fleetGlyphOf(fleet)} ${name}`,
           world: [x, y, z],
+          fleet,
+          priority: LABEL_PRIORITY.ship,
         });
       } else {
         hazardInputs.push({
