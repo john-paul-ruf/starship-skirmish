@@ -302,3 +302,76 @@ row and the PER-WEAPON header now carries an `InfoTip` sourced from
 Encyclopedia storage rail — each is that screen's own future lease).
 
 Dependency direction: unchanged. Components import from `preact` only.
+
+<!-- SESSION-04 · playtest-feedback-02 · M14 in-match UI delta -->
+
+## M14 UI — playtest-feedback-02 · SESSION-04 delta
+
+### New public component
+
+`src/ui/screens/tacticalAttack/CombatLogPanel.tsx` — compact in-match
+combat-log strip mounted below the tactical attack viewport during
+`attack-plan` AND `attack-resolve`. Renders TEXT NODES only (§4.9). Props:
+
+```ts
+export interface CombatLogPanelProps {
+  readonly rows: readonly LogRow[];            // from postMatch/model
+  readonly nameOf: (id: BodyId) => string;
+  readonly turnLabel: string;                  // e.g. "TURN 4"
+}
+```
+
+Reuses the existing `LogRow`/`logKindOf` types + the `.log` / `.log-line` /
+`.is-kill` / `.is-crit` classes from `components.css §12 COMBAT LOG` —
+zero new tokens. Row shape mirrors the post-match `LogLine` verbatim so
+the strip and the FULL COMBAT LOG (§4.11) read the same across phases.
+
+### New pure selector
+
+`src/ui/screens/tacticalAttack/model.ts` — appended:
+
+```ts
+export const liveLogRows = (
+  trace: ResolutionTrace,
+  currentTurn: number,
+): readonly LogRow[]
+```
+
+Filters `flattenCombatLog(trace)` to the current turn, reverses to
+newest-first, returns. **D-LOG-SURFACE-ONLY** — no `sim/trace` change,
+no new `MatchController` field: the panel reads what the trace already
+carries (arch §6.2). Blind-commit invariant preserved: `trace`
+accumulates only after a beat resolves; pending plans never reach the
+strip. Node-only import (`.ts` sibling of the JSX panel).
+
+### New load-bearing CSS classes
+
+`src/ui/styles/components.css` — appended §20 (in-match shell frame,
+gated at `@media (min-width: 1024px)` — the DesktopGate breakpoint):
+
+- `.app-shell` — `height:100vh; display:flex; flex-direction:column;
+  overflow:hidden`. The whole shell becomes a fixed 100vh flex column so
+  the tactical viewport can no longer drift with page scroll.
+- `.app-main` — `flex:1 1 auto; min-height:0; overflow-y:auto`. Default
+  behaviour: non-tactical screens (Encyclopedia, Shipyard, PostMatch)
+  keep natural page flow and scroll THE MAIN AREA when their content
+  exceeds the frame.
+- `.app-main.is-fixed-frame` — `overflow:hidden; display:flex;
+  flex-direction:column`. Applied by `App.tsx` on tactical routes only
+  (`tactical-move`, `tactical-attack`). Under this class the middle
+  never scrolls; side panels + bench regions own their own scroll.
+
+Tactical screens' scoped `<style>` tags carry the column-level rules
+(`.ta-shell` / `.ta-layout` / `.ta-col-l` / `.ta-col-r` /
+`.ta-roster-scroll` / `.ta-bench-scroll` on `TacticalAttack.tsx`;
+`.tm-layout > [data-testid="fleet-roster"]` + `.tm-roster` on
+`TacticalMove.tsx`).
+
+### Cross-screen import
+
+`tacticalAttack/model.ts` + `TacticalAttack.tsx` now import from the
+sibling `../postMatch/model.js` — `flattenCombatLog` / `LogRow` /
+`nameByBodyId`. Both directories live in `src/ui/screens/` (M14); no
+module-boundary lint change. Motivation: `postMatch/model.ts` is the
+canonical `ResolutionTrace → LogRow[]` derivation and there is no
+architectural gain to duplicating it under `tacticalAttack/`.
