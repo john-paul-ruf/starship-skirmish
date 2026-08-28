@@ -201,3 +201,43 @@ export const TRAIL_COLOR = 0x22e3ff;
   later, it belongs on a `HazardInstances.setOpacity` seam, not here.
 - `worldToScreen` reads the live viewport width/height cached inside `TacticalView`;
   screens need no manual refresh — `resize()` already updates the cache.
+
+<!-- SESSION-07 · playtest-feedback-01 · M13 public-API delta -->
+
+### M13 (render) — public barrel additions
+
+Two new exports on `src/render/index.ts` (append-only, no reorder, no existing
+export removed):
+
+- `createRangeShell(radius: number): RangeShell` — factory for a translucent
+  cyan sphere used as a weapon-range envelope overlay. Mirrors
+  `createBoundaryShell` in lifecycle (sphere geometry, `setQuality` degrade
+  hook, `dispose`) and adds two mutators the boundary lacks: `setCenter(x, y, z)`
+  so the shell rides on the shooter's world position (the boundary is
+  arena-anchored at the origin), and `setVisible(v)` so the overlay toggles
+  between selections without disposal churn. Colour is `--cyan`
+  (`0x22e3ff`) — the player-primary token (`mocks/console.css §1`); red is
+  reserved for boundary / lethal cues. Draws a supplied radius at a supplied
+  position; computes NO to-hit number (arch §13.3 — hit chance stays
+  single-sourced through `hitChanceFor`). Consumers own the scene-graph
+  add/remove: `view.scene.context.scene.add(shell.mesh)` on mount,
+  `.remove(shell.mesh)` + `shell.dispose()` on unmount.
+
+- `RangeShell` — the handle type:
+
+  ```ts
+  interface RangeShell {
+    readonly mesh: Mesh;
+    setRadius(r: number): void;
+    setCenter(x: number, y: number, z: number): void;
+    setVisible(v: boolean): void;
+    setQuality(q: RenderQuality): void;
+    dispose(): void;
+  }
+  ```
+
+Both live in `src/render/range.ts`. `render/**` continues to import `sim` as
+types-only + `three` freely; screens reach the factory through the same
+`await import('../../../render/index.js')` dynamic import that already carries
+`createTacticalView` / `attachTracePlayer`, so the entry bundle stays
+three-free (verified against `dist/assets/index-*.js`).
