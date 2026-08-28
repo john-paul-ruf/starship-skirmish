@@ -218,6 +218,32 @@ export const createMatchController = (
     await animationBarrier();
     if (finished) return;
 
+    // ── EARLY DEFEAT — player wiped during the movement beat ───────────────
+    // A collision or boundary exit that kills the player's last ship must end
+    // the match immediately; otherwise the player is dragged through a dead
+    // attack phase they cannot act in. Stamp a COMPLETE turn (empty attack
+    // beat — no plans, state unchanged) so the post-match combat log / fates
+    // stay well-formed, then finish. `applyTurnEnd` has NOT run yet, so
+    // `state.value.turn` is the current (decided) turn.
+    if (playerEliminated(state.value)) {
+      const at = runAttackBeat(state.value, []);
+      state.value = at.state;
+      attackBeat.value = at.record;
+      const decidedTurn = state.value.turn;
+      trace.value = withTurn(trace.value, {
+        turn: decidedTurn,
+        movement: mv.record,
+        attack: at.record,
+      });
+      const outc = defeatOutcome(decidedTurn);
+      finished = true;
+      outcome.value = outc;
+      trace.value = withOutcome(trace.value, outc);
+      phase.value = 'complete';
+      services.navigate({ name: 'post-match' });
+      return;
+    }
+
     // ── ATTACK PLAN — post-movement positions (FR-20) ───────────────────────
     view.value = makeBlindView(state.value, playerFleetId);
     phase.value = 'attack-plan';

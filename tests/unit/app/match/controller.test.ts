@@ -307,6 +307,64 @@ describe('createMatchController — player-fleet elimination ends the match', ()
     expect(controller.trace.value.outcome).toEqual(controller.outcome.value);
   });
 
+  it('movement-beat: player wiped by collision/boundary exit → finish immediately with an empty attack log', async () => {
+    // Same three-fleet setup as the turn-end test, but the wipe happens
+    // during the movement beat — the controller must not drag the player
+    // through a dead attack phase. The recorded turn's `attack.log` is empty
+    // because the shortcut runs `runAttackBeat(state, [])`.
+    const player = generateBotFleet(catalog, BUDGET, 'ace', 33);
+    const config = assembleMatchConfig(
+      catalog,
+      catalog.tuning,
+      BUDGET,
+      seedOf(0xf00d, 0xd00d),
+      player,
+      [
+        { tier: 'veteran', rngKey: 0x404 },
+        { tier: 'veteran', rngKey: 0x505 },
+      ],
+    );
+    const { services, routes } = captureRoutes();
+    const controller = createMatchController(services, config, ['veteran', 'veteran']);
+    const stateSignal = controller.state as unknown as { value: MatchState };
+
+    await flush();
+    expect(controller.phase.value).toBe('movement-plan');
+
+    controller.commitMovement([]);
+    await flush();
+    expect(controller.phase.value).toBe('movement-resolve');
+
+    // Simulate the player's last ship dying during movement — inject BEFORE
+    // the animation barrier resolves so the movement-beat exit branch fires.
+    stateSignal.value = wipeFleet(stateSignal.value, PLAYER_FLEET_ID);
+
+    controller.resolveAnimationDone();
+    await flush();
+    // No 'attack-plan' phase, no 'tactical-attack' route — the shortcut
+    // steps straight from movement-resolve to complete.
+    expect(controller.phase.value).toBe('complete');
+    expect(routes.at(-1)).toEqual({ name: 'post-match' });
+    expect(routes).not.toContainEqual({ name: 'tactical-attack' });
+
+    // Turn 1 is decided (state.turn is still 1 — `applyTurnEnd` has NOT run).
+    expect(controller.outcome.value).toEqual({
+      kind: 'victory',
+      fleetId: PLAYER_FLEET_ID + 1,
+      turns: 1,
+    });
+    // A complete TurnRecord was stamped so PostMatch / combat log stay well-
+    // formed; the attack half is an empty beat (no plans → no shots).
+    expect(controller.trace.value.turns).toHaveLength(1);
+    const stampedTurn = controller.trace.value.turns[0]!;
+    expect(stampedTurn.turn).toBe(1);
+    expect(stampedTurn.attack.log).toEqual([]);
+    expect(stampedTurn.attack.destroyed).toEqual([]);
+    expect(stampedTurn.attack.launchedMissileIds).toEqual([]);
+    // Trace outcome is stamped for the post-match summary.
+    expect(controller.trace.value.outcome).toEqual(controller.outcome.value);
+  });
+
   it('turn-end: player and last enemy both wiped → mutual-destruction (existing three-branch case)', async () => {
     // Two-fleet setup: `checkVictory` on a total wipe already returns
     // `mutual-destruction`; the fallback must not stomp it. Regression guard
