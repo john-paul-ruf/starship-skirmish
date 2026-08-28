@@ -1,17 +1,29 @@
 name: CI
 
-# GitHub Actions CI stub — architecture §11 (Deployment).
+# GitHub Actions CI — architecture §11 (Deployment) + §7.5 row 4 (cross-engine
+# determinism).
 #
-# This is the minimal pipeline that runs today: typecheck → lint → test:unit → build,
-# plus the SESSION-04 additions: test:determinism (Node golden + shuffle + tunneling +
-# manifest hash-lock), test:harness-purity (FR-33 structural check), and the
-# cross-engine Playwright job that proves the digests match on Chromium + Firefox +
-# WebKit (architecture §7.5 row 4).
+# Every gate that must pass before GitHub Pages can safely serve the built app
+# is expressed once in `package.json`:
 #
-# Later features append the remaining jobs listed in architecture §11 steps 2–6:
+#   - `verify:pages:node`      → typecheck, lint/boundaries, unit tests, catalog
+#                                 lock, deterministic Node fixtures, migration
+#                                 fixtures, harness purity, production build.
+#   - `verify:pages:browsers`  → cross-engine determinism specs (physics,
+#                                 assembled combat, and full bot-vs-bot
+#                                 harness) executed under Chromium + Firefox +
+#                                 WebKit via Playwright projects.
+#   - `verify:pages`           → both halves in order (used by the tracked
+#                                 pre-push hook so local pushes cannot bypass
+#                                 the same set the workflow runs).
+#
+# This workflow invokes those halves so the local hook and CI cannot drift.
+#
+# Later features append the remaining architecture §11 jobs:
 #
 #   TODO(deployment): add the Pages job — actions/upload-pages-artifact +
-#     actions/deploy-pages on `main` (§11 step 6).
+#     actions/deploy-pages on `main` (§11 step 6). Adding hard remote
+#     enforcement of this workflow is a separate GitHub repository-rule change.
 
 on:
   push:
@@ -21,7 +33,7 @@ on:
 
 jobs:
   build:
-    name: typecheck / lint / test / build
+    name: verify:pages:node (typecheck / lint / test / build)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,35 +47,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Lint (boundaries + determinism ban-list)
-        run: npm run lint
-
-      - name: Unit tests
-        run: npm run test:unit
-
-      - name: Catalog lock integrity (FR-1)
-        run: npm run test:catalog-lock
-
-      - name: Determinism tests (golden + shuffle + tunneling + manifest hash-lock)
-        run: npm run test:determinism
-
-      - name: Migration fixtures hash-lock (FR-2)
-        run: npm run test:fixtures
-
-      - name: Harness purity check (FR-33 structural)
-        run: npm run test:harness-purity
-
-      - name: Build
-        run: npm run build
+      - name: Verify Pages readiness (Node half)
+        run: npm run verify:pages:node
 
   cross-engine-determinism:
-    # Architecture §7.5 row 4: Chromium + Firefox + WebKit must produce identical
-    # digests to the Node golden fixtures. Ships alongside the main build job on the
-    # same trigger; if the sim math ever produces engine-different bits, THIS fails.
-    name: cross-engine determinism (Playwright)
+    # Architecture §7.5 row 4: Chromium + Firefox + WebKit must produce
+    # identical digests to the Node golden fixtures. The three specs cover
+    # physics scenarios, assembled combat, and the full bot-vs-bot harness.
+    # Runs after the Node half so an engine-independent failure surfaces
+    # first.
+    name: verify:pages:browsers (cross-engine determinism)
     runs-on: ubuntu-latest
     needs: build
     steps:
@@ -81,5 +74,5 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps
 
-      - name: Run Playwright determinism spec
-        run: npx playwright test tests/e2e/determinism.spec.ts
+      - name: Verify Pages readiness (browser half)
+        run: npm run verify:pages:browsers

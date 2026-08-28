@@ -18,7 +18,10 @@
     "test:fixtures": "vitest run tests/fixtures",
     "test:harness-purity": "tsx tools/balance/purity-check.ts",
     "harness": "tsx tools/balance/cli.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "verify:pages:node": "npm run typecheck && npm run lint && npm run test:unit && npm run test:catalog-lock && npm run test:determinism && npm run test:fixtures && npm run test:harness-purity && npm run build",
+    "verify:pages:browsers": "playwright test ./tests/e2e/determinism.spec.ts ./tests/e2e/combatDeterminism.spec.ts ./tests/e2e/harnessMatchDeterminism.spec.ts",
+    "verify:pages": "npm run verify:pages:node && npm run verify:pages:browsers"
   },
   "dependencies": {
     "@preact/signals": "^2.0.0",
