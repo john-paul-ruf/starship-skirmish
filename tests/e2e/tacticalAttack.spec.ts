@@ -577,6 +577,28 @@ test.describe('tactical attack screen', () => {
     expect(commitBox!.y + commitBox!.height).toBeLessThanOrEqual(720);
     expect(commitBox!.y).toBeGreaterThanOrEqual(0);
 
+    // playtest-feedback-05 SESSION-04 CP1 (FB2 · "no bottom panel"): the
+    // commit is CONTAINED — it lives inside the right column and never spans
+    // the whole 1280px page width. The measured button sits well inside the
+    // frame: it must be less than half the viewport, and its parent (the
+    // right column) must be narrower than the viewport by at least the left
+    // column's minimum track. The two-column grid keeps roster + right col
+    // side-by-side even at the min viewport; a regression to a single-column
+    // grid at 1280 would fail this.
+    expect(commitBox!.width).toBeLessThan(1000);
+    const rightColWidth = await planScroll.evaluate((el) => {
+      const col = el.parentElement as HTMLElement | null;
+      return col === null ? null : col.getBoundingClientRect().width;
+    });
+    expect(rightColWidth, 'right-column width').not.toBeNull();
+    expect(rightColWidth!).toBeLessThan(1200);
+    // The button is fully inside its parent column horizontally.
+    const colLeft = await planScroll.evaluate((el) => {
+      const col = el.parentElement as HTMLElement | null;
+      return col === null ? null : col.getBoundingClientRect().left;
+    });
+    expect(colLeft!).toBeGreaterThan(0); // roster occupies the left gutter
+
     expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
   });
 
