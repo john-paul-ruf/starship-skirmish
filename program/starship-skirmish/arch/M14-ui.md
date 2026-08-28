@@ -432,3 +432,51 @@ Dependency direction: unchanged. `catalogInfo.ts` imports nothing from
 outside `src/ui/screens/shipyard/**`; the pickers import `InfoTip` from
 the components barrel READ-ONLY (no barrel edit — SESSION-01 concurrency).
 No `components.css` edit. No `catalog/**` edit (FR-1 additive-only).
+
+<!-- SESSION-02 -->
+### M14 (ui) — TacticalMove default-plan semantics + persistent combat log
+
+Two additive notes from `playtest-feedback-03` SESSION-02. Neither adds nor
+removes a public export; both are behaviour clarifications the roster + gate
+readouts now depend on.
+
+- **`D-COMMIT-DEFAULT-COAST`** — `src/ui/screens/tacticalMove/model.ts`
+  `initialDraft` now seeds every LIVING ship on `PlanStatus = 'coast'`
+  (previously only engine-dead ships were seeded coast; living ships were
+  `unplanned`). This flips `fleetGateStatus.canCommit` to `true` on turn
+  entry — the fleet may commit without touching a single control ("commit
+  without changing any values", owner playtest FB3a). Semantics chain:
+  * `coast` still means "no thrust — keep current velocity" (Newtonian). A
+    committed coast draft still emits an all-zero segment burn list from
+    `waypointBurnsFor`, so `sim/physics` sees the same shape as before —
+    the plan-side default alone changed, not the resolver contract.
+  * Any `plotWaypoint` edit (bearing / pitch / magnitude) still flips the
+    draft to `planned` via the existing transition, so intentional arcs
+    override the default with no new opt-out control.
+  * The FleetRoster plan-status badge (`planBadgeFor`) reads `COAST ✓` on
+    entry for every living player ship (never `● UNPLANNED` in the fresh
+    state); FR-13 never-color-alone contract holds — the text + token
+    class are unchanged.
+  * Blind-commit invariant (FR-17) untouched: no new field, no new sim
+    contact, no opponent-plan surface.
+
+- **Persistent combat log strip** — `src/ui/screens/TacticalMove.tsx` mounts
+  the shared `CombatLogPanel` (owned in `screens/tacticalAttack/`) in the
+  right `.tm-plan` column between the scrolling plan body and `CommitBar`,
+  visible in BOTH `movement-plan` AND `movement-resolve`. Same
+  D-LOG-SURFACE-ONLY seam the Attack screen uses (playtest-feedback-02 · S04
+  delta): reads `liveLogRows(match.trace.value, match.turn.value)` +
+  `nameByBodyId(match.initialFleets)`; no `MatchController` field added, no
+  `sim/trace` change, no `postMatch/model` API surface change. The new slot
+  wrapper `.tm-log-slot { flex: none; padding: 0 var(--s3) var(--s3); }`
+  lives in the file-scoped `TM_STYLES` block — never in
+  `styles/components.css`, never in `styles/tokens.css` — so the fixed-frame
+  100vh contract (playtest-feedback-02 · S04 CP1) is preserved: viewport +
+  plotter keep their space, the panel's own `.log` body owns internal
+  scroll (`max-height: 132px`).
+
+Dependency direction unchanged: `ui` reads `sim` types only via `matchContext`
++ the sim barrel; no new module-boundary edge. The cross-screen sibling read
+(`screens/tacticalMove → screens/tacticalAttack`,
+`screens/tacticalMove → screens/postMatch`) mirrors the existing
+`screens/tacticalAttack → screens/postMatch` seam and stays within M14.
