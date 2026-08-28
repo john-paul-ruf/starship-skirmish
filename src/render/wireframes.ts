@@ -10,7 +10,7 @@
 // Nothing here mutates `MatchState`: `sync`/`setPosition` are fed plain position
 // tuples the caller derived from a read-only `Body`.
 
-import { Group, Vector2, Vector3 } from 'three';
+import { Group, Mesh, MeshBasicMaterial, SphereGeometry, Vector2, Vector3 } from 'three';
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
@@ -197,6 +197,12 @@ export interface ShipInstances {
 interface ShipHandle {
   readonly object: LineSegments2;
   material: LineMaterial;
+  /**
+   * Dim inner-core aura material (playtest-feedback-02 SESSION-01 CP3 — prototype
+   * `buildShipMesh`). Fades in step with `material` so a mid-beat opacity fade darkens
+   * both outline and core; per-instance so `setOpacity(id, …)` never leaks to fleetmates.
+   */
+  coreMaterial: MeshBasicMaterial;
   chassisClass: ChassisClass;
   fleet: FleetColor;
 }
@@ -205,6 +211,17 @@ const LINE_WIDTH_HIGH = 2.4;
 const LINE_WIDTH_REDUCED = 1.2;
 /** Default silhouette opacity — the "solid" ship look; playback fades multiply against it. */
 export const SHIP_DEFAULT_OPACITY = 0.95;
+/**
+ * Default inner-core aura opacity (CP3 — prototype `buildShipMesh` `0.35`). The core is
+ * a "hulls read solid at fleet zoom" cue; alpha stays well below the CP1 bloom threshold.
+ */
+export const SHIP_CORE_OPACITY = 0.35;
+/**
+ * Unit-radius factor for the inner core (CP3 — prototype `radius * 0.35`). The core
+ * geometry is unit-radius × this factor; per-ship `object.scale.setScalar(radius)` on the
+ * parent LineSegments2 scales it to the hull.
+ */
+const SHIP_CORE_RADIUS_FACTOR = 0.35;
 
 /** Build the ship-instance manager. Shared geometry per class + material per fleet. */
 export const createShipInstances = (): ShipInstances => {
@@ -219,6 +236,10 @@ export const createShipInstances = (): ShipInstances => {
     geometries.set(cls, g);
     return g;
   };
+
+  // Shared inner-core sphere geometry (unit radius × factor) — one allocation for
+  // every ship in the field. Per-ship materials still exist for the fade path.
+  const coreGeometry = new SphereGeometry(SHIP_CORE_RADIUS_FACTOR, 12, 8);
 
   const resolution = new Vector2(1, 1);
   let currentLineWidth = LINE_WIDTH_HIGH;
@@ -235,6 +256,13 @@ export const createShipInstances = (): ShipInstances => {
     m.resolution.copy(resolution);
     return m;
   };
+  const buildCoreMaterial = (fleet: FleetColor): MeshBasicMaterial =>
+    new MeshBasicMaterial({
+      color: FLEET_PALETTE[fleet],
+      transparent: true,
+      opacity: SHIP_CORE_OPACITY,
+      depthWrite: false,
+    });
 
   const ships = new Map<BodyId, ShipHandle>();
 
@@ -247,8 +275,17 @@ export const createShipInstances = (): ShipInstances => {
         const material = buildMaterial(input.fleet);
         const object = new LineSegments2(geometryFor(input.chassisClass), material);
         object.userData['bodyId'] = input.id;
+        const coreMaterial = buildCoreMaterial(input.fleet);
+        const core = new Mesh(coreGeometry, coreMaterial);
+        object.add(core); // inherits `object.scale` so the core sits at `radius × 0.35`
         group.add(object);
-        handle = { object, material, chassisClass: input.chassisClass, fleet: input.fleet };
+        handle = {
+          object,
+          material,
+          coreMaterial,
+          chassisClass: input.chassisClass,
+          fleet: input.fleet,
+        };
         ships.set(input.id, handle);
       } else {
         if (handle.chassisClass !== input.chassisClass) {
@@ -259,10 +296,19 @@ export const createShipInstances = (): ShipInstances => {
           handle.material.dispose();
           handle.material = buildMaterial(input.fleet);
           handle.object.material = handle.material;
+          handle.coreMaterial.dispose();
+          handle.coreMaterial = buildCoreMaterial(input.fleet);
+          // Re-parent the core with the fresh material — geometry stays shared.
+          const previousCore = handle.object.children.find(
+            (child): child is Mesh => child instanceof Mesh,
+          );
+          if (previousCore !== undefined) handle.object.remove(previousCore);
+          handle.object.add(new Mesh(coreGeometry, handle.coreMaterial));
           handle.fleet = input.fleet;
         } else {
           // Re-sync a live ship → back to solid (any mid-beat fade is cleared).
           handle.material.opacity = SHIP_DEFAULT_OPACITY;
+          handle.coreMaterial.opacity = SHIP_CORE_OPACITY;
         }
       }
       const [x, y, z] = input.position;
@@ -273,6 +319,7 @@ export const createShipInstances = (): ShipInstances => {
       if (!seen.has(id)) {
         group.remove(handle.object);
         handle.material.dispose();
+        handle.coreMaterial.dispose();
         ships.delete(id);
       }
     }
@@ -288,6 +335,7 @@ export const createShipInstances = (): ShipInstances => {
     if (handle === undefined) return;
     const clamped = alpha < 0 ? 0 : alpha > 1 ? 1 : alpha;
     handle.material.opacity = clamped * SHIP_DEFAULT_OPACITY;
+    handle.coreMaterial.opacity = clamped * SHIP_CORE_OPACITY;
   };
 
   const positionOf = (id: BodyId): Vector3 | null => {
@@ -309,10 +357,12 @@ export const createShipInstances = (): ShipInstances => {
     for (const handle of ships.values()) {
       group.remove(handle.object);
       handle.material.dispose();
+      handle.coreMaterial.dispose();
     }
     ships.clear();
     for (const g of geometries.values()) g.dispose();
     geometries.clear();
+    coreGeometry.dispose();
   };
 
   return {
