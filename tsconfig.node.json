@@ -19,6 +19,9 @@
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,
 
+    "jsx": "preserve",
+    "jsxImportSource": "preact",
+
     "noEmit": true
   },
   "include": ["vite.config.ts", "tools/**/*.ts", "tests/**/*.ts"],
