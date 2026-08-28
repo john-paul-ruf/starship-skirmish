@@ -177,7 +177,13 @@ not lie"). `fromPreviewPath` threads `markIntervalSec` through.
 
 **New primitive — `trail.ts`** (Gate 1 FINDINGS §2a port):
 ```ts
-attachTrail(view: TacticalView, opts?: { readonly windowSeconds?: number }): TrailLayer
+// Introduced this session as Line+LineBasicMaterial; later re-skinned to additive
+// Points+PointsMaterial by playtest-feedback-02 SESSION-01 (see delta below). The
+// TrailLayer interface itself never changed; opts gained pointSize in that swap.
+attachTrail(
+  view: TacticalView,
+  opts?: { readonly windowSeconds?: number; readonly pointSize?: number },
+): TrailLayer
 interface TrailLayer {
   push(id: BodyId, at: readonly [number, number, number], simTime: number): void;
   tick(nowSimTime: number): void;

@@ -69,3 +69,37 @@ traceDigest(trace: ResolutionTrace): string            // 8-char lowercase hex
   remains the loop's `matchDigest` (S04).
 
 **Cost**: +645 non-test LOC (`combatLog.ts` 234 + `trace.ts` 139 + `digest.ts` 232 + `index.ts` 40) across the 3 files. Every entry frozen; every builder pure.
+
+---
+
+## Known cross-module gaps (memorialised by Roshi)
+
+### `AttackBeatRecord.launchedMissileIds` carries no shooter/target correlation
+
+`AttackBeatRecord.launchedMissileIds: readonly BodyId[]` names the missiles
+that entered the field this beat but records nothing about **which shooter
+launched each one** or **which target it was launched at**. Confirmed by
+`src/sim/trace/trace.ts:52`, `src/sim/loop/resolveBeat.ts` (launch step), and
+`src/sim/rules/attack.ts` ("Missile LAUNCHES are not logged here").
+
+- **Discovered by:** `playtest-feedback-02` SESSION-02 while porting missile
+  flight animation to `M13/TracePlayer.playAttack`. The literal ask
+  ("missiles fly shooter→target during the attack beat") could not be
+  delivered under that feature's "no `sim/trace` change" constraint; missile
+  flight was re-homed to the movement beat as an honest adaptation.
+- **Render-side helper already in place:** `M13/interp.ts::projectileAt` is
+  ready to render per-launch flight as soon as the record carries the pair.
+- **Suggested extension** (for a future M11 lease, NOT a Roshi ask):
+  ```ts
+  interface LaunchedMissile {
+    readonly missileId: BodyId;
+    readonly shooterId: BodyId;
+    readonly targetId: BodyId;
+    readonly spawnPosition: Vec3;
+  }
+  // Add to AttackBeatRecord alongside launchedMissileIds (append; do not remove
+  // the existing field until every consumer migrates — fixture hash-lock, FR-2).
+  readonly launched: readonly LaunchedMissile[];
+  ```
+  Any change here also updates `tests/fixtures/migration/*` per FORGE-CONFIG
+  Custom Rule 3 (fixtures append-only, hash-locked).
