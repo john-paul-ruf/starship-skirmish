@@ -32,7 +32,7 @@
 // this screen never renders one.
 
 import { useSignal } from '@preact/signals';
-import { useEffect, useRef } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 
 import { useApp } from '../appContext.js';
 import { useMatch } from '../matchContext.js';
@@ -83,6 +83,11 @@ export function TacticalMove() {
   const drafts = useSignal<Map<BodyId, PlanDraft>>(new Map());
   const selected = useSignal<BodyId | null>(null);
   const markInterval = useSignal<MarksIntervalValue>(1);
+  // playtest-feedback-05 SESSION-03 CP3 (FB3, D-IMMERSIVE-GRID-COLLAPSE): the
+  // full-field maximize toggle. `.is-immersive` collapses `.tm-layout` to the
+  // stage alone, staying inside the bounded `.app-main.is-fixed-frame` (a
+  // scoped grid-collapse, never a `position:fixed` escape).
+  const fullscreen = useSignal(false);
   const planTurn = useRef<number | null>(null);
   /** Last marks-interval a draft-rebuild ran against — the CP3 gate so the
    *  interval-change effect fires only on a real change, not on turn init. */
@@ -141,6 +146,22 @@ export function TacticalMove() {
     }
     drafts.value = next;
   }, [markInterval.value]);
+
+  // SESSION-03 CP3: Esc exits immersive/full-field mode — the one keyboard
+  // way back besides the CameraHud restore button. Listener is live only
+  // while immersive (no stray global handler when the panels are showing).
+  // `useLayoutEffect` (not `useEffect`) — the listener must attach in the
+  // same synchronous commit as the class flip; a passive effect's
+  // requestAnimationFrame-deferred scheduling left a brief window where a
+  // real Escape keypress right after entering immersive mode was missed.
+  useLayoutEffect(() => {
+    if (!fullscreen.value) return;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') fullscreen.value = false;
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [fullscreen.value]);
 
   // ---- Derivations ---------------------------------------------------------
   const budgetById = new Map<BodyId, number>();
@@ -263,7 +284,10 @@ export function TacticalMove() {
   const nameOf = (id: BodyId): string => names.get(id) ?? `BODY ${String(id)}`;
 
   return (
-    <section class="tm-shell" data-testid="screen-tactical-move">
+    <section
+      class={`tm-shell${fullscreen.value ? ' is-immersive' : ''}`}
+      data-testid="screen-tactical-move"
+    >
       <TacticalMoveStyles />
 
       <div class="tm-layout">
@@ -323,8 +347,12 @@ export function TacticalMove() {
           />
           <CameraHud
             canFocus={selId !== null}
+            fullscreen={fullscreen.value}
             onReset={() => viewportRef.current?.resetView()}
             onFocus={() => viewportRef.current?.focusSelected()}
+            onToggleFullscreen={() => {
+              fullscreen.value = !fullscreen.value;
+            }}
           />
         </main>
 
@@ -420,6 +448,15 @@ const TM_STYLES = `
 
   .tm-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr) 360px;
                gap: var(--s3); padding: var(--s3); flex: 1 1 auto; min-height: 0; align-items: stretch; }
+
+  /* playtest-feedback-05 SESSION-03 CP3 (FB3, D-IMMERSIVE-GRID-COLLAPSE):
+     full-field mode collapses the grid to the stage alone and hides the side
+     panels — a scoped class toggle inside the bounded fixed frame, never a
+     \`position:fixed\` escape from \`.app-main.is-fixed-frame\`. */
+  .tm-shell.is-immersive .tm-layout { grid-template-columns: 1fr; }
+  .tm-shell.is-immersive .tm-layout > .tm-roster,
+  .tm-shell.is-immersive .tm-layout > [data-testid="fleet-roster"],
+  .tm-shell.is-immersive .tm-layout > .tm-plan { display: none; }
 
   .tm-roster, .tm-plan { display: flex; flex-direction: column; min-height: 0; }
   /* Resolve-state roster: the panel wraps a hint line — allow it to scroll

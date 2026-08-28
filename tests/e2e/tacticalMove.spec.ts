@@ -478,6 +478,58 @@ test.describe('tactical movement screen', () => {
   });
 
   // -------------------------------------------------------------------------
+  // playtest-feedback-05 SESSION-03 CP3 — full-screen the 3D field (FB3)
+  // -------------------------------------------------------------------------
+
+  test('maximize expands the field and hides the side panels; restore and Esc both bring them back', async ({
+    page,
+  }) => {
+    const errors = await mount(page);
+
+    const shell = page.getByTestId('screen-tactical-move');
+    const roster = page.getByTestId('fleet-roster');
+    const plan = page.locator('.tm-plan');
+    const maximize = page.getByTestId('cam-maximize');
+
+    // Not immersive on entry — both side panels visible, button reads FULL FIELD.
+    await expect(shell).not.toHaveClass(/is-immersive/);
+    await expect(roster).toBeVisible();
+    await expect(plan).toBeVisible();
+    await expect(maximize).toHaveAttribute('aria-pressed', 'false');
+    await expect(maximize).toContainText('FULL FIELD');
+
+    // Click maximize — the shell gains is-immersive, side panels hide, the
+    // stage remains the sole visible grid child.
+    await maximize.click();
+    await expect(shell).toHaveClass(/is-immersive/);
+    await expect(roster).toBeHidden();
+    await expect(plan).toBeHidden();
+    await expect(page.locator('.tm-stage')).toBeVisible();
+    await expect(maximize).toHaveAttribute('aria-pressed', 'true');
+    await expect(maximize).toContainText('RESTORE');
+
+    // Restore via the button.
+    await maximize.click();
+    await expect(shell).not.toHaveClass(/is-immersive/);
+    await expect(roster).toBeVisible();
+    await expect(plan).toBeVisible();
+
+    // Re-enter immersive, then exit via Esc.
+    await maximize.click();
+    await expect(shell).toHaveClass(/is-immersive/);
+    await page.keyboard.press('Escape');
+    await expect(shell).not.toHaveClass(/is-immersive/);
+    await expect(roster).toBeVisible();
+    await expect(plan).toBeVisible();
+
+    // Camera HUD Reset/Focus keep working after a maximize/restore cycle.
+    await expect(page.getByTestId('cam-reset')).toBeVisible();
+    await expect(page.getByTestId('cam-focus')).toBeVisible();
+
+    expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
   // SESSION-05 CP4 — per-waypoint plotting + curved (segmented) previewArc
   // -------------------------------------------------------------------------
 

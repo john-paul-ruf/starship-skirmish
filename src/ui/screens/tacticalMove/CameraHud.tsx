@@ -24,18 +24,33 @@
 // The HUD is opinion-free about WHAT is selected — it receives `canFocus` and
 // two callbacks (`onReset` / `onFocus`) so the screen decides both. When no
 // ship is selected the Focus button disables cleanly with a matching label.
+//
+// playtest-feedback-05 SESSION-03 CP3 (FB3, D-IMMERSIVE-GRID-COLLAPSE): a
+// maximize / restore button toggles the screen's full-field immersive mode.
+// Opinion-free the same way — `fullscreen` + `onToggleFullscreen` are owned
+// by the screen; this HUD only renders the pressed state + label.
 
 export interface CameraHudProps {
   /** True when a ship is selected — enables the Focus button. */
   readonly canFocus: boolean;
+  /** True when the screen is in full-field immersive mode. */
+  readonly fullscreen: boolean;
   /** Reset the camera to the neutral fleet framing (mirrors the `R` key). */
   readonly onReset: () => void;
   /** Slide the orbit target onto the selected ship (mirrors the `F` key). */
   readonly onFocus: () => void;
+  /** Toggle full-field immersive mode. */
+  readonly onToggleFullscreen: () => void;
 }
 
 /** Absolute-positioned control cluster mounted inside the tactical viewport. */
-export function CameraHud({ canFocus, onReset, onFocus }: CameraHudProps) {
+export function CameraHud({
+  canFocus,
+  fullscreen,
+  onReset,
+  onFocus,
+  onToggleFullscreen,
+}: CameraHudProps) {
   return (
     <div class="tm-cam-hud" data-testid="camera-hud" aria-label="Camera controls">
       <div class="tm-cam-hud-buttons">
@@ -58,6 +73,15 @@ export function CameraHud({ canFocus, onReset, onFocus }: CameraHudProps) {
           onClick={onFocus}
         >
           ◎ FOCUS SELECTION · F
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm"
+          data-testid="cam-maximize"
+          aria-pressed={fullscreen}
+          onClick={onToggleFullscreen}
+        >
+          {fullscreen ? '⤡ RESTORE' : '⤢ FULL FIELD'}
         </button>
       </div>
       <div class="mono-xs c-dim tm-cam-hud-hint" data-testid="cam-hud-move-hint">

@@ -20,9 +20,13 @@ const SCREEN_PATH = fileURLToPath(
 const COMMIT_BAR_PATH = fileURLToPath(
   new URL('../../../../src/ui/screens/tacticalMove/CommitBar.tsx', import.meta.url),
 );
+const CAMERA_HUD_PATH = fileURLToPath(
+  new URL('../../../../src/ui/screens/tacticalMove/CameraHud.tsx', import.meta.url),
+);
 
 const screen = readFileSync(SCREEN_PATH, 'utf8');
 const commitBar = readFileSync(COMMIT_BAR_PATH, 'utf8');
+const cameraHud = readFileSync(CAMERA_HUD_PATH, 'utf8');
 
 /** The scoped `TM_STYLES` template-literal body (everything between the
  *  backticks), so assertions read the actual shipped CSS, not JSX markup.
@@ -114,5 +118,40 @@ describe('CP2 commit pinned at the top of the panel', () => {
     expect(commitBar).toContain('role="alertdialog"');
     expect(commitBar).toContain('OPPONENT PLANS ARE NOT OBSERVABLE UNTIL RESOLUTION.');
     expect(commitBar).toContain('canCommit');
+  });
+});
+
+// ---- CP3 — full-screen the 3D field ----------------------------------------
+
+describe('CP3 immersive full-field mode', () => {
+  it('adds an is-immersive class driven by a fullscreen signal', () => {
+    expect(screen).toMatch(/fullscreen\s*=\s*useSignal\(false\)/);
+    expect(screen).toContain("is-immersive");
+    expect(screen).toMatch(/tm-shell\$\{fullscreen\.value \? ' is-immersive' : ''\}/);
+  });
+
+  it('collapses the grid to one column and hides the side panels when immersive', () => {
+    expect(tmStyles).toMatch(
+      /\.tm-shell\.is-immersive \.tm-layout\s*\{[^}]*grid-template-columns:\s*1fr/,
+    );
+    expect(tmStyles).toMatch(/\.tm-shell\.is-immersive[^{]*\{[^}]*display:\s*none/);
+    expect(tmStyles).toMatch(/\.tm-shell\.is-immersive[\s\S]*?>\s*\.tm-roster/);
+    expect(tmStyles).toMatch(/\.tm-shell\.is-immersive[\s\S]*?>\s*\.tm-plan/);
+  });
+
+  it('adds a maximize/restore button in CameraHud with aria-pressed + a text label', () => {
+    expect(cameraHud).toContain('data-testid="cam-maximize"');
+    expect(cameraHud).toMatch(/aria-pressed=\{fullscreen\}/);
+    expect(cameraHud).toMatch(/FULL FIELD/);
+    expect(cameraHud).toMatch(/RESTORE/);
+  });
+
+  it('wires Esc to exit immersive mode', () => {
+    expect(screen).toMatch(/event\.key === 'Escape'/);
+    expect(screen).toMatch(/addEventListener\('keydown'/);
+  });
+
+  it('keeps the fixed frame — no position:fixed escape from .tm-shell', () => {
+    expect(tmStyles).not.toMatch(/\.tm-shell(?:\.is-immersive)?\s*\{[^}]*position:\s*fixed/);
   });
 });
