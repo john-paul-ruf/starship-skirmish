@@ -140,6 +140,11 @@ export function TacticalAttack() {
             nameOf={resolveNameOf}
             turnLabel={`TURN ${String(resolveTurn)}`}
           />
+          {resolveRows.length === 0 ? (
+            <div class="mono-xs c-dim ta-no-fire-note" data-testid="no-fire-note">
+              NO FIRE THIS TURN — ALL SHOTS HELD OR OUT OF RANGE
+            </div>
+          ) : null}
         </div>
       </section>
     );
@@ -457,6 +462,7 @@ const TA_STYLES = `
   .ta-col-r-resolve { flex: 1 1 auto; min-height: 0; }
   .ta-col-r-resolve > .viewport { flex: 1 1 auto; min-height: 340px; }
   .ta-resolve-note { flex: none; }
+  .ta-no-fire-note { flex: none; }
 `;
 
 function TacticalAttackStyles() {

@@ -61,6 +61,12 @@ export interface ViewportProps {
   readonly focusLabel: string;
 }
 
+/** D-ATK-RESOLVE-MIN-HOLD (playtest-feedback-03 SESSION-01) — the minimum time
+ *  `attack-resolve` stays on screen before handing off, so a zero-fire (or
+ *  reduced-motion) turn still reads as a resolved beat instead of an instant
+ *  bounce back to movement. */
+const MIN_RESOLVE_MS = 1200;
+
 /** Read the canvas-local (x, y) of a pointer event so `pick(x,y)` gets pixel
  *  coordinates in the same rect the render layer draws into. */
 const canvasCoords = (canvas: HTMLCanvasElement, e: MouseEvent): { x: number; y: number } => {
@@ -217,8 +223,13 @@ export function Viewport(props: ViewportProps) {
     viewRef.current?.setState(state);
   }, [state]);
 
-  // Resolve: play the attack beat, then advance. Reduced motion (or a render
-  // layer that never came up) jumps straight to the final frame.
+  // Resolve: play the attack beat, then advance — held for a minimum readable
+  // duration first (D-ATK-RESOLVE-MIN-HOLD, playtest-feedback-03 SESSION-01
+  // CP3) so `attack-resolve` never flashes past, even under reduced motion or
+  // an empty beat (all HOLD / everything out of range). Reduced motion (or a
+  // render layer that never came up) still skips the ANIMATION but now waits
+  // out the same floor before handing off; a real playback holds until
+  // whichever is LATER — its own `onDone` or the floor.
   useEffect(() => {
     if (phase !== 'attack-resolve' || attackBeat === null) return;
     let done = false;
@@ -229,11 +240,28 @@ export function Viewport(props: ViewportProps) {
     };
     const player = playerRef.current;
     if (reducedMotion || player === null) {
-      finish();
-      return;
+      const timer = setTimeout(finish, MIN_RESOLVE_MS);
+      return () => {
+        clearTimeout(timer);
+      };
     }
-    const playback = player.playAttack(attackBeat, { onDone: finish });
+    let animDone = false;
+    let minElapsed = false;
+    const tryFinish = () => {
+      if (animDone && minElapsed) finish();
+    };
+    const timer = setTimeout(() => {
+      minElapsed = true;
+      tryFinish();
+    }, MIN_RESOLVE_MS);
+    const playback = player.playAttack(attackBeat, {
+      onDone: () => {
+        animDone = true;
+        tryFinish();
+      },
+    });
     return () => {
+      clearTimeout(timer);
       playback.dispose();
     };
   }, [phase, attackBeat, reducedMotion, onResolveDone]);
