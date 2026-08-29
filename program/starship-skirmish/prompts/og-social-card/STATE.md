@@ -16,7 +16,7 @@
 
 | # | Session | Modules | Owns | Status | Checkpoint | Completed | Notes |
 |---|---|---|---|---|---|---|---|
-| 01 | Create OG key-art asset | M01 | `./public/og-card.png` | blocked | 0/2 | — | Blocked: the replacement Mu could not authenticate; Zen reported `Claude Code authentication failed: Failed to authenticate: OAuth session expired and could not be refreshed`. No lease work survived. |
+| 01 | Create OG key-art asset | M01 | `./public/og-card.png` | pending | 0/2 | — | Resumed under the Codex worker binding at the user's request after the prior Zen authentication block; no lease work survived. |
 | 02 | Wire Open Graph and Twitter metadata | M01, M19 | `./index.html`, `./tests/unit/toolchain/openGraph.test.ts` | pending | — | — | Depends on S01's final PNG; add absolute production URLs and contract-test the metadata plus PNG IHDR. |
 
 (Status: pending | in-progress | done | blocked | skipped. Checkpoint: last committed checkpoint, or —.)
@@ -90,3 +90,4 @@ reason, and neither session is verification-only or docs-only.
 *(Jikijitsu writes here after each session, verbatim from Mu's handoff JSON `notes` + `followUp`.)*
 
 - **SESSION-01:** No Mu handoff JSON was received. The replacement Zen session failed with `Claude Code authentication failed: Failed to authenticate: OAuth session expired and could not be refreshed`. Git confirms zero committed checkpoints and a clean `./public/og-card.png` lease. `SESSION-02` remains pending behind this blocked dependency.
+- **Recovery:** The user requested a Codex re-run. SESSION-01 is pending again at checkpoint 0/2; the prior Zen handle is discarded and no lease work needs recovery.
