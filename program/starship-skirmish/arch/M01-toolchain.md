@@ -125,3 +125,77 @@ Three byte-identical stray copies of `src/io/migrate/migrations.ts` at repo root
 - The pending Pages `actions/upload-pages-artifact` +
   `actions/deploy-pages` job remains an explicit TODO comment (architecture
   §11 step 6) — out of scope for this feature.
+
+<!-- SESSION-02 · og-social-card · M01 entry HTML crawler-metadata + paired M19 contract test -->
+## SESSION-02 delta (og-social-card) — social-preview crawler contract
+
+> Authored by Roshi (cycle 9), not stapled by Jikijitsu: the feature's Final Report
+> declared "architecture impact: none" (no module / public runtime API changed), so no
+> mid-run arch fragment was appended. But the as-built crawler contract has load-bearing
+> invariants that otherwise live only in the disk-only `STATE.md`. Recording the durable
+> form here. Grounded in `git` (`0dc99c8`/`85229ef` PNG; `b212b4b` metadata + test),
+> current `index.html`, `tests/unit/toolchain/openGraph.test.ts`, and the Final Report.
+
+### M01 Toolchain & Build — entry HTML `<head>` crawler-metadata surface
+
+`index.html` (M01-owned entry document) gains a static social-preview metadata block in
+`<head>`, immediately after `<title>` and alongside the existing §10 CSP meta. No build,
+PWA, or dependency change — Vite already copies `public/` and the Workbox `generateSW`
+PNG glob already precaches the asset, so no `vite.config.ts` edit was needed.
+
+- **Asset:** `public/og-card.png` — a real 1200 × 630, 8-bit RGB, non-interlaced PNG
+  (SESSION-01, `0dc99c8`/`85229ef`). Rides Vite's `public/` copy to `dist/og-card.png`.
+- **Metadata added (one block, crawler-visible):**
+  - `<link rel="canonical">` + `<meta name="theme-color" content="#05070A">` (a
+    design-token dark background).
+  - Ten Open Graph tags: `og:type=website`, `og:site_name`, `og:url`, `og:title`,
+    `og:description`, `og:image`, `og:image:type=image/png`, `og:image:width=1200`,
+    `og:image:height=630`, `og:image:alt`.
+  - Five Twitter tags: `twitter:card=summary_large_image`, `twitter:title`,
+    `twitter:description`, `twitter:image`, `twitter:image:alt`.
+  - The pre-existing single `<meta name="description">` is retained, not duplicated.
+
+### Load-bearing crawler contract (invariants a future `index.html` editor must preserve)
+
+- **Absolute HTTPS Pages URLs only.** `canonical` = `og:url` =
+  `https://john-paul-ruf.github.io/starship-skirmish/`; `og:image` = `twitter:image` =
+  `…/og-card.png`. NO hash route, relative image, external host, or `data:` URL —
+  metadata is for crawlers that never run the SPA hash router or its JS.
+- **CSP is NOT relaxed.** The architecture §10 Content-Security-Policy meta
+  (`default-src 'self'` … `connect-src 'self'` … `object-src 'none'`) is byte-preserved;
+  the metadata widens no directive and adds no host, no `unsafe-*`. (Analytics stays
+  None, forever — FORGE-CONFIG Stack.)
+- **Dimensions stay in sync with the real bytes.** `og:image:width/height` (1200 × 630)
+  must equal the PNG's IHDR; the paired M19 test reads the IHDR straight from disk so a
+  wrong-size or renamed asset reddens CI, not silently the crawl.
+
+### M19 Tests — paired crawler-contract test (`tests/unit/toolchain/openGraph.test.ts`)
+
+New Node/Vitest test (no DOM — matches the existing no-DOM toolchain-test posture; owned
+by M19 but M01-toolchain-scoped). Four contracts, checked against the real files:
+
+1. **Metadata uniqueness** — each canonical / theme-color / OG / Twitter key appears
+   exactly once with its expected value; the single `description` meta survives.
+2. **URL coherence** — `canonical === og:url` (absolute https, trailing `/`);
+   `og:image === twitter:image` (absolute https, ends `/og-card.png`); no `#` or `data:`
+   in any share target.
+3. **Real asset** — `public/og-card.png` starts with the 8-byte PNG signature and
+   declares 1200 × 630 in its IHDR (big-endian uint32 at byte 16 / 20).
+4. **CSP intact** — the locked-down `default-src` / `img-src` / `connect-src` directives
+   are still present.
+
+The test's `PROD_URL` / `IMAGE_URL` / `TITLE` / `DESCRIPTION` / `IMAGE_ALT` constants
+mirror `index.html` verbatim — the two files are one contract in two places.
+
+### Follow-up coupling (recorded for a future lease)
+
+Adopting a custom domain must change the absolute canonical / OG / Twitter URLs in
+`index.html` AND the corresponding constants in `openGraph.test.ts` **together in one
+lease** — a URL edit on either side alone reddens the coherence test (Final Report
+§Follow-up).
+
+### Not touched
+
+No new module or public runtime API; no Preact component, router route, service, catalog
+entry, or analytics integration. `package.json`, `vite.config.ts`, `public/.nojekyll`,
+and all runtime source unchanged.

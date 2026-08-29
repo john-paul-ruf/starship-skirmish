@@ -1589,3 +1589,201 @@ Roshi recommends; a human folds them in by hand. Vow 3.)*
    not touched. `FORGE-CONFIG.md` — not touched at all this cycle
    (no registry row edit, no conventions). `STATE.md` — read, not
    edited (Jikijitsu's alone). Only `ROSHI-LOG.md` was written.
+
+---
+
+## 2026-08-29 — Cycle 9 — `og-social-card` (completion of the cycle-8 block)
+
+**Envelope in:** Final Report at `./.forge/final-report.md`; **2/2** sessions
+`done` (S01–S02) across two waves. This is the completion of the feature cycle 8
+left `blocked`: SESSION-01's PNG was already committed then (`0dc99c8`/`85229ef`);
+this cycle a fresh Codex Mu re-verified SESSION-01 intact at its 2/2 boundary and
+SESSION-02 landed the metadata + contract test. 4 feature checkpoint commits total;
+SESSION-02 checkpoint 2 was an explicit verification-only `--allow-empty` commit
+(`35129a6`). **Zero Jikijitsu arch commits** — Final Report declared "architecture
+impact: none." SESSION-02 full gates green: `typecheck`, `lint`, `test:unit`
+(1,606 tests / 106 files), `build`; `dist/og-card.png` emitted, `dist/index.html`
+retained absolute URLs + CSP. Zero lease violations; one checkpoint-count shortfall
+(the `--allow-empty` verify commit) applied under the user's explicit finish-the-
+program override. **The 8-cycle encyclopedia `TS6142` baseline is GONE this cycle**
+(see resolution below) — the first fully-green `typecheck` on this program since the
+log began.
+
+### Reconciled this run
+
+- **`arch/M01-toolchain.md`** — Authored the `SESSION-02 · og-social-card` M01
+  fragment cycle 8 explicitly deferred ("the correct time to land M01/M19 arch
+  content is the cycle in which SESSION-02 actually completes"). Jikijitsu stapled
+  no fragment (Final Report "architecture impact: none"), but the as-built crawler
+  contract has load-bearing invariants — absolute-HTTPS-Pages-URLs-only, CSP-never-
+  relaxed, `og:image:width/height` synced to the real PNG IHDR, and the custom-domain
+  `index.html`↔test-constants coupling — that otherwise live only in the **disk-only**
+  `STATE.md` (which, per this log's header, does NOT survive across working trees;
+  `arch/**` does). Same precedent as cycles 4/5/6 (Roshi authors a compact grounded
+  fragment for a Jikijitsu-declined but real as-built surface). The fragment documents
+  the `<head>` metadata block (10 OG + 5 Twitter + canonical + theme-color), the paired
+  M19 Node/Vitest contract test (4 contracts), and the follow-up coupling — explicitly
+  labelled "no new module or public runtime API." Session-tagged with the full
+  `<!-- SESSION-02 · og-social-card · M01 … -->` form (NOT a bare tag — heeding the
+  cycle-2/cycle-7 bare-tag lesson). Grounded in `index.html`,
+  `tests/unit/toolchain/openGraph.test.ts`, commits `0dc99c8`/`85229ef`/`b212b4b`,
+  and the Final Report.
+
+### Not reconciled — deliberately
+
+- **Interim-feature reconciliation gap — LOGGED, not reconciled blind.** Between
+  cycle 7 (`df433fc`) and cycle 8 (`25459f2`), FOUR features landed with **no Roshi
+  cycle each** (`git log df433fc..25459f2 | grep -i roshi` → only the cycle-8 commit):
+  `encyclopedia-typecheck-baseline` (`39c8349`), `harness-determinism-baseline`
+  (`cc630dc`), `github-pages-publish` (`b7fea77`), `readme-game-pitch` (`848d963`).
+  Cycle 8 was a narrow blocked cycle that did not reconcile them; this cycle's
+  envelope is `og-social-card`, and I have git diffs for these four but NOT their
+  Final Reports / STATE / handoffs. Authoring their arch blind would violate "never
+  invent history" (Vow 2). Two of them (`encyclopedia-typecheck-baseline` M01,
+  `harness-determinism-baseline` M19) directly resolve long-running proposals and are
+  git-verifiable — those retirements are recorded below, grounded in the diffs. The
+  arch surfaces of all four remain **un-authored in `arch/**`**; flagging for a
+  catch-up Roshi pass or the owner. This is exactly the drift Vow 1 says only shows up
+  in the sequence.
+- **`arch/M01-toolchain.md` `tsconfig.node.json` jsx addition — NOT authored here.**
+  `encyclopedia-typecheck-baseline` (`39c8349`) added `"jsx": "preserve"` +
+  `"jsxImportSource": "preact"` to `tsconfig.node.json`. That relaxes the implicit
+  "tsconfig.node never pulls a `.tsx`" constraint the M14 fragments repeatedly cite —
+  but it is a DIFFERENT feature's as-built surface whose Final Report I do not hold.
+  Cherry-picking it into the og-social-card fragment would paper over the interim-gap
+  above and make it look handled when three sibling features remain un-reconciled.
+  Left for the catch-up pass; the proposal retirement below cites the git-verified
+  change without pretending its arch is authored.
+- **`FORGE-CONFIG.md` Module Registry M01 row — NOT touched.** `public/og-card.png`
+  sits inside M01's already-owned `public/`; the test lands in M19's `tests/`. No new
+  Path or Owns boundary (same reasoning as cycle 8's PNG note; contrast cycle 7's
+  genuinely-new `.githooks/` directory).
+- **`STATE.md` line-92 stale handoff contradiction** — the "zero committed checkpoints"
+  note cycle 8 flagged is preserved in the Handoff-Notes history; SESSION-01's status
+  row now correctly reads `done 2/2`. Historical handoff text, Jikijitsu's file
+  (Vow 3) — observed, not edited; the proposal is held below.
+- **`arch/M11-trace.md` `AttackBeatRecord.launchedMissileIds` gap** — memorialised
+  cycle 1; no sim/trace work this cycle. Untouched.
+- **`arch/M13-render.md` "Key Files (planned)" hedge** — flagged cycle 1, held
+  cycles 2–8; no render work this cycle. Tenth-consecutive-cycle patient hold; the
+  `(planned)` hedge still reads honestly.
+- **`arch/M14-ui.md` per-session block structure** — kept intact for the tenth
+  consecutive cycle. No M14 work this cycle. File unchanged.
+
+### Registry updated
+
+**No.** No new module, no path scope change, no `catalog/**` edit, no change to any
+`Owns` list. `public/og-card.png` is a leaf asset inside M01's already-owned `public/`.
+
+### Conventions added to `FORGE-CONFIG.md`
+
+**None** this cycle (Vow 4: ≥3-cycle recurrence AND convention-shaped). Nothing this
+cycle fits that shape.
+
+### Proposed for the framework — with cycle count
+
+*(These go here, NOT into `FORGE.md`/`MU.md`/`ENSO.md`/`JIKIJITSU.md`. Roshi
+recommends; a human folds them in by hand. Vow 3.)*
+
+- **[was 8/3+ · RESOLVED THIS CYCLE] Owner hygiene — encyclopedia typecheck
+  baseline.** Tracked since cycle 1; escalated cycle 7 to "structurally blocks every
+  `git push`"; carried cycle 8 with no gate evidence. **The one-line M01 cure landed:**
+  `39c8349 encyclopedia-typecheck-baseline SESSION-01` added `"jsx": "preserve"` +
+  `"jsxImportSource": "preact"` to `tsconfig.node.json` (+3 lines) — verbatim the fix
+  this log recommended for eight cycles. This cycle's SESSION-02 `typecheck` gate ran
+  fully green (1,606 tests / 106 files, `build` green per Final Report §Verification),
+  confirming it live. **Retired.** If a future `tsc -p tsconfig.node.json` reddens on a
+  `.tsx`-import config regression, restart the tally at 1/3+.
+- **[was 1/3+ · RESOLVED THIS CYCLE] `harnessMatchDeterminism.spec.ts`
+  browser-vs-Node golden drift.** Cycle 7's new signal (the pre-push hook surfaced a
+  cross-engine golden disagreement). **Cured:** `cc630dc harness-determinism-baseline
+  SESSION-01` edited `tests/e2e/harnessMatchDeterminism.spec.ts` (+4/−3, "replay
+  fixture movement model in browsers") — matching one of the two root causes cycle 7
+  named (stale replay vs `--movement-model 1`). One observation, now resolved.
+  **Retired**; restart at 1/3+ if the cross-engine harness golden diverges again.
+- **[cycles: 2/3+ · HELD] Jikijitsu bare-`SESSION-NN` arch-tag pattern.** Cycle 2
+  (`arch/M14-ui.md`) and cycle 7 (`arch/M01-toolchain.md`) each needed Roshi to
+  disambiguate colliding bare tags. This cycle Jikijitsu appended no arch fragment
+  (none to mis-tag); the fragment I authored uses the full `<!-- SESSION-02 · feature ·
+  M01 … -->` form by construction. Pattern could not recur through Jikijitsu this
+  cycle. Held at 2/3+ — a third bare-tag append on a new file still promotes it to a
+  JIKIJITSU.md recommendation.
+- **[cycles: 1/3+ · HELD] Jikijitsu `STATE.md` handoff-note vs git contradiction.**
+  Cycle 8's first observation (the "zero committed checkpoints" note contradicting git
+  + a sibling row). This cycle the SESSION-01 status row reads correctly (`done 2/2`);
+  the stale note persists only in the append-only Handoff-Notes history. No NEW
+  contradiction authored this cycle — held at 1/3+, not incremented.
+- **[cycles: 1/3+ · NEW SIGNAL] Roshi cadence — features landing without a
+  per-feature Roshi cycle accrue un-reconciled arch.** Four features
+  (`encyclopedia-typecheck-baseline`, `harness-determinism-baseline`,
+  `github-pages-publish`, `readme-game-pitch`) landed between cycles 7 and 8 with no
+  Roshi reconciliation, and their as-built surfaces are still absent from `arch/**`
+  (verified: two touch M01/M19 toolchain, none has an arch fragment). Not a doc-content
+  defect — an orchestration-cadence gap: Roshi is spawned once per Jikijitsu run, so a
+  batch of small features run without individual Jikijitsu→Roshi handoffs leaves the
+  durable record trailing git. First observation. If cycle 10+ shows another batch of
+  features reconciled by neither their own Roshi nor a catch-up pass, this becomes an
+  owner/orchestration recommendation: **schedule a Roshi catch-up pass after any batch
+  of features that ran without per-feature Roshi cycles**, or route each feature through
+  its own Jikijitsu→Roshi close.
+- **[cycles: 1/3+ · HELD] Worker OAuth-expiry / transport blocks handoff despite
+  committed lease work.** Cycle 8's signal (SESSION-01 committed both checkpoints yet
+  reported `blocked` because the Zen worker's OAuth expired mid-handoff). This cycle a
+  fresh Codex Mu completed SESSION-01 + SESSION-02 cleanly with no transport failure —
+  the block did not recur. Held at 1/3+, not incremented; the positive completion is
+  recorded so a future recurrence has the contrast on file.
+- **[cycles: 1/3+ · HELD from cycle 8] Recovery-launch idempotency — rerun a blocked
+  session without disturbing already-committed lease bytes.** This cycle validates the
+  cycle-8 positive watch: the fresh SESSION-01 re-run preserved the two committed
+  checkpoints and the valid `public/og-card.png` (git shows no reset, no PNG
+  regeneration — SESSION-01 note "verified intact at 2/2; no recommit needed"). Held as
+  a positive-signal watch.
+- **[cycles: 3/3+ · HELD, RECEDED] Verification-gate reachability — Playwright
+  `webServer` provisioning.** Receded since cycle 6. This cycle's feature carried no
+  browser e2e gate (native + 600×315 visual QA per Final Report §Verification). No
+  observation to increment or reset. Held at receded.
+- **[cycles: 2/3+ · HELD] Enso-brush transport reliability.** No Enso delegation this
+  cycle (Codex Mu, no long Zen await). Could not recur. Held.
+- **[cycles: 2/3+ · HELD] Forge granularity — route M14-heavy screen rebuilds with
+  browser gates to Enso from spawn.** This cycle's lease was a static marketing asset,
+  not an M14 rebuild. Could not recur. Held.
+- **[cycles: 1/3+ · HELD] Forge / Mu handoff — exit contract requires numeric
+  evidence when the Final Report must reproduce it.** No geometry/layout session this
+  cycle; the Final Report reported every numeric that mattered (1200×630 IHDR, gate
+  counts). Held.
+- **[cycles: 1/3+ · HELD] Forge granularity — "stuck / can't proceed" playtest notes
+  may hide latent bugs.** Not a playtest-feedback decomposition this cycle. Held.
+- **[cycles: 1/3+ · HELD] Sim-record extensions before their render consumer.** No
+  sim/trace work this cycle. Held.
+- **[NOTE · Forge granularity feedback closed this cycle]** The Final Report's only
+  Granularity item — "SESSION-02 checkpoint 2 was a verification-only boundary that
+  required an `--allow-empty` commit; future plans should merge such a boundary into
+  the preceding implementation checkpoint" — is a Forge decomposition hint, not a
+  framework-doc change. First observation of this specific empty-verify-checkpoint
+  shape; recording it so cycle 10+ can compare. If a second plan mints a real lease
+  commit for a pure-verification boundary, promote to a `FORGE-CONFIG.md` decomposition
+  convention. Not incremented past 1 this cycle.
+
+### Verification (Roshi's output is prose)
+
+1. Every claim traces to git or the attached record. The metadata block is verifiable
+   in `index.html:20-38` (canonical + theme-color + 10 OG + 5 Twitter tags); the PNG
+   fact (`1200 × 630, 8-bit RGB, non-interlaced`) via `file public/og-card.png`; the
+   four test contracts + mirrored constants in `tests/unit/toolchain/openGraph.test.ts`.
+   The encyclopedia-baseline cure is verifiable via `git show --stat 39c8349`
+   (`tsconfig.node.json +3`) and the current file's `"jsx": "preserve"` /
+   `"jsxImportSource": "preact"` lines; the harness cure via `git show --stat cc630dc`
+   (`harnessMatchDeterminism.spec.ts +4/−3`). The four-feature interim gap via
+   `git log --oneline df433fc..25459f2` (four SESSION-01 commits, one roshi commit).
+   The "1,606 tests / 106 files" and "architecture impact: none" and the `--allow-empty`
+   checkpoint shortfall are verbatim from the Final Report.
+2. Re-read after writing: the new `arch/M01-toolchain.md` SESSION-02 fragment does not
+   contradict the two disambiguated SESSION-01 tags or the CI/script-surface prose above
+   it — it describes an additive `<head>` metadata surface and the paired test, and
+   explicitly states "no new module or public runtime API," consistent with the Final
+   Report. Its "CSP is NOT relaxed" claim agrees with the §10 CSP meta the earlier M01
+   fragment documents (byte-preserved). No sibling-file contradiction introduced.
+3. `FORGE.md`, `MU.md`, `ENSO.md`, `JIKIJITSU.md` — byte-identical, not touched.
+   `FORGE-CONFIG.md` — not touched (no registry edit, no conventions). `STATE.md` —
+   read, not edited (Jikijitsu's alone). Wrote `ROSHI-LOG.md` + one `arch/M01-toolchain.md`
+   fragment.
