@@ -17,7 +17,7 @@
 | # | Session | Modules | Owns | Status | Checkpoint | Completed | Notes |
 |---|---|---|---|---|---|---|---|
 | 01 | Create OG key-art asset | M01 | `./public/og-card.png` | done | 2/2 | 2026-08-29 | OG key-art asset verified intact at 2/2 committed checkpoints; all four gates green; no recommit needed. |
-| 02 | Wire Open Graph and Twitter metadata | M01, M19 | `./index.html`, `./tests/unit/toolchain/openGraph.test.ts` | pending | — | — | Depends on S01's final PNG; add absolute production URLs and contract-test the metadata plus PNG IHDR. |
+| 02 | Wire Open Graph and Twitter metadata | M01, M19 | `./index.html`, `./tests/unit/toolchain/openGraph.test.ts` | in-progress | 0/2 | — | Launched after SESSION-01 completed with a parseable handoff and verified PNG asset. |
 
 (Status: pending | in-progress | done | blocked | skipped. Checkpoint: last committed checkpoint, or —.)
 
