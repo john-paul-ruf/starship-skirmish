@@ -16,7 +16,7 @@
 
 | # | Session | Modules | Owns | Status | Checkpoint | Completed | Notes |
 |---|---|---|---|---|---|---|---|
-| 01 | Create OG key-art asset | M01 | `./public/og-card.png` | pending | 2/2 | — | User explicitly requested completion. Retry from the two committed checkpoints to obtain the required Mu handoff without resetting the asset. |
+| 01 | Create OG key-art asset | M01 | `./public/og-card.png` | in-progress | 2/2 | — | Relaunched through Zen from the two committed checkpoints to obtain the required Mu handoff without resetting the asset. |
 | 02 | Wire Open Graph and Twitter metadata | M01, M19 | `./index.html`, `./tests/unit/toolchain/openGraph.test.ts` | pending | — | — | Depends on S01's final PNG; add absolute production URLs and contract-test the metadata plus PNG IHDR. |
 
 (Status: pending | in-progress | done | blocked | skipped. Checkpoint: last committed checkpoint, or —.)
