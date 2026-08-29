@@ -1376,3 +1376,216 @@ justifies it. Vow 3.)*
    not touched. `FORGE-CONFIG.md` Verification Commands, Git,
    Session Defaults, Custom Rules sections — untouched (only the
    M01 Module Registry row edited, per Vow-3 ownership scope).
+
+---
+
+## 2026-08-29 — Cycle 8 — `og-social-card`
+
+**Envelope in:** Final Report at `./.forge/final-report.md`; **0/2**
+sessions `done`. SESSION-01 (`Create OG key-art asset`, M01) is
+`blocked`: git holds both its checkpoint commits (`0dc99c8`
+checkpoint 1, `85229ef` checkpoint 2) and a valid
+`./public/og-card.png` (PNG 1200 × 630, 8-bit RGB, non-interlaced),
+but the Zen recovery launch returned no parseable Mu handoff — it
+died on `Claude Code authentication failed: Failed to authenticate:
+OAuth session expired and could not be refreshed`. SESSION-02
+(`Wire Open Graph and Twitter metadata`, M01+M19) was never launched
+because its dependency is blocked. **Zero Jikijitsu arch commits this
+cycle** — with no Mu handoff there was no arch fragment to append.
+The sitting ran no typecheck/lint/test/build (Final Report
+§Verification: "no new … result is available from this sitting").
+Tree clean after Jikijitsu's explicit-pathspec `STATE.md` commit
+(`2ed0e8f`).
+
+### Reconciled this run
+
+**Nothing in `arch/`.** This is a blocked, incomplete cycle, and the
+reconciliation set is empty for a specific and defensible reason:
+
+- **No arch fragment landed to reconcile.** Jikijitsu appends arch
+  fragments from Mu handoffs; no handoff was received, so no
+  `og-social-card` delta exists in any `arch/**` file. Grep for
+  `og-card` / `og-social` / `openGraph` / `twitter` across
+  `arch/**` and `FORGE-CONFIG.md` returns nothing (verified). There
+  is no fragment to rewrite, collapse, or resolve.
+- **No as-built surface to author.** The feature is half-finished:
+  `./public/og-card.png` is committed, but `./index.html` still
+  carries no `og:`/`twitter:` tags (verified — grep empty; last
+  touched by `foundation-gates` at `683d978`) and
+  `./tests/unit/toolchain/openGraph.test.ts` does not exist. The
+  crawler-contract surface that M01/M19 arch would describe does not
+  yet exist. Writing an "as-built" fragment now would document a
+  feature that is not built — a Vow-2 / "never invent history"
+  violation. The correct time to land M01 (`index.html` metadata)
+  and M19 (`openGraph.test.ts`) arch content is the cycle in which
+  SESSION-02 actually completes.
+
+### Not reconciled — deliberately
+
+- **Module Registry M01 row — NOT touched.** `./public/og-card.png`
+  now exists in git, but it lands inside `public/`, which M01
+  *already* Owns (Path column: "root config + `public/` +
+  `.githooks/`"). It is a leaf content asset inside an
+  already-owned directory, not a new Path or Owns boundary. This is
+  the opposite of cycle 7, where a genuinely new tracked directory
+  (`./.githooks/`) materialised and justified a row edit. A single
+  marketing PNG dropped into an owned folder does not. The Key Files
+  column is explicitly "(planned)" and representative, not an
+  exhaustive asset inventory (it does not enumerate fonts, mocks, or
+  every `public/` file either). Registry left as-is.
+- **`STATE.md` internal contradiction — observed, NOT edited.**
+  `STATE.md` is Jikijitsu's alone (Vow 3; "What Roshi Reads, Never
+  Owns"). Recording the discrepancy here without touching the file:
+  the SESSION-01 Handoff note (line 92) reads "Git confirms **zero**
+  committed checkpoints and a clean `og-card.png` lease," while the
+  Session-Status row (line 19, checkpoint `2/2`) and the later
+  recovery note (line 94) both correctly say "Git confirms the
+  existing SESSION-01 checkpoint 1 and checkpoint 2 commits." Git
+  ground truth: two checkpoint commits present
+  (`git log --oneline -- public/og-card.png` → 2 lines) and the PNG
+  valid. So line 92 is factually wrong against git and against a
+  sibling note in its own file. This is a Jikijitsu-facing
+  observation, logged below under Proposed for the framework.
+- **`arch/M11-trace.md` `AttackBeatRecord.launchedMissileIds` gap** —
+  memorialised cycle 1; still open for a future M11 lease. No
+  sim/trace work this cycle. Untouched.
+- **`arch/M13-render.md` "Key Files (planned)" hedge** — cycle 1
+  flagged; cycles 2–7 held. No render work this cycle; the
+  `(planned)` hedge still reads honestly. Ninth-consecutive-cycle
+  patient hold — not promoting a plan-time snapshot to an as-built
+  list absent an active reader mis-step.
+- **`arch/M14-ui.md` per-session block structure** — kept intact for
+  the ninth consecutive cycle. No M14 work this cycle. File
+  unchanged.
+- **`arch/M01-toolchain.md` CI-stub / script-surface prose** — the
+  cycle-7 disambiguation (two `SESSION-01` tags, now distinguished)
+  and the "CI workflow — parity with hook" subsection remain
+  accurate; nothing this cycle touched M01's built surface. No
+  supersession pointer added. Untouched.
+- **`FORGE-CONFIG.md` Conventions / Custom Rules / Verification
+  Commands** — no additions. Nothing this cycle is convention-shaped
+  (the failure was runtime auth, not a decomposition or checkpoint
+  pattern). Verification Commands table intentionally not touched —
+  Roshi does not own it (Vow 3).
+
+### Registry updated
+
+**No.** `./public/og-card.png` sits inside M01's already-owned
+`public/` directory; it is not a new Path or Owns boundary. No row
+edit is warranted (contrast cycle 7's genuinely new `.githooks/`
+directory).
+
+### Conventions added to `FORGE-CONFIG.md`
+
+**None** this cycle (Vow 4: ≥3-cycle recurrence AND convention-shaped;
+this cycle's failure is neither).
+
+### Proposed for the framework — with cycle count
+
+*(These go here, NOT into `FORGE.md`/`MU.md`/`ENSO.md`/`JIKIJITSU.md`.
+Roshi recommends; a human folds them in by hand. Vow 3.)*
+
+- **[cycles: 8/3+ · STILL OPEN, NO NEW GATE EVIDENCE THIS CYCLE]
+  Owner hygiene — encyclopedia typecheck baseline.** Cycle 7
+  escalated this to "structurally blocks every ordinary `git push`"
+  via the new `github-pages-pre-push-guard` hook. Nothing this cycle
+  fixed it (the sitting committed a PNG and never ran `verify:pages`
+  / any typecheck — Final Report §Verification confirms no
+  typecheck/lint/test/build result was produced). The one-line M01
+  cure remains unscheduled: add `"jsx": "preserve"` (+ likely
+  `"jsxImportSource": "preact"`) to `./tsconfig.node.json`, or narrow
+  its `include` to exclude `.tsx`-importing test files. Held at its
+  cycle-7 urgency; this cycle produced no *new* observation of the
+  defect (no gate ran), so the count is carried, not incremented on
+  fresh evidence. Owner-scheduling ask, not a framework change.
+- **[cycles: 1/3+ · NEW SIGNAL] Jikijitsu `STATE.md` handoff-note vs
+  git contradiction.** This cycle, `STATE.md`'s SESSION-01 handoff
+  note asserts "zero committed checkpoints" while the same file's
+  status row and a sibling recovery note (and git) confirm two
+  committed checkpoints. A Handoff note that contradicts git and
+  its own file is a reader trap for the next crash-recovery pass,
+  which treats `git log` as authoritative but reads Handoff Notes
+  for intent. First observation. If a second cycle shows a Handoff
+  note diverging from git ground truth, this crosses toward a
+  Jikijitsu-facing recommendation: **reconcile each Handoff note
+  against `git log --oneline -- <lease paths>` before writing it,
+  and never let a note assert a checkpoint count git contradicts.**
+  Watching cycle 9+.
+- **[cycles: 1/3+ · NEW SIGNAL, owner-runtime not framework] Zen /
+  Claude Code worker OAuth-expiry blocks handoff despite committed
+  lease work.** Both SESSION-01 checkpoints committed cleanly, yet
+  the feature is `blocked` solely because the Zen worker's OAuth
+  session expired and could not refresh, so no parseable `done`
+  handoff returned. Final Report §Granularity feedback explicitly
+  rules this out as a decomposition/checkpoint issue ("the failure
+  was runtime authentication"). Logged as an owner-runtime
+  reliability signal, adjacent to (but distinct from) the carried
+  "Enso-brush transport reliability" proposal below — same family
+  (worker-transport delivering a completed lease's handoff), different
+  root cause (credential expiry vs brush transport). Not framework-
+  shaped; the cure is re-authenticating the worker runtime before
+  rerunning the blocked SESSION-01 without resetting the PNG (Final
+  Report §Follow-up). Watching whether worker-handoff reliability
+  keeps surfacing across cycles under different root causes.
+- **[cycles: 1/3+ · NEW SIGNAL] Recovery-launch idempotency —
+  rerun a blocked session without disturbing already-committed
+  lease bytes.** This cycle correctly preserved the two SESSION-01
+  checkpoint commits and the valid `./public/og-card.png` across the
+  failed recovery attempt (git shows no reset, no PNG regeneration).
+  That is the right behaviour and it held here; logging it as a
+  first observation so that if a future recovery is seen to *reset*
+  committed lease bytes, the contrast is on record. No action; a
+  positive-signal watch.
+- **[cycles: 2/3+ · HELD] Jikijitsu bare-`SESSION-NN` arch-tag
+  pattern.** Cycle 2 (`arch/M14-ui.md`) and cycle 7
+  (`arch/M01-toolchain.md`) each required Roshi to disambiguate
+  colliding bare `<!-- SESSION-NN -->` tags. This cycle Jikijitsu
+  appended **no** arch fragment (no handoff), so the pattern could
+  not recur. Held at 2/3+.
+- **[cycles: 3/3+ · HELD, RECEDED] Verification-gate reachability —
+  Playwright `webServer` provisioning.** No e2e work in the lease
+  this cycle. Held at receded.
+- **[cycles: 2/3+ · HELD] Enso-brush transport reliability.** No
+  Enso delegation this cycle (the run was a single blocked Zen
+  recovery launch). Pattern could not recur through its usual
+  channel. Held — see the new OAuth-expiry signal above for an
+  adjacent worker-transport observation.
+- **[cycles: 2/3+ · HELD] Forge granularity — route M14-heavy
+  screen rebuilds with browser gates to Enso from spawn.** This
+  cycle's lease was a static marketing asset, not an M14 rebuild.
+  Could not recur. Held.
+- **[cycles: 1/3+ · HELD] Forge / Mu handoff — exit contract
+  explicitly requires numeric evidence when the Final Report must
+  reproduce it.** No Mu handoff was received at all this cycle, so
+  the contract could not be exercised. Held.
+- **[cycles: 1/3+ · HELD] Forge granularity — "stuck / can't
+  proceed" playtest notes may hide latent bugs.** Not a
+  playtest-feedback decomposition this cycle. Held.
+- **[cycles: 1/3+ · HELD] Sim-record extensions before their render
+  consumer.** No sim/trace work this cycle. Held.
+
+### Verification (Roshi's output is prose)
+
+1. Every claim traces to git or the attached record. The two
+   SESSION-01 checkpoint commits (`0dc99c8`, `85229ef`) and the
+   `STATE.md` `2ed0e8f` commit are verifiable via `git log`. The
+   valid `./public/og-card.png` (1200 × 630, 8-bit RGB) is verifiable
+   via `file public/og-card.png` and `git ls-files`. The absence of
+   `og:`/`twitter:` tags in `./index.html` and of
+   `./tests/unit/toolchain/openGraph.test.ts` is verifiable via grep
+   / `ls`. The absence of any `og-social-card` content in `arch/**`
+   and `FORGE-CONFIG.md` is verifiable via grep (empty). The OAuth
+   failure string, "0/2 sessions," and "architecture impact: none"
+   are verbatim from `./.forge/final-report.md`. The `STATE.md`
+   line-92-vs-line-19/94 contradiction is verifiable by reading those
+   lines against the 2-commit git history.
+2. Re-read after writing: this entry writes nothing into `arch/**` or
+   the Module Registry, so it cannot contradict any sibling doc — its
+   central claim is precisely that nothing was reconciled and why.
+   Each prior proposal is explicitly held or annotated with why it
+   could not recur this cycle; no count was incremented on absent
+   evidence.
+3. `FORGE.md`, `MU.md`, `ENSO.md`, `JIKIJITSU.md` — byte-identical,
+   not touched. `FORGE-CONFIG.md` — not touched at all this cycle
+   (no registry row edit, no conventions). `STATE.md` — read, not
+   edited (Jikijitsu's alone). Only `ROSHI-LOG.md` was written.
