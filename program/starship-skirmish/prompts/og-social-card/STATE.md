@@ -16,7 +16,7 @@
 
 | # | Session | Modules | Owns | Status | Checkpoint | Completed | Notes |
 |---|---|---|---|---|---|---|---|
-| 01 | Create OG key-art asset | M01 | `./public/og-card.png` | in-progress | 2/2 | — | Relaunched through Zen from the two committed checkpoints to obtain the required Mu handoff without resetting the asset. |
+| 01 | Create OG key-art asset | M01 | `./public/og-card.png` | done | 2/2 | 2026-08-29 | OG key-art asset verified intact at 2/2 committed checkpoints; all four gates green; no recommit needed. |
 | 02 | Wire Open Graph and Twitter metadata | M01, M19 | `./index.html`, `./tests/unit/toolchain/openGraph.test.ts` | pending | — | — | Depends on S01's final PNG; add absolute production URLs and contract-test the metadata plus PNG IHDR. |
 
 (Status: pending | in-progress | done | blocked | skipped. Checkpoint: last committed checkpoint, or —.)
@@ -93,3 +93,5 @@ reason, and neither session is verification-only or docs-only.
 - **Recovery:** The user requested a Codex re-run. SESSION-01 is pending again at checkpoint 0/2; the prior Zen handle is discarded and no lease work needs recovery.
 - **SESSION-01 recovery attempt:** No Mu handoff JSON was received. Zen returned `Claude Code authentication failed: Failed to authenticate: OAuth session expired and could not be refreshed`. Git confirms the existing SESSION-01 checkpoint 1 and checkpoint 2 commits; `SESSION-02` remains stalled behind the blocked dependency.
 - **SESSION-01 user override:** The user explicitly requested that Jikijitsu finish the program. SESSION-01 is pending again at its verified 2/2 committed checkpoint boundary for a fresh Mu handoff.
+- **SESSION-01 notes:** OG key-art asset verified intact at 2/2 committed checkpoints; all four gates green; no recommit needed.
+- **SESSION-01 followUp:** SESSION-02 may now consume ./public/og-card.png (absolute prod URL https://john-paul-ruf.github.io/starship-skirmish/og-card.png), wire Open Graph + Twitter metadata in ./index.html, and contract-test the metadata plus the PNG IHDR (1200x630).
